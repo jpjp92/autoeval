@@ -50,14 +50,9 @@ def _get_provider_workers(evaluator_model: str) -> int:
     return PROVIDER_MAX_WORKERS["openai"]
 
 
-# TruLens TruApp (conditional)
-if TRULENS_AVAILABLE:
-    try:
-        from trulens.apps.app import TruApp
-    except ImportError:
-        TruApp = None
-else:
-    TruApp = None
+# TruApp은 병렬 workers에서 SQLite UNIQUE constraint 충돌을 유발하므로 사용하지 않음
+# (TruLens SQLite 기록 대신 Supabase에 직접 저장)
+TruApp = None
 
 # Supabase
 try:
@@ -96,27 +91,13 @@ def _rag_worker(args):
     context  = qa.get("context", "")
 
     try:
-        if TRULENS_AVAILABLE and TruApp:
-            class MockRAG:
-                def __init__(self, q, a, ctx):
-                    self.q, self.a, self.ctx = q, a, ctx
-                def query(self, question):
-                    return self.a
-
-            tru_rag = TruApp(
-                MockRAG(question, answer, context),
-                app_name="AutoEval_RAG_Pipeline",
-                app_version=f"eval_{job_id[:8]}",
-                feedbacks=rag_evaluator.feedbacks,
-            )
-            with tru_rag as recording:
-                relevance    = rag_evaluator.evaluate_relevance(question, answer)
-                groundedness = rag_evaluator.evaluate_groundedness(answer, context)
-                clarity      = rag_evaluator.evaluate_clarity(question, answer)
-        else:
-            relevance    = rag_evaluator.evaluate_relevance(question, answer)
-            groundedness = rag_evaluator.evaluate_groundedness(answer, context)
-            clarity      = rag_evaluator.evaluate_clarity(question, answer)
+        # TruApp wrapping 제거: 병렬 workers에서 동시에 TruApp 생성 시
+        # SQLite UNIQUE constraint 충돌 발생 (trulens_feedback_defs)
+        # TruLens SQLite 기록은 TruLens 대시보드 전용이며 평가 스코어에 영향 없음
+        # → 평가 메서드 직접 호출로 대체 (결과는 Supabase에 저장)
+        relevance    = rag_evaluator.evaluate_relevance(question, answer)
+        groundedness = rag_evaluator.evaluate_groundedness(answer, context)
+        clarity      = rag_evaluator.evaluate_clarity(question, answer)
 
         avg_score = (relevance + groundedness + clarity) / 3
         return i, {
