@@ -16,45 +16,60 @@
 
 ---
 
-## Phase 1: Hierarchy 선택 UI (프론트엔드)
+### Phase 1: Hierarchy 선택 UI (프론트엔드)
 
 ### 목표
-Data Generation 페이지에서 Level 1~3 계층을 탐색 및 선택할 수 있게 하여,
-선택한 hierarchy 범위의 문서만 대상으로 QA 생성 진행.
+Data Generation 페이지 우측의 `Target Hierarchy` 카드를 단순 표시용에서 **문서 탐색 및 선택이 가능한 'Searchable Hierarchy Navigator'**로 개편합니다.
 
-### UI 구성 (계층형 드릴다운 + 검색)
+### UI 구성 (Searchable Navigator)
+
+오른쪽 사이드바 영역을 다음과 같이 재구성합니다:
+
+1. **Category Tabs (Level 1 & 2)**
+   - 대분류(Shop, 상품 등)를 탭 형태로 상단 배치하여 빠른 전환 유도.
+   - 중분류(Level 2)는 가로 스크롤 칩(Chip) 또는 서브 메뉴로 구성.
+2. **Search & Multi-Select (Level 3)**
+   - Level 3(108개)를 위한 검색 바(Search Bar) 기본 장착.
+   - 검색 결과에 따른 체크박스 리스트 표시.
+3. **Real-time Stat Badges**
+   - 계층명 옆에 `(미사용/전체)` 문서 수를 배지로 표시하여 실시간 데이터 가시성 확보.
+   - 예: `요금제 (12 / 48)` - 48개 중 12개 미사용.
+
+### 컴포넌트 상세
 
 ```
-[ Level 1 드롭다운 ]  →  [ Level 2 드롭다운 ]  →  [ Level 3 검색+선택 ]
-       ↓                        ↓                        ↓
-     상품 ▾               모바일 ▾              요금제 검색...
-                                                 □ 5G
-                                                 ☑ LTE
-                                                 □ 선불
-                                                 [선택된 문서 수: 48개]
+HierarchyNavigator (Right Sidebar)
+├─ Header
+│   └─ Title: "Target Hierarchy Selection"
+├─ Level1&2_SegmentControl -- 탭/칩 형태의 대/중분류 선택기
+├─ FilterSection
+│   ├─ SearchInput -- Level 3 검색용
+│   └─ QuickFilter -- "미사용 문서만 보기" 토글
+├─ Scrollable_CheckboxList (Level 3)
+│   └─ Item: {Checkbox} {Title} {StatusBadge (M/N)}
+├─ Sampling_Control_Panel -- 하단 고정 영역
+│   ├─ Stratified_Toggle -- "균형 샘플링 ★권장" 리액티브 버튼
+│   └─ Selected_Selection_Summary -- "선택된 범위: 5개 카테고리 / 120개 문서"
+└─ Action_Buttons
+    └─ Reset_Usage_History -- "이 범위 사용 이력 초기화" (관리자용)
 ```
 
-#### 컴포넌트 상세
+### UI/UX Aesthetic Detail (Theme Options)
 
-```
-HierarchySelector
-├─ Level1Dropdown        -- 5개, 단일 선택
-│   └─ 선택 시 Level2 로드
-├─ Level2Dropdown        -- ~30개, 단일 선택 (All 포함)
-│   └─ 선택 시 Level3 로드
-├─ Level3SearchSelect    -- 108개, 검색+다중 선택
-│   ├─ 검색 input (실시간 필터)
-│   ├─ 체크박스 리스트
-│   └─ 선택된 level3 태그 표시
-├─ DocumentCountBadge    -- "전체 N개 / 미사용 M개 / 사용됨 K개"
-└─ SamplingModeToggle    -- 균형 샘플링 (기본) / 순수 랜덤
-```
+사용자의 취향이나 서비스 컨셉에 따라 두 가지 프리미엄 스타일을 제안합니다.
 
-#### 샘플링 모드
-| 모드 | 설명 |
-|---|---|
-| `balanced` **(기본)** | 선택 범위 내 Level3별 균등 분배 후 랜덤 선택, 중복 제외 |
-| `random` | 선택 범위 내 순수 랜덤, 중복 제외 |
+#### Option A: Glassmorp (Soft & Techy) 
+- 공유 레퍼런스 [Demo](https://tailwinddashboard.com/demo/?demo=glassmorp) 반영.
+- **Visuals**: `backdrop-filter: blur(10px)`, 반투명 유리 질감, 부드러운 그라데이션 배경.
+- **Feel**: 미래지향적, 세련됨, 가볍고 공중에 떠 있는 느낌.
+
+#### Option B: Neo Brutalism (Bold & Clear) 
+- 공유 레퍼런스 [Demo](https://tailwinddashboard.com/demo/?demo=brutalism) 반영.
+- **Visuals**: 
+  - `border: 2px solid #000` (모든 패널/버튼에 두꺼운 테두리)
+  - `box-shadow: 4px 4px 0px 0px #000` (부드러운 블러가 없는 딱딱한 그림자)
+  - 고대비 단색 배경 및 굵은 선 중심의 아이콘.
+- **Feel**: 힙하고 트렌디함, 데이터의 명확성 강조, 강력한 도구(Tool) 느낌.
 
 ---
 
