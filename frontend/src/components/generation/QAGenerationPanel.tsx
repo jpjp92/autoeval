@@ -34,12 +34,12 @@ interface FormValues {
 export function QAGenerationPanel() {
   // Form State
   const [formValues, setFormValues] = useState<FormValues>({
-    model: "flashlite",
-    lang: "ko",
-    samples: 8,
+    model: "gemini-3.1-flash",
+    lang: "en",
+    samples: 2,
     promptVersion: "v1",
     autoEvaluate: true,
-    evaluatorModel: "gemini-2.5-flash",
+    evaluatorModel: "gpt-5.1",
   });
 
   // Generation State
@@ -53,6 +53,13 @@ export function QAGenerationPanel() {
   const [sampleInputValue, setSampleInputValue] = useState(""); // 샘플 수 입력칸용
   const [resultFile, setResultFile] = useState<string | null>(null);
   const [evalReport, setEvalReport] = useState<string | null>(null);
+  // 4단계 평가 상태 추적
+  const [evalLayers, setEvalLayers] = useState<any>({
+    syntax: { status: "pending", progress: 0, message: "" },
+    stats: { status: "pending", progress: 0, message: "" },
+    rag: { status: "pending", progress: 0, message: "" },
+    quality: { status: "pending", progress: 0, message: "" },
+  });
 
   // Terminal Output
   const [logs, setLogs] = useState<string[]>([]);
@@ -141,18 +148,46 @@ export function QAGenerationPanel() {
 
         setProgress(data.progress || 0);
         setStatusMessage(data.message || "");
+        
+        // ========== 4단계 상세 정보 업데이트 ==========
+        if (data.layers) {
+          setEvalLayers(data.layers);
+          
+          // 각 단계의 상태 변화를 로그에 기록
+          Object.entries(data.layers).forEach(([layer, info]: [string, any]) => {
+            if (info.status === 'completed' && evalLayers[layer]?.status !== 'completed') {
+              // 단계가 새로 완료되었음
+              const layerName = {
+                syntax: "1️⃣ 구문 검증",
+                stats: "2️⃣ 데이터셋 통계",
+                rag: "3️⃣ RAG Triad 평가",
+                quality: "4️⃣ 품질 평가"
+              }[layer];
+              addLog(`✓ ${layerName} 완료: ${info.message}`, 'success');
+            } else if (info.status === 'running' && evalLayers[layer]?.status !== 'running') {
+              // 단계가 새로 시작됨
+              const layerName = {
+                syntax: "1️⃣ 구문 검증",
+                stats: "2️⃣ 데이터셋 통계",
+                rag: "3️⃣ RAG Triad 평가",
+                quality: "4️⃣ 품질 평가"
+              }[layer];
+              addLog(`▶ ${layerName} 시작중...`, 'info');
+            }
+          });
+        }
 
         if (data.status === 'completed') {
           console.log(`[Evaluation Complete]`, { report: data.eval_report });
           setEvalReport(data.eval_report);
-          addLog(`✓ Evaluation completed: ${data.eval_report}`, 'success');
+          addLog(`✓ 전체 평가 완료: ${data.eval_report}`, 'success');
           setPhase('complete');
           clearInterval(pollInterval);
           setEvalJobId(null); // 폴링 중지
         } else if (data.status === 'failed') {
           console.error(`[Evaluation Failed]`, data.error);
           setError(data.error || "Evaluation failed");
-          addLog(`✗ Evaluation failed: ${data.error}`, 'error');
+          addLog(`✗ 평가 실패: ${data.error}`, 'error');
           setPhase('complete');
           clearInterval(pollInterval);
           setEvalJobId(null); // 폴링 중지
@@ -307,8 +342,8 @@ export function QAGenerationPanel() {
                     isGenerating && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <option value="claude-sonnet">Claude Sonnet 4.6</option>
                   <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
+                  <option value="claude-sonnet">Claude Sonnet 4.6</option>
                   <option value="gpt-5.2">GPT-5.2</option>
                 </select>
               </div>
@@ -389,9 +424,9 @@ export function QAGenerationPanel() {
                     isGenerating && "opacity-50 cursor-not-allowed"
                   )}
                 >
+                  <option value="gemini-flash">Gemini 2.5 Flash</option>
                   <option value="claude-haiku">Claude Haiku 4.5</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="gpt-5.1-2025-11-13">GPT-5.1</option>
+                  <option value="gpt-5.1">GPT-5.1</option>
                 </select>
               </div>
             </div>
@@ -462,6 +497,56 @@ export function QAGenerationPanel() {
                 </div>
               </div>
             )}
+
+            {/* 4-Layer Evaluation Progress */}
+            {phase === "evaluating" && (
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <h4 className="font-semibold text-sm text-slate-700">📊 평가 파이프라인 진행 상황</h4>
+                <div className="space-y-2.5">
+                  {["syntax", "stats", "rag", "quality"].map((layer) => {
+                    const layerInfo = evalLayers[layer];
+                    const layerLabel = {
+                      syntax: "1️⃣ 구문 검증 (Syntax)",
+                      stats: "2️⃣ 데이터셋 통계 (Stats)",
+                      rag: "3️⃣ RAG Triad 평가",
+                      quality: "4️⃣ LLM 품질 평가"
+                    }[layer];
+
+                    return (
+                      <div key={layer} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-slate-700">{layerLabel}</span>
+                          <span className={cn(
+                            "text-xs font-semibold px-2.5 py-1 rounded-full",
+                            layerInfo.status === "completed" ? "bg-emerald-100 text-emerald-700" :
+                              layerInfo.status === "running" ? "bg-amber-100 text-amber-700" :
+                                "bg-slate-100 text-slate-600"
+                          )}>
+                            {layerInfo.status === "completed" ? "✓ 완료" :
+                              layerInfo.status === "running" ? "▶ 진행 중" :
+                                "대기"}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all duration-300",
+                              layerInfo.status === "completed" ? "bg-emerald-500" :
+                                layerInfo.status === "running" ? "bg-amber-500" :
+                                  "bg-slate-300"
+                            )}
+                            style={{ width: `${layerInfo.progress || 0}%` }}
+                          />
+                        </div>
+                        {layerInfo.message && (
+                          <p className="text-xs text-slate-500">{layerInfo.message}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Terminal Output */}
@@ -485,11 +570,16 @@ export function QAGenerationPanel() {
               <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300 space-y-2">
                 <p className="font-bold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  {formValues.autoEvaluate && evalReport ? "파이프라인 완료!" : "생성 완료!"}
+                  {formValues.autoEvaluate && evalReport ? "파이프라인 완료! 📊" : "생성 완료!"}
                 </p>
-                <p className="text-sm">📄 QA 생성: {resultFile}</p>
-                {evalReport && (
-                  <p className="text-sm">📊 평가 보고서: {evalReport}</p>
+                {formValues.autoEvaluate && evalReport && typeof evalReport === 'object' && 'summary' in evalReport ? (
+                  <div className="text-sm space-y-1">
+                    <p>👥 총 QA: <span className="font-semibold">{evalReport.metadata?.total_qa}개</span> | 📋 구문검증: <span className="font-semibold">{evalReport.summary?.syntax_pass_rate}%</span> ✅</p>
+                    <p>📊 데이터셋: <span className="font-semibold">{evalReport.summary?.dataset_quality_score}/10</span> | 🔍 RAG: <span className="font-semibold">{evalReport.summary?.rag_average_score}</span> | 🎯 품질: <span className="font-semibold">{evalReport.summary?.quality_average_score}</span></p>
+                    <p>🏆 최종 등급: <span className="font-semibold">{evalReport.summary?.grade}</span> ({(evalReport.summary?.final_score * 100).toFixed(1)}%)</p>
+                  </div>
+                ) : (
+                  <p className="text-sm">📄 QA 생성: {resultFile}</p>
                 )}
               </div>
             )}

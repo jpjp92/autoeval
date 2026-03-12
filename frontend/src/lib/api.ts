@@ -125,7 +125,7 @@ export async function getResultDetail(filename: string): Promise<ApiResponse> {
 /**
  * Start QA generation
  */
-export async function generateQA(request: GenerateRequest): Promise<ApiResponse> {
+export async function generateQA(request: GenerateRequest): Promise<any> {
   try {
     const response = await fetch(`${API_BASE}/api/generate`, {
       method: 'POST',
