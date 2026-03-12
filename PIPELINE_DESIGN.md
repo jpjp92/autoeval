@@ -3,11 +3,12 @@
 ## 📊 파이프라인 구조
 
 ### 1️⃣ Layer 1-A: SyntaxValidator
+
 - **목적**: 구문 정확성 검증
 - **비용**: $0
 - **시간**: 빠름 (≈1초/100QA)
 - **Input**: QA 리스트
-- **Output**: 
+- **Output**:
   ```json
   {
     "total": 100,
@@ -19,6 +20,7 @@
   ```
 
 ### 2️⃣ Layer 1-B: DatasetStats
+
 - **목적**: 데이터셋 전체 통계
 - **비용**: $0
 - **시간**: 빠름 (≈1초)
@@ -34,19 +36,20 @@
   }
   ```
 
-### 3️⃣ Layer 2: RAGTriadEvaluator (기존)
-- **목적**: RAG Triad 메트릭 평가
+### 3️⃣ Layer 2: RAGTriadEvaluator (TruLens 기반)
+
+- **목적**: RAG Triad 메트릭 평가 (TruLens로 레코딩)
 - **비용**: ~$0.5/100QA (모델에 따라)
-- **시간**: ~2분
-- **Input**: QA 리스트 (valid QA만)
+- **시간**: ~2분 (순차 처리)
+- **모델**: 프론트에서 선택한 평가 모델 (claude-haiku, gpt-5.1, gemini-flash)
+- **TruLens**: 각 QA 평가가 `TruApp`으로 레코딩되어 `default.sqlite`에 저장
+- **Input**: valid QA만 (SyntaxValidator 통과)
 - **Output**:
   ```json
   {
     "qa_scores": [
       {
-        "q": "...",
-        "a": "...",
-        "relevance": 0.85,      # 0-1
+        "relevance": 0.85,
         "groundedness": 0.92,
         "clarity": 0.88,
         "avg_score": 0.88
@@ -55,30 +58,29 @@
     "summary": {
       "avg_relevance": 0.85,
       "avg_groundedness": 0.92,
-      "avg_clarity": 0.88
+      "avg_clarity": 0.88,
+      "avg_score": 0.88
     }
   }
   ```
 
-### 4️⃣ Layer 3: QAQualityEvaluator (NEW - CoT)
+### 4️⃣ Layer 3: QAQualityEvaluator (멀티 프로바이더)
+
 - **목적**: LLM CoT 기반 품질 평가
-- **비용**: ~$0.8/100QA (GPT-5.1 기준)
+- **비용**: ~$0.8/100QA (모델에 따라)
 - **시간**: ~5분
-- **Input**: QA 리스트 (valid QA만)
-- **Model**: GPT-5.1 (선택 가능)
+- **모델**: Layer 2와 **동일 모델** 사용 (일관성 확보)
+- **지원 프로바이더**: OpenAI(gpt-5.1 등), Google(gemini-flash 등), Anthropic(claude-haiku 등)
 - **Output**:
   ```json
   {
     "qa_scores": [
       {
-        "q": "...",
-        "a": "...",
-        "context": "...",
-        "factuality": 0.90,    # 0-1 (CoT 기반)
+        "factuality": 0.90,
         "completeness": 0.88,
         "groundedness": 0.92,
         "avg_quality": 0.90,
-        "pass": true           # ≥ 0.70이면 pass
+        "pass": true
       }
     ],
     "summary": {
@@ -100,6 +102,7 @@
 ### POST /api/evaluate (통합 평가)
 
 **요청:**
+
 ```json
 {
   "qa_list": [...],
@@ -110,6 +113,7 @@
 ```
 
 **응답:**
+
 ```json
 {
   "job_id": "eval_20260312_...",
@@ -167,12 +171,12 @@
 ```python
 async def evaluate_qa(request: EvaluationRequest):
     """통합 평가 파이프라인"""
-    
+  
     # 1. 요청 검증
     qa_list = request.qa_list
     evaluator_model = request.evaluator_model
     layers = request.layers
-    
+  
     # 2. 결과 저장소 초기화
     results = {
         "syntax": None,
@@ -180,20 +184,20 @@ async def evaluate_qa(request: EvaluationRequest):
         "rag": None,
         "quality": None
     }
-    
+  
     # ========== Layer 1-A: SyntaxValidator ==========
     if "syntax" in layers:
         validator = SyntaxValidator()
         valid_qa = []
         syntax_errors = {}
-        
+      
         for i, qa in enumerate(qa_list):
             is_valid, errors = validator.validate_qa(qa)
             if is_valid:
                 valid_qa.append(qa)
             else:
                 syntax_errors[i] = errors
-        
+      
         results["syntax"] = {
             "total": len(qa_list),
             "valid": len(valid_qa),
@@ -203,23 +207,23 @@ async def evaluate_qa(request: EvaluationRequest):
         }
     else:
         valid_qa = qa_list
-    
+  
     # ========== Layer 1-B: DatasetStats ==========
     if "stats" in layers:
         stats = DatasetStats(qa_list)
         dataset_stats = stats.analyze_all()
         results["stats"] = dataset_stats
-    
+  
     # ========== Layer 2: RAGTriadEvaluator ==========
     if "rag" in layers:
         rag_evaluator = RAGTriadEvaluator(evaluator_model)
         rag_results = {}
-        
+      
         for qa in valid_qa:  # ← valid QA만 평가!
             relevance = rag_evaluator.evaluate_relevance(qa["q"], qa["a"])
             groundedness = rag_evaluator.evaluate_groundedness(qa["a"], qa["context"])
             clarity = rag_evaluator.evaluate_clarity(qa["a"])
-            
+          
             rag_results["qa_scores"].append({
                 "q": qa["q"],
                 "relevance": relevance,
@@ -227,19 +231,19 @@ async def evaluate_qa(request: EvaluationRequest):
                 "clarity": clarity,
                 "avg_score": (relevance + groundedness + clarity) / 3
             })
-        
+      
         results["rag"] = rag_results
-    
+  
     # ========== Layer 3: QAQualityEvaluator ==========
     if "quality" in layers:
         quality_evaluator = QAQualityEvaluator(evaluator_model)
         quality_results = {}
-        
+      
         for qa in valid_qa:  # ← valid QA만 평가!
             factuality = quality_evaluator.evaluate_factuality(qa["a"], qa["context"])
             completeness = quality_evaluator.evaluate_completeness(qa["q"], qa["a"])
             groundedness = quality_evaluator.evaluate_groundedness(qa["a"], qa["context"])
-            
+          
             quality_results["qa_scores"].append({
                 "q": qa["q"],
                 "factuality": factuality,
@@ -248,9 +252,9 @@ async def evaluate_qa(request: EvaluationRequest):
                 "avg_quality": (factuality + completeness + groundedness) / 3,
                 "pass": (factuality + completeness + groundedness) / 3 >= 0.70
             })
-        
+      
         results["quality"] = quality_results
-    
+  
     # ========== 결과 통합 ==========
     return {
         "status": "completed",
@@ -263,84 +267,70 @@ async def evaluate_qa(request: EvaluationRequest):
 
 ## 🎯 핵심 포인트
 
-1. ✅ **순차 실행**: 1️⃣ → 2️⃣ → 3️⃣ → 4️⃣ 순서대로
+1. ✅ **순차 실행**: Layer 1-A → 1-B → 2 → 3 순서대로
 2. ✅ **유효한 QA만**: Layer 2, 3은 SyntaxValidator 통과한 QA만 평가
 3. ✅ **비용 절감**: 구문 오류 QA는 비싼 LLM 평가에서 제외
 4. ✅ **상태 추적**: 각 Layer별 진행 상황 추적
 5. ✅ **선택 가능**: `layers` 파라미터로 필요한 Layer만 실행
-6. ✅ **통합 결과**: 모든 평가 지표 한눈에 확인 가능
+6. ✅ **일관된 모델**: Layer 2, 3 모두 선택된 **동일 평가 모델** 사용
+7. ✅ **멀티 프로바이더**: OpenAI / Google Gemini / Anthropic Claude 모두 지원
+8. ✅ **TruLens 통합**: RAG Triad 평가가 TruApp으로 레코딩되어 리더보드 확인 가능
+9. ✅ **Supabase 연동**: 생성/평가 결과 자동 저장 및 생성↔평가 연결
 
 ---
 
 ## 📋 구현 체크리스트
 
-- [ ] QAQualityEvaluator 클래스 추가 (qa_quality_evaluator.py에서)
-- [ ] 파이프라인 함수 작성
-- [ ] 상태 추적 로직
-- [ ] 결과 저장 (JSON)
-- [ ] 웹 대시보드 통합
-- [ ] 테스트
+- [x] SyntaxValidator 구현
+- [x] DatasetStats 구현
+- [x] RAGTriadEvaluator 구현 (TruLens 통합)
+- [x] QAQualityEvaluator 구현 (멀티 프로바이더)
+- [x] 파이프라인 함수 작성 (`run_full_evaluation_pipeline`)
+- [x] 상태 추적 로직 (`EvaluationManager`)
+- [x] 결과 저장 (JSON + Supabase)
+- [x] Supabase 생성/평가 연결 (`linked_evaluation_id`)
+- [x] 모델 중앙 설정 (`backend/config/models.py`)
+- [ ] 병렬 평가 처리 (ThreadPoolExecutor 적용 예정)
+- [ ] 웹 대시보드 상세 뷰
 
 ---
 
 # 🗄️ Supabase 저장 및 조회 아키텍처
 
-## 📊 데이터베이스 스키마
+## 📊 데이터베이스 스키마 (`docs/SUPABASE_SCHEMA.sql` 기준)
 
 ### `evaluation_results` 테이블
 
 ```sql
--- 평가 결과 저장소
 CREATE TABLE evaluation_results (
-  -- Primary Key
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
-  -- 평가 작업 정보
   job_id TEXT UNIQUE NOT NULL,
-  result_filename TEXT NOT NULL,
-  
-  -- 메타데이터
-  generation_model TEXT NOT NULL,      -- QA 생성 모델
-  evaluator_model TEXT NOT NULL,       -- 평가 모델
-  lang TEXT NOT NULL,                  -- 'en', 'ko'
-  prompt_version TEXT DEFAULT 'v1',
-  
-  -- 통계
-  total_qa INT NOT NULL,
-  valid_qa INT NOT NULL,
-  
-  -- 4단계 평가 점수 요약
-  syntax_pass_rate FLOAT,              -- Layer 1-A
-  dataset_quality_score FLOAT,         -- Layer 1-B (0-10)
-  rag_avg_relevance FLOAT,             -- Layer 2
-  rag_avg_groundedness FLOAT,
-  rag_avg_clarity FLOAT,
-  quality_avg_factuality FLOAT,        -- Layer 3
-  quality_avg_completeness FLOAT,
-  quality_avg_groundedness FLOAT,
-  quality_pass_rate FLOAT,
-  
-  -- 최종 점수
-  final_score FLOAT,                   -- 종합 점수 (0-1)
-  final_grade TEXT,                    -- A+, A, B+, B, C, F
-  
-  -- 상세 결과 (JSON)
-  pipeline_results JSONB NOT NULL,     -- 전체 평가 결과
-  interpretation JSONB,                -- 해석 & 추천사항
-  
-  -- 타임스탐프
-  created_at TIMESTAMP DEFAULT now(),
-  updated_at TIMESTAMP DEFAULT now(),
-  
-  -- 인덱스
-  CONSTRAINT valid_grade CHECK (final_grade IN ('A+', 'A', 'B+', 'B', 'C', 'F'))
-);
 
--- 조회 성능을 위한 인덱스
-CREATE INDEX idx_evaluation_created_at ON evaluation_results(created_at DESC);
-CREATE INDEX idx_evaluation_evaluator_model ON evaluation_results(evaluator_model);
-CREATE INDEX idx_evaluation_final_grade ON evaluation_results(final_grade);
-CREATE INDEX idx_evaluation_generation_model ON evaluation_results(generation_model);
+  -- 메타데이터 (JSONB)
+  metadata JSONB NOT NULL,
+  -- { "generation_model": "gemini-3.1-flash", "evaluator_model": "claude-haiku", "lang": "ko", "prompt_version": "v1" }
+
+  total_qa   INT NOT NULL,
+  valid_qa   INT NOT NULL,
+
+  -- 4단계 점수 요약 (JSONB)
+  scores JSONB NOT NULL,
+  -- {
+  --   "syntax":  { "pass_rate": 95.0 },
+  --   "stats":   { "quality_score": 7.5, "diversity": {...}, "duplication_rate": {...} },
+  --   "rag":     { "relevance": 0.85, "groundedness": 0.92, "clarity": 0.88, "avg_score": 0.88 },
+  --   "quality": { "factuality": 0.90, "completeness": 0.88, "groundedness": 0.92, "avg_score": 0.90, "pass_rate": 84.2 }
+  -- }
+
+  final_score FLOAT NOT NULL,   -- 0-1
+  final_grade TEXT NOT NULL,    -- A+, A, B+, B, C, F
+
+  pipeline_results JSONB NOT NULL,  -- 4단계 전체 상세 결과
+  interpretation   JSONB,           -- 해석 & 개선 추천사항
+
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
 ```
 
 ---
@@ -385,6 +375,7 @@ Supabase Query
 ### GET /api/results (평가 결과 목록)
 
 **요청:**
+
 ```json
 {
   "limit": 20,
@@ -398,6 +389,7 @@ Supabase Query
 ```
 
 **응답:**
+
 ```json
 {
   "success": true,
@@ -424,9 +416,10 @@ Supabase Query
 }
 ```
 
-### GET /api/results/{id} (평가 결과 상세)
+### GET /api/results/ (평가 결과 상세)
 
 **응답:**
+
 ```json
 {
   "success": true,
@@ -474,12 +467,12 @@ Supabase Query
 async def save_evaluation_to_supabase(eval_report: dict, job_id: str):
     """평가 결과를 Supabase에 저장"""
     from supabase import create_client
-    
+  
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    
+  
     # eval_report에서 필요한 데이터 추출
     summary = eval_report.get("summary", {})
-    
+  
     data = {
         "job_id": job_id,
         "result_filename": eval_report.get("result_filename"),
@@ -488,7 +481,7 @@ async def save_evaluation_to_supabase(eval_report: dict, job_id: str):
         "lang": eval_report.get("metadata", {}).get("lang", "en"),
         "total_qa": eval_report.get("metadata", {}).get("total_qa"),
         "valid_qa": eval_report.get("metadata", {}).get("valid_qa"),
-        
+      
         # 점수 요약
         "syntax_pass_rate": summary.get("syntax_pass_rate"),
         "dataset_quality_score": summary.get("dataset_quality_score"),
@@ -499,16 +492,16 @@ async def save_evaluation_to_supabase(eval_report: dict, job_id: str):
         "quality_avg_completeness": summary.get("quality_average_score"),
         "quality_avg_groundedness": summary.get("quality_average_score"),
         "quality_pass_rate": summary.get("quality_pass_rate"),
-        
+      
         # 최종 점수
         "final_score": summary.get("final_score"),
         "final_grade": summary.get("grade"),
-        
+      
         # 상세 결과
         "pipeline_results": eval_report.get("pipeline_results"),
         "interpretation": eval_report.get("interpretation")
     }
-    
+  
     # Supabase 저장
     response = supabase.table("evaluation_results").insert(data).execute()
     logger.info(f"[{job_id}] ✓ Supabase saved: {response.data}")
@@ -584,24 +577,28 @@ if (formValues.autoEvaluate && evalReport) {
 ## 🛠️ 구현 로드맵
 
 ### Phase 1: Supabase 초기 설정
+
 - [ ] Supabase 프로젝트 생성
 - [ ] `evaluation_results` 테이블 생성
 - [ ] 환경변수 설정 (SUPABASE_URL, SUPABASE_KEY)
 - [ ] 권한 설정 (RLS)
 
 ### Phase 2: 백엔드 API 구현
+
 - [ ] `POST /api/results` - 평가 완료 시 저장
 - [ ] `GET /api/results` - 결과 목록 조회
 - [ ] `GET /api/results/{id}` - 결과 상세 조회
 - [ ] Supabase 클라이언트 통합
 
 ### Phase 3: 프론트엔드 통합
+
 - [ ] Evaluation Dashboard 컴포넌트 개선
 - [ ] 결과 리스트 표시
 - [ ] 상세 뷰 구현
 - [ ] 필터 & 정렬 기능
 
 ### Phase 4: 고급 기능
+
 - [ ] 모델별 평가 비교 분석
 - [ ] 시간대별 추이 차트
 - [ ] QA 상세 검토 & 수정
@@ -628,6 +625,7 @@ CREATE POLICY "Allow update own" ON evaluation_results
 ```
 
 ### API 요청 검증
+
 - Supabase API Key는 server-side에서만 사용
 - 클라이언트는 anon key 사용 (제한된 권한)
 - Rate limiting 적용
@@ -641,41 +639,54 @@ CREATE POLICY "Allow update own" ON evaluation_results
 ### `qa_generation_results` 테이블
 
 ```sql
--- QA 생성 결과 저장소
 CREATE TABLE qa_generation_results (
-  -- Primary Key
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  
-  -- 생성 작업 정보
   job_id TEXT UNIQUE NOT NULL,
-  result_filename TEXT NOT NULL,
-  
-  -- 메타데이터
-  generation_model TEXT NOT NULL,   -- 생성 모델 (Gemini 3.1 Flash 등)
-  lang TEXT NOT NULL,               -- 'en', 'ko'
-  prompt_version TEXT DEFAULT 'v1',
-  
-  -- QA 통계
-  total_qa INT NOT NULL,            -- 생성된 총 QA 개수
-  total_tokens_input INT,
-  total_tokens_output INT,
-  estimated_cost FLOAT,             -- 생성 비용 추정치
-  
-  -- QA 데이터 (전체 저장)
-  qa_list JSONB NOT NULL,           -- [{q, a, context, hierarchy, docId, ...}]
-  
-  -- 타임스탐프
-  created_at TIMESTAMP DEFAULT now(),
-  updated_at TIMESTAMP DEFAULT now(),
-  
-  -- 평가 연결 (일대일)
-  linked_evaluation_id UUID REFERENCES evaluation_results(id) ON DELETE SET NULL
+
+  -- 메타데이터 (JSONB)
+  metadata JSONB NOT NULL,
+  -- { "generation_model": "gemini-3.1-flash", "lang": "ko", "prompt_version": "v1" }
+
+  -- Hierarchy 기반 샘플링 정보 (JSONB)
+  hierarchy JSONB NOT NULL,
+  -- { "sampling": "random", "category": null, "path_prefix": null, "filtered_document_count": 100 }
+
+  -- 생성 통계 (JSONB)
+  stats JSONB NOT NULL,
+  -- { "total_qa": 100, "total_documents": 10, "total_tokens_input": 5000, "total_tokens_output": 2500, "estimated_cost": 0.45 }
+
+  qa_list JSONB NOT NULL,             -- [{q, a, context, hierarchy, docId, intent, ...}]
+  linked_evaluation_id UUID,          -- FK → evaluation_results(id)
+
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- 조회 성능을 위한 인덱스
-CREATE INDEX idx_qa_gen_created_at ON qa_generation_results(created_at DESC);
-CREATE INDEX idx_qa_gen_generation_model ON qa_generation_results(generation_model);
-CREATE INDEX idx_qa_gen_linked_eval ON qa_generation_results(linked_evaluation_id);
+-- FK: evaluation_results 생성 후 추가
+ALTER TABLE qa_generation_results
+  ADD CONSTRAINT fk_qa_gen_to_eval
+  FOREIGN KEY (linked_evaluation_id)
+  REFERENCES evaluation_results(id) ON DELETE SET NULL;
+```
+
+### JOIN 뷰 (`evaluation_qa_joined`)
+
+```sql
+-- 생성 + 평가 결과 조인 뷰 (조회 편의용)
+CREATE OR REPLACE VIEW evaluation_qa_joined AS
+SELECT
+  e.id as evaluation_id,
+  e.final_grade,
+  e.final_score,
+  (q.metadata->>'generation_model') as generation_model,
+  (e.metadata->>'evaluator_model')  as evaluator_model,
+  (q.metadata->>'lang')             as lang,
+  (e.scores->'rag'->>'avg_score')::FLOAT   as rag_avg_score,
+  (e.scores->'quality'->>'avg_score')::FLOAT as quality_avg_score,
+  e.created_at as eval_created_at
+FROM evaluation_results e
+LEFT JOIN qa_generation_results q ON e.id = q.linked_evaluation_id
+ORDER BY e.created_at DESC;
 ```
 
 ## 🔄 생성 → 평가 통합 데이터 흐름
@@ -755,13 +766,13 @@ CREATE INDEX idx_qa_gen_linked_eval ON qa_generation_results(linked_evaluation_i
 # backend/generation_api.py 수정
 async def run_qa_generation(...):
     """QA 생성 파이프라인"""
-    
+  
     # ... 기존 QA 생성 로직 ...
-    
+  
     # 결과를 로컬에 저장 (기존)
     with open(result_filepath, 'w') as f:
         json.dump(result_data, f)
-    
+  
     # ✨ NEW: Supabase에도 저장
     save_to_supabase(
         job_id=job_id,
@@ -775,7 +786,7 @@ async def run_qa_generation(...):
             'estimated_cost': calculate_cost(model, tokens)
         }
     )
-    
+  
     # 상태 업데이트
     job_manager.update_job(
         job_id,
@@ -785,7 +796,7 @@ async def run_qa_generation(...):
     )
 ```
 
-### GET /api/generation/{id} (생성 결과 상세)
+### GET /api/generation/ (생성 결과 상세)
 
 ```json
 {
@@ -914,43 +925,45 @@ Supabase: qa_generation_results + evaluation_results (JOIN 조회)
 
 ## 🛠️ 추가 구현 (QA 생성 저장)
 
-### Phase 1: Supabase 테이블 추가
-- [ ] `qa_generation_results` 테이블 생성
-- [ ] `linked_evaluation_id` FK 추가
+### 완료된 항목 ✅
 
-### Phase 2: 백엔드 수정
-- [ ] `generation_api.py`: Supabase 저장 로직 추가
-- [ ] `evaluation_api.py`: 생성-평가 연결 로직
-- [ ] API: `GET /api/generation/{id}` 엔드포인트
+- [x] `qa_generation_results` 테이블 생성 (JSONB 스키마)
+- [x] `evaluation_results` 테이블 생성 (JSONB 스키마)
+- [x] `linked_evaluation_id` FK 설정
+- [x] `generation_api.py`: Supabase 저장 로직
+- [x] `evaluation_api.py`: 생성-평가 연결 로직 (`link_generation_to_evaluation`)
+- [x] `evaluation_qa_joined` JOIN 뷰 생성
+- [x] RLS Policy (읽기/쓰기 권한)
 
-### Phase 3: 프론트엔드 개선
-- [ ] 생성 결과의 Supabase ID 저장
-- [ ] 평가 완료 후 자동 네비게이션
-- [ ] Evaluation Page에서 생성 정보 표시
+### 진행 예정
+
+- [ ] `GET /api/generation/{id}` 엔드포인트
+- [ ] Evaluation Page에서 생성 정보 함께 표시
+- [ ] 비교 분석 대시보드
 
 ---
 
 ## 📝 요약
 
-| 항목 | 설명 |
-|------|------|
-| **저장 타이밍** | QA 생성 완료 후 자동 저장 |
-| **저장 위치** | `qa_generation_results` 테이블 |
+| 항목                  | 설명                                         |
+| --------------------- | -------------------------------------------- |
+| **저장 타이밍** | QA 생성 완료 후 자동 저장                    |
+| **저장 위치**   | `qa_generation_results` 테이블             |
 | **데이터 연결** | 평가 완료 시 `linked_evaluation_id`로 연결 |
-| **조회** | Evaluation 페이지에서 함께 조회 |
-| **데이터 형식** | JSON (전체 QA 배열) |
-| **장점** | 생성↔평가 추적, 완전한 이력 관리 |
-| **비용** | Supabase free tier (충분함) |
+| **조회**        | Evaluation 페이지에서 함께 조회              |
+| **데이터 형식** | JSON (전체 QA 배열)                          |
+| **장점**        | 생성↔평가 추적, 완전한 이력 관리            |
+| **비용**        | Supabase free tier (충분함)                  |
 
-| 항목 | 설명 |
-|------|------|
+| 항목                  | 설명                              |
+| --------------------- | --------------------------------- |
 | **저장 타이밍** | 평가 파이프라인 완료 후 자동 저장 |
-| **저장 위치** | `evaluation_results` 테이블 |
-| **조회 시점** | Evaluation 페이지 로드 시 |
-| **데이터 형식** | JSON (상세), 요약 (리스트) |
-| **보안** | RLS, anon key 클라이언트 사용 |
-| **장점** | 영속성, 비교분석, 히스토리 |
-| **비용** | Supabase free tier (충분함) |
+| **저장 위치**   | `evaluation_results` 테이블     |
+| **조회 시점**   | Evaluation 페이지 로드 시         |
+| **데이터 형식** | JSON (상세), 요약 (리스트)        |
+| **보안**        | RLS, anon key 클라이언트 사용     |
+| **장점**        | 영속성, 비교분석, 히스토리        |
+| **비용**        | Supabase free tier (충분함)       |
 
 ---
 
@@ -959,11 +972,13 @@ Supabase: qa_generation_results + evaluation_results (JOIN 조회)
 ## 📋 개요
 
 사용자가 원하는 기능:
+
 - 계층 구조의 **일부만 선별**해서 QA 생성 및 평가 실행
 - 예: `혜택 > 구매혜택`에서만 3개 샘플링 생성
 - 더 나아가: `상품 > 모바일`의 하위 모든 계층 자동 포함
 
 **현재 데이터 구조:**
+
 ```
 1,106 documents
 ├─ Level 1: 5 categories (상품, 고객지원, Shop, 혜택, 마이)
@@ -983,6 +998,7 @@ Supabase: qa_generation_results + evaluation_results (JOIN 조회)
 **변경사항:**
 
 1. `GenerateRequest` 모델에 필터링 파라미터 추가:
+
 ```python
 class GenerateRequest(BaseModel):
     model: str = "gemini-3.1-flash"
@@ -997,6 +1013,7 @@ class GenerateRequest(BaseModel):
 ```
 
 2. `run_qa_generation()` 함수 매개변수 추가:
+
 ```python
 def run_qa_generation(
     job_id: str,
@@ -1018,6 +1035,7 @@ def run_qa_generation(
 ```
 
 3. **필터링 헬퍼 함수 구현:**
+
 ```python
 def filter_by_hierarchy(
     items: list,
@@ -1027,16 +1045,16 @@ def filter_by_hierarchy(
 ) -> list:
     """
     데이터를 계층 구조로 필터링
-    
+  
     Args:
         items: 원본 문서 리스트
         sampling: 샘플링 전략
         category: Level 1 필터 (e.g., "상품")
         path_prefix: 경로 필터 (e.g., "상품 > 모바일")
-    
+  
     Returns:
         필터링된 문서 리스트
-    
+  
     구현:
     - items[]에서 hierarchy 필드 확인
     - hierarchy.join(" > ") == path_prefix 또는
@@ -1045,28 +1063,29 @@ def filter_by_hierarchy(
     """
     if sampling == "random":
         return items  # No filtering
-    
+  
     if sampling == "category" and category:
         # Level 1만 매칭 (hierarchy[0] == category)
         return [item for item in items 
                 if item.get("hierarchy", [])[0] == category]
-    
+  
     if sampling == "path" and path_prefix:
         # 전체 경로가 path_prefix로 시작하는지 확인
         target_path = path_prefix
         return [item for item in items
                 if (" > ".join(item.get("hierarchy", [])) == target_path or
                     " > ".join(item.get("hierarchy", [])).startswith(target_path + " >"))]
-    
+  
     if sampling == "balanced":
         # representative_hierarchies.json 로드 후 분포유지하며 샘플링
         # TODO: 나중에 구현
         return items
-    
+  
     return items
 ```
 
 **상태 메시지 개선:**
+
 ```python
 job_manager.update_job(
     job_id,
@@ -1076,6 +1095,7 @@ job_manager.update_job(
 ```
 
 **config에 필터링 정보 포함:**
+
 ```json
 {
   "config": {
@@ -1173,7 +1193,7 @@ job_manager.update_job(
   {formValues.sampling === "path" && (
     <div className="space-y-2 mb-4">
       <label className="block text-xs font-medium">계층 경로 (Depth 1-4)</label>
-      
+    
       {/* Level 1 */}
       <select
         value={selectedPath[0] || ""}
@@ -1236,6 +1256,7 @@ job_manager.update_job(
 ```
 
 **API 호출 수정:**
+
 ```typescript
 const handleGenerate = async () => {
   const payload = {
@@ -1255,6 +1276,7 @@ const handleGenerate = async () => {
 ```
 
 **필요한 State 추가:**
+
 ```typescript
 const [selectedPath, setSelectedPath] = useState<[string?, string?, string?, string?]>([]);
 
@@ -1270,6 +1292,7 @@ const handlePathChange = (level: number, value: string) => {
 ```
 
 **동적 옵션 로딩:**
+
 ```typescript
 // representative_hierarchies.json 로드 (앱 시작 시)
 import hierarchyData from "../data/representative_hierarchies.json";
@@ -1290,20 +1313,21 @@ const getLevel2Options = (level1: string): string[] => {
 
 ## 📊 구현 우선순위
 
-| 우선순위 | 작업 | 예상 시간 | 상태 |
-|---------|------|---------|------|
-| 🔴 HIGH | 백엔드: filter_by_hierarchy() 함수 | 1시간 | 📋 Planned |
-| 🔴 HIGH | 백엔드: 생성 로직에 필터 통합 | 30분 | 📋 Planned |
-| 🟡 MEDIUM | 프론트엔드: Hierarchy selector UI | 2시간 | 📋 Planned |
-| 🟡 MEDIUM | 프론트엔드: representative_hierarchies.json 통합 | 1시간 | 📋 Planned |
-| 🟢 LOW | 테스트 & 검증 | 1시간 | 📋 Planned |
-| 🟢 LOW | Supabase 저장 기능 (Phase 2) | 2시간 | ⏸️ On Hold |
+| 우선순위  | 작업                                             | 예상 시간 | 상태         |
+| --------- | ------------------------------------------------ | --------- | ------------ |
+| 🔴 HIGH   | 백엔드: filter_by_hierarchy() 함수               | 1시간     | 📋 Planned   |
+| 🔴 HIGH   | 백엔드: 생성 로직에 필터 통합                    | 30분      | 📋 Planned   |
+| 🟡 MEDIUM | 프론트엔드: Hierarchy selector UI                | 2시간     | 📋 Planned   |
+| 🟡 MEDIUM | 프론트엔드: representative_hierarchies.json 통합 | 1시간     | 📋 Planned   |
+| 🟢 LOW    | 테스트 & 검증                                    | 1시간     | 📋 Planned   |
+| 🟢 LOW    | Supabase 저장 기능 (Phase 2)                     | 2시간     | ⏸️ On Hold |
 
 ---
 
 ## 🎯 다음 액션
 
 **즉시 시작 (Step 1):**
+
 ```bash
 # 1. filter_by_hierarchy() 함수 구현
 # 위치: backend/generation_api.py (154줄 이전)
@@ -1313,6 +1337,7 @@ python3 -c "from backend.generation_api import filter_by_hierarchy; ..."
 ```
 
 **그 다음 (Step 2):**
+
 ```bash
 # 1. hierarchy selector UI 추가
 # 위치: frontend/src/components/QAGenerationPanel.tsx
@@ -1326,6 +1351,7 @@ npm run dev
 ## 📝 Reference Data
 
 **representative_hierarchies.json에서 추출:**
+
 ```
 혜택 > 구매혜택: 2개 문서
   ├─ 혜택 > 구매혜택 > 핸드폰가입쿠폰혜택 > 액세서리쿠폰
@@ -1336,6 +1362,7 @@ npm run dev
 ```
 
 **API 요청 예시:**
+
 ```json
 POST /api/generate
 {
@@ -1360,3 +1387,424 @@ POST /api/generate
 }
 ```
 
+---
+
+# 🗄️ Supabase 데이터 저장/조회 플로우
+
+## 📊 전체 플로우 (Generation → Evaluation)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Frontend (QA Generation Panel)              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  [Models] [Language] [Samples] [Hierarchy Filter] [생성]    │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│              1️⃣ QA 생성 (generation_api.py)                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  • 문서 로딩 & 필터링 (sampling 전략)                        │
+│  • LLM으로 QA 생성                                          │
+│  • 결과 로컬 저장 (output/)                                 │
+│                                                              │
+│  결과:                                                       │
+│  {                                                           │
+│    "config": {...},                                         │
+│    "statistics": {total_qa: 100, ...},                      │
+│    "results": [{qa_list: [...]}]                            │
+│  }                                                           │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│              2️⃣ Supabase 저장 (qa_generation_results)       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  INSERT qa_generation_results {                             │
+│    id: "uuid-001"         ← Supabase에서 자동 생성          │
+│    job_id: "gen_20260312_...",                             │
+│    generation_model: "gemini-3.1-flash",                   │
+│    lang: "ko",                                             │
+│    sampling: "path",                                       │
+│    path_prefix: "혜택 > 구매혜택",                          │
+│    filtered_document_count: 2,                             │
+│    total_qa: 100,                                          │
+│    qa_list: [{q, a, context, hierarchy, ...}],            │
+│    linked_evaluation_id: NULL  ← 아직 평가 안함            │
+│    created_at: now()                                       │
+│  }                                                          │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│       3️⃣ 결과 반환 & UI 표시 (Frontend)                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ✓ 생성 완료!                                               │
+│    • 모델: Gemini 3.1 Flash                                │
+│    • 샘플링: 경로 (혜택 > 구매혜택)                         │
+│    • QA 개수: 100개                                        │
+│    • Supabase ID: uuid-001                                │
+│                                                              │
+│    [평가하기] ← 자동 또는 수동                              │
+│                                                              │
+│  gen_result_id = "uuid-001"  ← 저장                          │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+          (autoEvaluate: YES인 경우)
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│              4️⃣ QA 평가 (evaluation_api.py)                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Layer 1-A: SyntaxValidator (무료)                          │
+│    └─ 구문 정확성 검증                                      │
+│                                                              │
+│  Layer 1-B: DatasetStats (무료)                             │
+│    └─ 다양성, 중복도, 균형도 분석                           │
+│                                                              │
+│  Layer 2: RAGTriadEvaluator (선택 모델)                     │
+│    └─ 관련성, 근거성, 명확성 평가                           │
+│                                                              │
+│  Layer 3: QAQualityEvaluator (선택 모델, CoT)              │
+│    └─ 사실성, 완결성, 근거성 평가                           │
+│                                                              │
+│  결과:                                                       │
+│  {                                                           │
+│    "syntax": {valid: 95, invalid: 5, pass_rate: 95%},      │
+│    "stats": {diversity: 0.85, duplication: 0.1, ...},      │
+│    "rag": {avg_relevance: 0.85, ...},                      │
+│    "quality": {avg_factuality: 0.90, pass_rate: 84.2%},   │
+│    "final_score": 0.858,                                    │
+│    "final_grade": "A"                                       │
+│  }                                                           │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│            5️⃣ Supabase 저장 (evaluation_results)            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  INSERT evaluation_results {                                │
+│    id: "uuid-002"         ← Supabase에서 자동 생성          │
+│    job_id: "eval_20260312_...",                            │
+│    generation_model: "gemini-3.1-flash",                   │
+│    evaluator_model: "gpt-5.1",                             │
+│    lang: "ko",                                             │
+│    total_qa: 100,                                          │
+│    valid_qa: 95,                                           │
+│    syntax_pass_rate: 95.0,                                 │
+│    dataset_quality_score: 7.52,                            │
+│    rag_avg_score: 0.733,                                   │
+│    quality_avg_score: 0.90,                                │
+│    final_score: 0.858,                                     │
+│    final_grade: "A",                                       │
+│    pipeline_results: {...},  ← 4단계 전체 결과              │
+│    created_at: now()                                       │
+│  }                                                           │
+│                                                              │
+│  결과: eval_result_id = "uuid-002"                          │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│    6️⃣ 생성-평가 연결 (Supabase UPDATE)                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  UPDATE qa_generation_results                              │
+│  SET linked_evaluation_id = "uuid-002"                     │
+│  WHERE id = "uuid-001"                                     │
+│                                                              │
+│  결과: 생성과 평가가 1:1로 연결됨                            │
+│                                                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│     7️⃣ 평가 결과 표시 (Frontend Auto Navigate)              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ✓ 평가 완료!                                               │
+│    • 등급: A (85.8%)                                       │
+│    • Syntax: 95.0%                                         │
+│    • Dataset: 7.52/10                                      │
+│    • RAG: 0.733                                            │
+│    • Quality: 0.90                                         │
+│                                                              │
+│  [Evaluation Page로 이동] ← 자동 네비게이션                 │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│       8️⃣ 평가 상세 페이지 (Evaluation Dashboard)            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  SELECT * FROM evaluation_qa_joined                         │
+│  WHERE evaluation_id = "uuid-002"                           │
+│                                                              │
+│  결과: 생성 정보 + 평가 결과를 함께 표시                     │
+│                                                              │
+│  ┌──── QA 생성 정보 ────────────┐                           │
+│  │ 모델: Gemini 3.1 Flash       │                           │
+│  │ 샘플링: 경로                 │                           │
+│  │ 필터: 혜택 > 구매혜택        │                           │
+│  │ QA개수: 100개               │                           │
+│  └──────────────────────────────┘                           │
+│                                                              │
+│  ┌──── 평가 결과 ────────────────┐                           │
+│  │ 평가 모델: GPT-5.1           │                           │
+│  │ 최종 등급: A (85.8%)         │                           │
+│  │ 4단계 점수 그래프             │                           │
+│  │ 개선 추천사항                │                           │
+│  └──────────────────────────────┘                           │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 💾 데이터베이스 상태 변화
+
+| Step | qa_generation_results              | evaluation_results        | 연결 상태      |
+| ---- | ---------------------------------- | ------------------------- | -------------- |
+| 1-2  | ✅ INSERT (id="uuid-001")          | ❌ 없음                   | ❌ NULL        |
+| 3    | ✅ 저장됨                          | ❌ 없음                   | ❌ NULL        |
+| 4-5  | ✅ 저장됨                          | ✅ INSERT (id="uuid-002") | ❌ 아직 미연결 |
+| 6    | ✅ UPDATE (linked_eval="uuid-002") | ✅ 저장됨                 | ✅ 연결됨      |
+| 7-8  | ✅ 검색 가능                       | ✅ 조회 가능              | ✅ JOIN 가능   |
+
+## 🔌 API 통신 시퀀스
+
+```python
+# Frontend → Backend
+1. POST /api/generate
+   {
+     "model": "gemini-3.1-flash",
+     "sampling": "path",
+     "path_prefix": "혜택 > 구매혜택",
+     "samples": 3,
+     "autoEvaluate": True
+   }
+
+# Backend Response (생성 완료)
+2. GET /api/generation/job_id_123
+   {
+     "status": "completed",
+     "result_id": "uuid-001",        ← Supabase ID
+     "total_qa": 100,
+     "config": {...}
+   }
+
+# Frontend 저장 → Backend 호출 (자동 평가)
+3. POST /api/evaluate
+   {
+     "qa_generation_id": "uuid-001",
+     "evaluator_model": "gpt-5.1",
+     "layers": ["syntax", "stats", "rag", "quality"]
+   }
+
+# Backend Response (평가 완료)
+4. GET /api/evaluation/job_id_456
+   {
+     "status": "completed",
+     "result_id": "uuid-002",        ← Supabase ID
+     "final_grade": "A",
+     "final_score": 0.858,
+     "pipeline_results": {...}
+   }
+
+# Backend 내부 (Supabase 연결)
+5. UPDATE qa_generation_results
+   SET linked_evaluation_id = "uuid-002"
+   WHERE id = "uuid-001"
+
+# Frontend 자동 네비게이션
+6. GET /evaluation?gen_id=uuid-001&eval_id=uuid-002
+```
+
+## 📋 구현 체크리스트
+
+### Backend (generation_api.py)
+
+- [ ] `save_qa_generation_to_supabase()` 함수 구현
+- [ ] `POST /api/generate` 완료 후 Supabase 저장
+- [ ] Supabase ID를 클라이언트에 반환
+- [ ] Error handling & logging
+
+### Backend (evaluation_api.py)
+
+- [ ] `save_evaluation_to_supabase()` 함수 구현
+- [ ] `link_generation_to_evaluation()` 함수 구현
+- [ ] 평가 완료 후 Supabase 저장
+- [ ] 생성-평가 링크 자동 업데이트
+
+### Frontend (QAGenerationPanel.tsx)
+
+- [ ] 생성 결과의 Supabase ID 저장
+- [ ] 평가 완료 시 자동 네비게이션
+- [ ] 평가 결과 페이지로 전달
+
+### Frontend (EvaluationPage.tsx)
+
+- [ ] Supabase에서 평가 + 생성 데이터 함께 조회
+- [ ] 생성 정보와 평가 결과 함께 표시
+- [ ] JOIN 뷰(evaluation_qa_joined) 활용
+
+---
+
+## � Supabase 데이터베이스 스키마
+
+### TABLE 1: `qa_generation_results` (QA 생성 결과)
+
+| 컬럼명                   | 타입      | 설명                                                                                     |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------------- |
+| `id`                   | UUID      | Primary Key (자동 생성)                                                                  |
+| `job_id`               | TEXT      | 생성 작업 ID (고유)                                                                      |
+| `metadata`             | JSONB     | `{generation_model, lang, prompt_version}`                                             |
+| `hierarchy`            | JSONB     | `{sampling, category, path_prefix, filtered_document_count}`                           |
+| `stats`                | JSONB     | `{total_qa, total_documents, total_tokens_input, total_tokens_output, estimated_cost}` |
+| `qa_list`              | JSONB     | 전체 QA 배열:`[{q, a, context, hierarchy, docId, ...}]`                                |
+| `linked_evaluation_id` | UUID      | 평가 결과 링크 (NULL until evaluated)                                                    |
+| `created_at`           | TIMESTAMP | 생성 시간                                                                                |
+| `updated_at`           | TIMESTAMP | 수정 시간                                                                                |
+
+**인덱스:**
+
+- `idx_qa_gen_created_at` (created_at DESC)
+- `idx_qa_gen_job_id` (job_id)
+- `idx_qa_gen_linked_eval` (linked_evaluation_id)
+- `idx_qa_gen_metadata_model` (JSONB GIN)
+- `idx_qa_gen_hierarchy_sampling` (JSONB GIN)
+
+### TABLE 2: `evaluation_results` (평가 결과)
+
+| 컬럼명               | 타입      | 설명                                                          |
+| -------------------- | --------- | ------------------------------------------------------------- |
+| `id`               | UUID      | Primary Key (자동 생성)                                       |
+| `job_id`           | TEXT      | 평가 작업 ID (고유)                                           |
+| `metadata`         | JSONB     | `{generation_model, evaluator_model, lang, prompt_version}` |
+| `total_qa`         | INT       | 전체 QA 개수                                                  |
+| `valid_qa`         | INT       | 유효한 QA 개수                                                |
+| `scores`           | JSONB     | 4단계 점수 요약 (아래 참고)                                   |
+| `final_score`      | FLOAT     | 최종 종합 점수 (0-1)                                          |
+| `final_grade`      | TEXT      | 최종 등급 (A+, A, B+, B, C, F)                                |
+| `pipeline_results` | JSONB     | 4단계 전체 평가 결과 (상세)                                   |
+| `interpretation`   | JSONB     | 해석 & 개선 추천사항                                          |
+| `created_at`       | TIMESTAMP | 평가 시간                                                     |
+| `updated_at`       | TIMESTAMP | 수정 시간                                                     |
+
+**4단계 점수 구조 (scores JSONB):**
+
+```json
+{
+  "syntax": {
+    "pass_rate": 95.0
+  },
+  "stats": {
+    "quality_score": 7.5,
+    "diversity": 0.85,
+    "duplication_rate": 0.1
+  },
+  "rag": {
+    "relevance": 0.85,
+    "groundedness": 0.92,
+    "clarity": 0.88,
+    "avg_score": 0.88
+  },
+  "quality": {
+    "factuality": 0.90,
+    "completeness": 0.88,
+    "groundedness": 0.92,
+    "avg_score": 0.90,
+    "pass_rate": 84.2
+  }
+}
+```
+
+**인덱스:**
+
+- `idx_evaluation_created_at` (created_at DESC)
+- `idx_evaluation_final_grade` (final_grade)
+- `idx_evaluation_job_id` (job_id)
+- `idx_evaluation_final_score` (final_score DESC)
+- `idx_evaluation_metadata` (JSONB GIN)
+- `idx_evaluation_scores_*` (JSONB GIN - syntax, stats, rag, quality)
+
+### VIEW: `evaluation_qa_joined`
+
+생성 결과와 평가 결과를 함께 조회하는 조인 뷰:
+
+```sql
+SELECT
+  e.id as evaluation_id,
+  e.job_id as eval_job_id,
+  e.final_grade, e.final_score,
+  
+  q.id as qa_generation_id,
+  q.job_id as gen_job_id,
+  (q.metadata->>'generation_model') as generation_model,
+  (e.metadata->>'evaluator_model') as evaluator_model,
+  (q.metadata->>'lang') as lang,
+  q.total_qa,
+  (q.hierarchy->>'sampling') as sampling,
+  
+  -- 점수 추출
+  (e.scores->'syntax'->>'pass_rate')::FLOAT as syntax_pass_rate,
+  (e.scores->'stats'->>'quality_score')::FLOAT as dataset_quality_score,
+  (e.scores->'rag'->>'avg_score')::FLOAT as rag_avg_score,
+  (e.scores->'quality'->>'avg_score')::FLOAT as quality_avg_score
+FROM evaluation_results e
+LEFT JOIN qa_generation_results q ON e.id = q.linked_evaluation_id
+ORDER BY e.created_at DESC
+```
+
+### 데이터 흐름 (Data Flow)
+
+```
+1. QA 생성 (generation_api.py)
+   ↓
+2. INSERT qa_generation_results (id=uuid-001, job_id="gen_123")
+   ↓
+3. 사용자 결과 확인 후 평가 결정
+   ↓
+4. 4단계 평가 파이프라인 실행
+   ↓
+5. INSERT evaluation_results (id=uuid-002, job_id="eval_456")
+   ↓
+6. UPDATE qa_generation_results SET linked_evaluation_id = uuid-002
+   ↓
+7. 평가 결과 페이지: evaluation_qa_joined 뷰에서 JOIN해서 함께 조회
+```
+
+### FK 관계
+
+```
+qa_generation_results.linked_evaluation_id 
+  → evaluation_results.id (ON DELETE SET NULL)
+```
+
+**특징:**
+
+- Soft FK: 생성 후 평가하기 전까지는 NULL
+- 평가 후 UPDATE로 링크 설정
+- DELETE 시 NULL로 설정 (고아 데이터 방지)
+
+---
+
+## 🀽 배포 전 확인사항
+
+✅ Supabase 프로젝트 생성
+✅ SQL Schema 적용 (SUPABASE_SCHEMA.sql)
+✅ 환경변수 설정 (.env, .env.local)
+✅ RLS 정책 확인
+✅ API Keys 설정
+✅ 로컬 테스트 완료
+✅ CI/CD 설정 (GitHub Actions)

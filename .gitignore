@@ -27,3 +27,4 @@ validated_output/
 
 # package
 frontend/node_modules/
+backend/default.sqlite

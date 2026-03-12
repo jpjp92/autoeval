@@ -38,6 +38,12 @@ def _get_main_generate_qa():
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
+# Supabase 클라이언트
+from config.supabase_client import (
+    save_qa_generation_to_supabase,
+    is_supabase_available,
+)
+
 # ============= Configurations =============
 
 BASE_DIR = Path(__file__).parent.parent
@@ -83,6 +89,7 @@ class GenerationJob:
     message: str = ""
     error: Optional[str] = None
     result_file: Optional[str] = None
+    result_id: Optional[str] = None  # Supabase UUID
     config: Dict[str, Any] = None
     started_at: str = ""
     completed_at: Optional[str] = ""
@@ -120,7 +127,8 @@ class JobManager:
         progress: Optional[int] = None,
         message: Optional[str] = None,
         error: Optional[str] = None,
-        result_file: Optional[str] = None
+        result_file: Optional[str] = None,
+        result_id: Optional[str] = None
     ) -> GenerationJob:
         with self.lock:
             job = self.jobs.get(job_id)
@@ -137,6 +145,8 @@ class JobManager:
                 job.error = error
             if result_file:
                 job.result_file = result_file
+            if result_id:
+                job.result_id = result_id
             if status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
                 job.completed_at = datetime.now().isoformat()
 
@@ -163,6 +173,8 @@ def run_qa_generation(
     Background task: Run actual QA generation using main.py logic
     Falls back to simulation if main.py unavailable
     """
+    import asyncio
+    
     try:
         logger.info(f"[{job_id}] Starting generation: model={model}, lang={lang}, samples={samples}")
         
@@ -180,11 +192,11 @@ def run_qa_generation(
         if main_generate_qa is not None:
             # ===== REAL: Use main.py functions =====
             logger.info(f"[{job_id}] Using real main.py logic")
-            run_qa_generation_real(job_id, model, lang, samples, qa_per_doc, prompt_version, main_generate_qa)
+            asyncio.run(run_qa_generation_real(job_id, model, lang, samples, qa_per_doc, prompt_version, main_generate_qa))
         else:
             # ===== FALLBACK: Simulation =====
             logger.warning(f"[{job_id}] main.py not available, using simulation mode")
-            run_qa_generation_simulation(job_id, model, lang, samples, qa_per_doc, prompt_version)
+            asyncio.run(run_qa_generation_simulation(job_id, model, lang, samples, qa_per_doc, prompt_version))
             
     except Exception as e:
         error_msg = str(e)
@@ -198,7 +210,7 @@ def run_qa_generation(
         )
 
 
-def run_qa_generation_real(
+async def run_qa_generation_real(
     job_id: str,
     model: str,
     lang: str,
@@ -299,19 +311,68 @@ def run_qa_generation_real(
     
     logger.info(f"[{job_id}] Results saved to {result_filename}")
     
+    # ✨ Save to Supabase
+    supabase_id = None
+    try:
+        if is_supabase_available():
+            # Prepare metadata, hierarchy, and stats
+            total_qa = output_data["statistics"]["total_qa"]
+            total_docs = output_data["statistics"]["total_docs"]
+            input_tokens = output_data["statistics"].get("total_input_tokens", 0)
+            output_tokens = output_data["statistics"].get("total_output_tokens", 0)
+            
+            # Estimate cost based on model
+            cost_per_1m_input = {"gemini-3.1-flash": 0.3, "claude-sonnet": 3.0, "gpt-5.2": 1.75}.get(model, 0)
+            cost_per_1m_output = {"gemini-3.1-flash": 1.2, "claude-sonnet": 15.0, "gpt-5.2": 14.0}.get(model, 0)
+            estimated_cost = (input_tokens * cost_per_1m_input + output_tokens * cost_per_1m_output) / 1_000_000
+            
+            supabase_id = await save_qa_generation_to_supabase(
+                job_id=job_id,
+                metadata={
+                    "generation_model": model,
+                    "lang": lang,
+                    "prompt_version": prompt_version
+                },
+                hierarchy={
+                    "sampling": "random",
+                    "category": None,
+                    "path_prefix": None,
+                    "filtered_document_count": total_docs
+                },
+                stats={
+                    "total_qa": total_qa,
+                    "total_documents": total_docs,
+                    "total_tokens_input": input_tokens,
+                    "total_tokens_output": output_tokens,
+                    "estimated_cost": round(estimated_cost, 4)
+                },
+                qa_list=output_data["results"]
+            )
+            
+            if supabase_id:
+                logger.info(f"[{job_id}] ✅ Supabase saved: {supabase_id}")
+            else:
+                logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+        else:
+            logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+    except Exception as e:
+        logger.error(f"[{job_id}] Error saving to Supabase: {e}")
+        # Continue even if Supabase save fails
+    
     # Final update
     job_manager.update_job(
         job_id,
         status=JobStatus.COMPLETED,
         progress=100,
         message="Generation completed successfully",
-        result_file=result_filename
+        result_file=result_filename,
+        result_id=supabase_id
     )
     
     logger.info(f"[{job_id}] Generation completed successfully")
 
 
-def run_qa_generation_simulation(
+async def run_qa_generation_simulation(
     job_id: str,
     model: str,
     lang: str,
@@ -370,13 +431,53 @@ def run_qa_generation_simulation(
         json.dump(result_data, f, ensure_ascii=False, indent=2)
 
     logger.info(f"[{job_id}] Simulated results saved to {result_filename}")
-
+    
+    # ✨ Save to Supabase
+    supabase_id = None
+    try:
+        if is_supabase_available():
+            total_qa = samples * 8  # Simulated QA count
+            
+            supabase_id = await save_qa_generation_to_supabase(
+                job_id=job_id,
+                metadata={
+                    "generation_model": model,
+                    "lang": lang,
+                    "prompt_version": prompt_version
+                },
+                hierarchy={
+                    "sampling": "random",
+                    "category": None,
+                    "path_prefix": None,
+                    "filtered_document_count": samples
+                },
+                stats={
+                    "total_qa": total_qa,
+                    "total_documents": samples,
+                    "total_tokens_input": 0,
+                    "total_tokens_output": 0,
+                    "estimated_cost": 0.0
+                },
+                qa_list=result_data["qa_pairs"]
+            )
+            
+            if supabase_id:
+                logger.info(f"[{job_id}] ✅ Supabase saved (simulation): {supabase_id}")
+            else:
+                logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+        else:
+            logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+    except Exception as e:
+        logger.error(f"[{job_id}] Error saving to Supabase: {e}")
+        # Continue even if Supabase save fails
+    
     job_manager.update_job(
         job_id,
         status=JobStatus.COMPLETED,
         progress=100,
         message="Generation completed (simulation mode)",
-        result_file=result_filename
+        result_file=result_filename,
+        result_id=supabase_id
     )
 
 # ============= API Endpoints =============
@@ -469,6 +570,7 @@ def setup_generation_routes(app: FastAPI):
                 "message": job.message,
                 "error": job.error,
                 "result_file": job.result_file,
+                "result_id": job.result_id,
                 "timestamp": job.started_at,
                 "config": job.config
             }

@@ -1,6 +1,6 @@
 """
 Backend Evaluation API
-RAG Triad 평가를 Backend에서 처리
+구문정확성, 통계, RAG Triad, quality 평가를 Backend에서 처리
 """
 
 import json
@@ -20,12 +20,43 @@ from difflib import SequenceMatcher
 if TYPE_CHECKING:
     from fastapi import FastAPI, BackgroundTasks
 
+# Supabase 클라이언트
+from config.supabase_client import (
+    save_evaluation_to_supabase,
+    link_generation_to_evaluation,
+    is_supabase_available,
+)
+
 logger = logging.getLogger(__name__)
 
-# Suppress verbose Google AI logging
+# TruLens 
+try:
+    from trulens.core import TruSession
+    from trulens.core import Metric, Selector
+    from trulens.apps.app import TruApp
+    import numpy as np
+    TRULENS_AVAILABLE = True
+except ImportError:
+    TRULENS_AVAILABLE = False
+    logger.warning("TruLens libraries not available. Falling back to custom evaluation.")
+
+# 중앙 모델 설정 임포트
+try:
+    try:
+        from backend.config.models import MODEL_CONFIG
+    except ImportError:
+        from config.models import MODEL_CONFIG
+except ImportError:
+    logger.warning("MODEL_CONFIG import failed. Using fallback mapping.")
+    MODEL_CONFIG = {}
+
+# Suppress verbose logging
 logging.getLogger("google.generativeai").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("trulens.core.utils.evaluator").setLevel(logging.WARNING)
+logging.getLogger("trulens.core.database.sqlalchemy").setLevel(logging.WARNING)
+logging.getLogger("alembic").setLevel(logging.WARNING)
 
 # ============= Helper to import at runtime =============
 
@@ -314,65 +345,133 @@ class RAGTriadEvaluator:
             evaluator_model: 평가 모델명 (gemini-2.5-flash, claude-haiku-4-5, gpt-5.1-*)
         """
         self.judge_model = None
-        self.evaluator_model = evaluator_model
+        self.evaluator_model = self._get_model_id(evaluator_model)
+        self.tru_session = TruSession() if TRULENS_AVAILABLE else None
+        self.feedbacks = []  # Attribute 항상 초기화
         
+        # TruLens Feedback Functions 설정 (모델 초기화와 별개로 수행 가능하도록)
+        if TRULENS_AVAILABLE:
+            try:
+                self._setup_trulens_metrics()
+            except Exception as e:
+                logger.warning(f"Failed to setup trulens metrics: {e}")
+
         try:
             # Determine which provider and initialize appropriate client
-            if "gemini" in evaluator_model.lower():
+            if "gemini" in self.evaluator_model.lower():
                 # Google Gemini
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 api_key = os.getenv("GOOGLE_API_KEY")
                 if api_key:
                     self.judge_model = ChatGoogleGenerativeAI(
-                        model=evaluator_model,
+                        model=self.evaluator_model,
                         google_api_key=api_key,
                         temperature=0
                     )
-                    logger.info(f"✓ Judge model initialized (Google): {evaluator_model}")
+                    logger.info(f"✓ Judge model initialized (Google): {self.evaluator_model}")
                 else:
                     logger.warning("GOOGLE_API_KEY not set for evaluator")
                     
-            elif "claude" in evaluator_model.lower():
+            elif "claude" in self.evaluator_model.lower():
                 # Anthropic Claude
                 from langchain_anthropic import ChatAnthropic
                 api_key = os.getenv("ANTHROPIC_API_KEY")
                 if api_key:
                     self.judge_model = ChatAnthropic(
-                        model=evaluator_model,
+                        model=self.evaluator_model,
                         api_key=api_key,
                         temperature=0
                     )
-                    logger.info(f"✓ Judge model initialized (Anthropic): {evaluator_model}")
+                    logger.info(f"✓ Judge model initialized (Anthropic): {self.evaluator_model}")
                 else:
                     logger.warning("ANTHROPIC_API_KEY not set for evaluator")
                     
-            elif "gpt" in evaluator_model.lower():
+            elif "gpt" in self.evaluator_model.lower():
                 # OpenAI GPT
                 from langchain_openai import ChatOpenAI
                 api_key = os.getenv("OPENAI_API_KEY")
                 if api_key:
                     self.judge_model = ChatOpenAI(
-                        model=evaluator_model,
+                        model=self.evaluator_model,
                         api_key=api_key,
                         temperature=0
                     )
-                    logger.info(f"✓ Judge model initialized (OpenAI): {evaluator_model}")
+                    logger.info(f"✓ Judge model initialized (OpenAI): {self.evaluator_model}")
                 else:
                     logger.warning("OPENAI_API_KEY not set for evaluator")
             else:
                 logger.warning(f"Unknown evaluator model: {evaluator_model}")
                 
         except Exception as e:
-            logger.warning(f"Failed to initialize judge model ({evaluator_model}): {e}")
+            logger.warning(f"Failed to initialize judge model ({self.evaluator_model}): {e}")
+
+    def _get_model_id(self, model_name: str) -> str:
+        """약칭에서 실제 API model_id로 변환 (MODEL_CONFIG 기준)"""
+        if model_name in MODEL_CONFIG:
+            return MODEL_CONFIG[model_name].get("model_id", model_name)
+            
+        # Fallback mapping (임시)
+        fallback_mapping = {
+            "claude-haiku": "claude-3-haiku-20240307",
+            "claude-sonnet": "claude-3-5-sonnet-20241022",
+            "gemini-flash": "gemini-1.5-flash",
+            "gemini-pro": "gemini-1.5-pro",
+            "gpt-4o": "gpt-4o",
+            "gpt-3.5": "gpt-3.5-turbo",
+        }
+        for short_name, full_id in fallback_mapping.items():
+            if short_name in model_name.lower():
+                return full_id
+        return model_name
+
+    def _setup_trulens_metrics(self):
+        """TruLens Metric 객체 생성"""
+        self.f_relevance = Metric(
+            implementation=self.evaluate_relevance,
+            name="Relevance",
+            selectors={
+                "question": Selector.select_record_input(),
+                "answer": Selector.select_record_output(),
+            },
+        )
+        
+        self.f_groundedness = Metric(
+            implementation=self.evaluate_groundedness,
+            name="Groundedness",
+            selectors={
+                "answer": Selector.select_record_output(),
+                "context": Selector.select_context(collect_list=True),
+            },
+        )
+        
+        self.f_clarity = Metric(
+            implementation=self.evaluate_clarity,
+            name="Clarity",
+            selectors={
+                "question": Selector.select_record_input(),
+                "answer": Selector.select_record_output(),
+            },
+        )
+        self.feedbacks = [self.f_relevance, self.f_groundedness, self.f_clarity]
 
     def _extract_score(self, text: str) -> float:
-        """0-10 범위의 점수를 추출하여 0-1로 정규화"""
+        """0-10 범위의 점수를 추출하여 0-1로 정규화
+        CoT 응답에서 마지막 줄을 우선 파싱"""
         try:
             import re
-            # 첫 번째 줄에서 0-10 범위의 숫자 추출
             lines = text.strip().split('\n')
-            for line in lines:
-                match = re.search(r'\b([0-9]|10)\b', line)
+            # 마지막 줄부터 거꾸로 검색 (CoT 프롬프트는 마지막 줄에 점수를 요청)
+            for line in reversed(lines):
+                line = line.strip()
+                if not line:
+                    continue
+                # 순수 정수 (0-10)
+                match = re.fullmatch(r'([0-9]|10)', line)
+                if match:
+                    score = int(match.group())
+                    return min(10, max(0, score)) / 10.0
+                # 줄 안에 0-10 정수 포함
+                match = re.search(r'\b(10|[0-9])\b', line)
                 if match:
                     score = int(match.group())
                     return min(10, max(0, score)) / 10.0
@@ -496,37 +595,6 @@ Return ONLY a single integer (0-10) with no explanation."""
         except Exception as e:
             logger.warning(f"Clarity evaluation error: {e}")
             return 0.65
-            response = self.judge_model.invoke(prompt)
-            score_str = response.content.strip()
-            score = float(score_str)
-            return max(0, min(1, score))
-        except Exception as e:
-            logger.error(f"Groundedness evaluation error: {e}")
-            return 0.7
-
-    def evaluate_clarity(self, question: str, answer: str) -> float:
-        """답변의 명확성 평가 (0-1)"""
-        if not self.judge_model:
-            return 0.8
-        
-        try:
-            prompt = f"""
-            다음 질문에 대한 답변의 명확성을 평가하세요 (0-1).
-            (1: 매우 명확함, 0: 매우 불명확함)
-            
-            질문: {question}
-            답변: {answer}
-            
-            점수만 숫자로 응답하세요:
-            """
-            
-            response = self.judge_model.invoke(prompt)
-            score_str = response.content.strip()
-            score = float(score_str)
-            return max(0, min(1, score))
-        except Exception as e:
-            logger.error(f"Clarity evaluation error: {e}")
-            return 0.7
 
 
 # ============= Helper Functions =============
@@ -562,92 +630,129 @@ def clean_markdown(text: str) -> str:
 # ============= Layer 3: QA Quality Evaluator =============
 
 class QAQualityEvaluator:
-    """QA 품질 평가 (Layer 3) - LLM CoT 기반"""
+    """QA 품질 평가 (Layer 3) - LLM CoT 기반 (멀티 프로바이더 지원)"""
     
     def __init__(self, model: str = "gpt-5.1"):
-        """LLM 기반 평가기 초기화"""
-        self.model = model
+        """LLM 기반 평가기 초기화 - OpenAI/Gemini/Anthropic 지원"""
+        self.model_display = model
+        self.model_id = self._get_model_id(model)
+        self.client = None  # legacy OpenAI client (OpenAI 전용)
+        self.judge_model = None  # langchain 기반 (Gemini/Anthropic)
+        self.provider = self._detect_provider(self.model_id)
+        
         try:
-            from openai import OpenAI
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                self.client = OpenAI(api_key=api_key)
-                logger.info(f"✓ QAQualityEvaluator initialized (model={model})")
+            if self.provider == "openai":
+                from openai import OpenAI
+                api_key = os.getenv("OPENAI_API_KEY")
+                if api_key:
+                    self.client = OpenAI(api_key=api_key)
+                    logger.info(f"✓ QAQualityEvaluator initialized (OpenAI): {self.model_id}")
+                else:
+                    logger.warning("OPENAI_API_KEY not set for QAQualityEvaluator")
+
+            elif self.provider == "google":
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                api_key = os.getenv("GOOGLE_API_KEY")
+                if api_key:
+                    self.judge_model = ChatGoogleGenerativeAI(
+                        model=self.model_id,
+                        google_api_key=api_key,
+                        temperature=0
+                    )
+                    logger.info(f"✓ QAQualityEvaluator initialized (Google): {self.model_id}")
+                else:
+                    logger.warning("GOOGLE_API_KEY not set for QAQualityEvaluator")
+
+            elif self.provider == "anthropic":
+                from langchain_anthropic import ChatAnthropic
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if api_key:
+                    self.judge_model = ChatAnthropic(
+                        model=self.model_id,
+                        api_key=api_key,
+                        temperature=0
+                    )
+                    logger.info(f"✓ QAQualityEvaluator initialized (Anthropic): {self.model_id}")
+                else:
+                    logger.warning("ANTHROPIC_API_KEY not set for QAQualityEvaluator")
+
             else:
-                self.client = None
-                logger.warning("OPENAI_API_KEY not set for QAQualityEvaluator")
-        except ImportError:
-            self.client = None
-            logger.warning("OpenAI library not available")
+                logger.warning(f"Unknown provider for model: {model}")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize QAQualityEvaluator ({self.model_id}): {e}")
+
+    def _get_model_id(self, model_name: str) -> str:
+        """MODEL_CONFIG에서 model_id 반환"""
+        if model_name in MODEL_CONFIG:
+            return MODEL_CONFIG[model_name].get("model_id", model_name)
+        return model_name
+
+    def _detect_provider(self, model_id: str) -> str:
+        """model_id로 provider 감지"""
+        m = model_id.lower()
+        if "gemini" in m:
+            return "google"
+        if "claude" in m:
+            return "anthropic"
+        return "openai"  # default
     
     def _call_llm(self, prompt: str) -> str:
         """LLM 호출 (간단 응답)"""
-        if not self.client:
-            return "5"
-        
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Respond with ONLY a single digit (0-10). No explanation."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0,
-                max_completion_tokens=100,
-            )
-            
-            if not response or not response.choices:
-                return "5"
-            
-            result = response.choices[0].message.content
-            if result is None:
-                return "5"
-            
-            result = result.strip()
-            digits = [c for c in result if c.isdigit()]
-            if not digits:
-                return "5"
-            
-            return digits[0]
-            
+            if self.provider == "openai" and self.client:
+                response = self.client.chat.completions.create(
+                    model=self.model_id,
+                    messages=[
+                        {"role": "system", "content": "Respond with ONLY a single digit (0-10). No explanation."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,
+                    max_completion_tokens=100,
+                )
+                if not response or not response.choices:
+                    return "5"
+                result = (response.choices[0].message.content or "").strip()
+                digits = [c for c in result if c.isdigit()]
+                return digits[0] if digits else "5"
+
+            elif self.judge_model:
+                response = self.judge_model.invoke(
+                    f"Respond with ONLY a single digit (0-10). No explanation.\n\n{prompt}"
+                )
+                result = (response.content or "").strip()
+                digits = [c for c in result if c.isdigit()]
+                return digits[0] if digits else "5"
+
         except Exception as e:
             logger.warning(f"LLM API error: {e}")
-            return "5"
+        return "5"
     
     def _call_llm_with_reasoning(self, prompt: str) -> str:
         """CoT 방식 LLM 호출"""
-        if not self.client:
-            return "Score: 5"
-        
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a strict but fair data quality auditor. Think step by step, then provide your score."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0,
-                max_completion_tokens=300,
-            )
-            
-            if not response or not response.choices:
-                return "Score: 5"
-            
-            result = response.choices[0].message.content
-            if result is None:
-                return "Score: 5"
-            
-            return result.strip()
-            
+            if self.provider == "openai" and self.client:
+                response = self.client.chat.completions.create(
+                    model=self.model_id,
+                    messages=[
+                        {"role": "system", "content": "You are a strict but fair data quality auditor. Think step by step, then provide your score."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,
+                    max_completion_tokens=300,
+                )
+                if not response or not response.choices:
+                    return "Score: 5"
+                return (response.choices[0].message.content or "Score: 5").strip()
+
+            elif self.judge_model:
+                sys_prompt = "You are a strict but fair data quality auditor. Think step by step, then provide your score."
+                response = self.judge_model.invoke(f"{sys_prompt}\n\n{prompt}")
+                return (response.content or "Score: 5").strip()
+
         except Exception as e:
             logger.warning(f"LLM reasoning error: {e}")
-            return "Score: 5"
+        return "Score: 5"
     
     def _parse_cot_score(self, raw: str) -> float:
         """CoT 응답에서 Score 파싱"""
@@ -893,16 +998,47 @@ def run_full_evaluation_pipeline(
                 message=f"3️⃣ RAG Triad 평가 진행 중... (0/{len(valid_qa)})",
                 progress=45
             )
-            eval_manager.update_layer_status(job_id, "rag", "running", 5, f"관연성, 근거성, 명확성 평가 중... (0/{len(valid_qa)})")
+            eval_manager.update_layer_status(job_id, "rag", "running", 5, f"관련성, 근거성, 명확성 평가 중... (0/{len(valid_qa)})")
         
         rag_evaluator = RAGTriadEvaluator(evaluator_model)
         rag_scores = []
         
+        # TruLens 기록을 원할 경우 TruApp을 사용할 수 있지만, 
+        # 여기서는 개별 QA 단위로 직접 evaluate 메서드 호출 + 필요시 TruLens 기록 패턴 유지
+        
         for i, qa in enumerate(valid_qa):
             try:
-                relevance = rag_evaluator.evaluate_relevance(qa.get("q", ""), qa.get("a", ""))
-                groundedness = rag_evaluator.evaluate_groundedness(qa.get("a", ""), qa.get("context", ""))
-                clarity = rag_evaluator.evaluate_clarity(qa.get("q", ""), qa.get("a", ""))
+                question = qa.get("q", "")
+                answer = qa.get("a", "")
+                context = qa.get("context", "")
+                
+                # TruLens를 사용할 수 있는 환경이라면, TruApp 패턴으로 레코딩 시도
+                if TRULENS_AVAILABLE:
+                    # SimpleRAG와 유사한 임시 클래스 또는 구조로 TruApp 래핑
+                    class MockRAG:
+                        def __init__(self, q, a, ctx):
+                            self.q = q
+                            self.a = a
+                            self.ctx = ctx
+                        def query(self, question):
+                            return self.a
+                    
+                    mock_rag = MockRAG(question, answer, context)
+                    tru_rag = TruApp(
+                        mock_rag,
+                        app_name="AutoEval_RAG_Pipeline",
+                        app_version=f"eval_{job_id[:8]}",
+                        feedbacks=rag_evaluator.feedbacks
+                    )
+                    
+                    with tru_rag as recording:
+                        relevance = rag_evaluator.evaluate_relevance(question, answer)
+                        groundedness = rag_evaluator.evaluate_groundedness(answer, context)
+                        clarity = rag_evaluator.evaluate_clarity(question, answer)
+                else:
+                    relevance = rag_evaluator.evaluate_relevance(question, answer)
+                    groundedness = rag_evaluator.evaluate_groundedness(answer, context)
+                    clarity = rag_evaluator.evaluate_clarity(question, answer)
                 
                 avg_score = (relevance + groundedness + clarity) / 3
                 
@@ -934,7 +1070,7 @@ def run_full_evaluation_pipeline(
                 })
         
         # Calculate summary
-        valid_scores = [s["avg_score"] for s in rag_scores if "relevance" in s]
+        # 에러가 발생한 항목도 avg_score가 0.65(fallback)로 들어있으므로 모두 포함
         results["layers"]["rag"] = {
             "evaluated_count": len(valid_qa),
             "qa_scores": rag_scores,
@@ -942,7 +1078,7 @@ def run_full_evaluation_pipeline(
                 "avg_relevance": round(sum(s.get("relevance", 0.65) for s in rag_scores) / max(len(rag_scores), 1), 3),
                 "avg_groundedness": round(sum(s.get("groundedness", 0.65) for s in rag_scores) / max(len(rag_scores), 1), 3),
                 "avg_clarity": round(sum(s.get("clarity", 0.65) for s in rag_scores) / max(len(rag_scores), 1), 3),
-                "avg_score": round(sum(valid_scores) / max(len(valid_scores), 1), 3),
+                "avg_score": round(sum(s.get("avg_score", 0.65) for s in rag_scores) / max(len(rag_scores), 1), 3),
             }
         }
         
@@ -969,7 +1105,7 @@ def run_full_evaluation_pipeline(
             )
             eval_manager.update_layer_status(job_id, "quality", "running", 5, f"사실성, 완전성, 근거성 CoT 평가 중... (0/{len(valid_qa)})")
         
-        quality_evaluator = QAQualityEvaluator(evaluator_model if "gpt" in evaluator_model else "gpt-5.1")
+        quality_evaluator = QAQualityEvaluator(evaluator_model)
         quality_scores = []
         passed = 0
         
@@ -1057,7 +1193,8 @@ def run_evaluation(
     result_filename: str,
     limit: Optional[int] = None,
     evaluator_model: str = "gemini-2.5-flash",
-    eval_manager: Optional[EvaluationManager] = None
+    eval_manager: Optional[EvaluationManager] = None,
+    generation_id: Optional[str] = None
 ):
     """
     Background task: 4단계 평가 파이프라인
@@ -1067,6 +1204,8 @@ def run_evaluation(
     3️⃣ RAGTriadEvaluator - 기존 평가
     4️⃣ QAQualityEvaluator - LLM CoT 평가
     """
+    import asyncio
+    
     if not eval_manager:
         return
     
@@ -1202,6 +1341,56 @@ def run_evaluation(
         
         logger.info(f"[{job_id}] 평가 완료: {report_filename}")
         
+        # ✨ Save to Supabase
+        supabase_eval_id = None
+        try:
+            if is_supabase_available():
+                # Prepare scores structure
+                scores = {
+                    "syntax": {"pass_rate": syntax_data.get("pass_rate", 100.0)},
+                    "stats": {
+                        "quality_score": stats_data.get("integrated_score", 5.0),
+                        "diversity": stats_data.get("diversity", 0.0),
+                        "duplication_rate": stats_data.get("duplication_rate", 0.0)
+                    },
+                    "rag": rag_data.get("summary", {}) if rag_data else {},
+                    "quality": quality_data.get("summary", {}) if quality_data else {}
+                }
+                
+                supabase_eval_id = asyncio.run(save_evaluation_to_supabase(
+                    job_id=job_id,
+                    metadata={
+                        "evaluator_model": evaluator_model,
+                        "lang": "ko",
+                        "prompt_version": "v1"
+                    },
+                    total_qa=len(qa_list),
+                    valid_qa=valid_qa_count,
+                    scores=scores,
+                    final_score=round(final_score, 3),
+                    final_grade=grade,
+                    pipeline_results=pipeline_results,
+                    interpretation=eval_report.get("interpretation", {})
+                ))
+                
+                if supabase_eval_id:
+                    logger.info(f"[{job_id}] ✅ Evaluation Supabase saved: {supabase_eval_id}")
+                    
+                    # ✨ Link to generation if generation_id provided
+                    if generation_id:
+                        linked = asyncio.run(link_generation_to_evaluation(generation_id, supabase_eval_id))
+                        if linked:
+                            logger.info(f"[{job_id}] ✅ Linked to generation: {generation_id}")
+                        else:
+                            logger.warning(f"[{job_id}] ⚠️ Failed to link generation {generation_id}")
+                else:
+                    logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+            else:
+                logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+        except Exception as e:
+            logger.error(f"[{job_id}] Error saving to Supabase: {e}")
+            # Continue even if Supabase save fails
+        
         # Job 상태 업데이트
         eval_manager.update_job(
             job_id,
@@ -1274,6 +1463,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
         {
             "result_filename": "qa_model_lang_v1_timestamp.json",
             "evaluator_model": optional(str, default="gemini-2.5-flash"),
+            "generation_id": optional(str, Supabase ID from generation),
             "limit": optional(int)
         }
         """
@@ -1286,6 +1476,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             
             result_filename = body.get("result_filename") if isinstance(body, dict) else None
             evaluator_model = body.get("evaluator_model", "gemini-2.5-flash") if isinstance(body, dict) else "gemini-2.5-flash"
+            generation_id = body.get("generation_id") if isinstance(body, dict) else None
             limit = body.get("limit") if isinstance(body, dict) else None
             
             if not result_filename:
@@ -1300,6 +1491,8 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             _ = eval_manager.create_job(job_id, result_filename)
             
             logger.info(f"Starting evaluation job: {job_id} for {result_filename} with evaluator_model={evaluator_model}")
+            if generation_id:
+                logger.info(f"[{job_id}] Linked to generation ID: {generation_id}")
             
             # 백그라운드 태스크로 평가 시작
             background_tasks.add_task(
@@ -1308,7 +1501,8 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 result_filename=result_filename,
                 limit=limit,
                 evaluator_model=evaluator_model,
-                eval_manager=eval_manager
+                eval_manager=eval_manager,
+                generation_id=generation_id
             )
             
             return {
@@ -1316,6 +1510,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "job_id": job_id,
                 "message": "Evaluation started",
                 "evaluator_model": evaluator_model,
+                "generation_id": generation_id,
                 "timestamp": datetime.now().isoformat()
             }
         except Exception as e:

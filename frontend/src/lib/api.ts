@@ -34,6 +34,8 @@ interface GenerateRequest {
 
 interface EvaluateRequest {
   result_filename: string;
+  evaluator_model?: string;
+  generation_id?: string;
   include_l1?: boolean;
   include_l2?: boolean;
 }
