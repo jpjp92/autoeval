@@ -12,8 +12,10 @@ import logging
 import threading
 import queue
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
+from threading import Lock
 from typing import Optional, Dict, Any
 from enum import Enum
 from dataclasses import dataclass, asdict
@@ -50,6 +52,26 @@ BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 
 logger = logging.getLogger(__name__)
+
+# 프로바이더별 최대 동시 생성 workers
+# 생성은 평가보다 요청당 토큰이 무거우므로 평가보다 낮게 설정
+#   - gemini-3.1-flash: RPM 1,000 / TPM 2M, 문서당 ~5K tok → 5
+#   - claude-sonnet:    RPM 50 / Output TPM 8K (병목) → 2
+#   - gpt-5.2:          RPM 500 / TPM 500K, 문서당 ~5K tok → 5
+GENERATION_MAX_WORKERS: Dict[str, int] = {
+    "anthropic": 2,   # claude-sonnet Output TPM 8K 병목
+    "google":    5,   # gemini-3.1-flash Tier 1 Paid
+    "openai":    5,   # gpt-5.1 / gpt-5.2
+}
+
+def _get_generation_workers(model: str) -> int:
+    """model 이름으로 provider 감지 → 권장 generation workers 반환"""
+    m = model.lower()
+    if "claude" in m:
+        return GENERATION_MAX_WORKERS["anthropic"]
+    if "gemini" in m:
+        return GENERATION_MAX_WORKERS["google"]
+    return GENERATION_MAX_WORKERS["openai"]
 
 # ============= Job Status Enum =============
 
@@ -241,41 +263,55 @@ async def run_qa_generation_real(
     logger.info(f"[{job_id}] Loaded {len(items)} documents")
     job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} documents")
     
-    # Generate QA for each document
-    results = []
-    total_input_tokens = 0
-    total_output_tokens = 0
-    
-    for i, item in enumerate(items, 1):
+    # Generate QA for each document (병렬 처리)
+    max_workers = _get_generation_workers(model)
+    logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 문서 × workers={max_workers} ({model})")
+
+    results_map: Dict[int, Any] = {}
+    token_lock = Lock()
+    completed_count = 0
+    progress_lock = Lock()
+
+    def _generate_one(args):
+        idx, item = args
         try:
-            logger.info(f"[{job_id}] Generating QA for document {i}/{len(items)}: {item.get('docId', 'unknown')}")
-            
-            # Call main.py's generate_qa function
+            logger.info(f"[{job_id}] Generating QA for document {idx+1}/{len(items)}: {item.get('docId', 'unknown')}")
             result = main_generate_qa(item, model, lang, prompt_version)
-            
-            # Apply qa_per_doc limit if specified
             if qa_per_doc and result.get("qa_list"):
                 result["qa_list"] = result["qa_list"][:qa_per_doc]
-            
-            results.append(result)
-            
-            # Track tokens
-            total_input_tokens += result.get("input_tokens", 0)
-            total_output_tokens += result.get("output_tokens", 0)
-            
-            # Update progress
-            progress = 10 + int((i / len(items)) * 80)  # 10-90%
+            return idx, result, None
+        except Exception as e:
+            logger.warning(f"[{job_id}] Failed to generate QA for document {idx+1}: {e}")
+            return idx, None, str(e)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_generate_one, (i, item)): i
+            for i, item in enumerate(items)
+        }
+        for future in as_completed(futures):
+            idx, result, error = future.result()
+
+            with progress_lock:
+                completed_count += 1
+                cnt = completed_count
+
+            if result is not None:
+                results_map[idx] = result
+                with token_lock:
+                    total_input_tokens  += result.get("input_tokens", 0)
+                    total_output_tokens += result.get("output_tokens", 0)
+
+            progress = 10 + int(cnt / len(items) * 80)  # 10~90%
             job_manager.update_job(
                 job_id,
                 progress=progress,
-                message=f"Generating QA pairs ({i}/{len(items)})..."
+                message=f"Generating QA pairs ({cnt}/{len(items)})..."
             )
-            
-        except Exception as e:
-            logger.warning(f"[{job_id}] Failed to generate QA for document {i}: {e}")
-            # Continue with next document instead of failing
-            continue
-    
+
+    # 인덱스 순서대로 정렬
+    results = [results_map[i] for i in range(len(items)) if i in results_map]
+
     if not results:
         raise Exception("No QA pairs were generated")
     
@@ -660,43 +696,3 @@ def setup_generation_routes(app: FastAPI):
         except Exception as e:
             logger.error(f"Error cancelling job: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-
-# ============= Usage in main.py =============
-#
-# This module integrates with the main.py QA generation logic:
-#
-# 1. Direct Function Call (main.py available)
-#    ├─ Main.py's generate_qa() is called directly
-#    ├─ Real API calls (Anthropic, Google, OpenAI)
-#    └─ Actual QA pairs are generated
-#
-# 2. Fallback Simulation (main.py not available)
-#    ├─ Used during development/testing
-#    ├─ Simulates QA generation with progress
-#    └─ Still creates result files for testing
-#
-# Flow:
-#   Frontend → POST /api/generate
-#       ↓
-#   Backend → generate_qa() endpoint (returns job_id)
-#       ↓
-#   Background task → run_qa_generation()
-#       ├─if MAIN_PY_AVAILABLE:
-#       │   └─ Call main.py's generate_qa() for each document
-#       │   (Uses real API keys from environment)
-#       └─else:
-#           └─ Use simulation mode (for testing)
-#
-# Required Environment Variables:
-#   - ANTHROPIC_API_KEY
-#   - GOOGLE_API_KEY
-#   - OPENAI_API_KEY
-#
-# Data Location:
-#   - Input: ref/data/data_2026-03-06_normalized.json
-#   - Output: output/qa_*.json
-#
-# Add to FastAPI app initialization:
-# 
-# app = FastAPI()
-# setup_generation_routes(app)
