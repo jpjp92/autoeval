@@ -1,69 +1,70 @@
 # 🚀 Project Implementation Plan (2026-03-12)
 
-이 문서는 Supabase Vector DB 통합, Hierarchy 기반 필터링, 그리고 UI/UX 개선을 위한 통합 실행 계획을 정의합니다.
+이 문서는 사용자가 제안한 체계적인 워크플로우에 따라 데이터 규격화부터 최종 리포트 구성까지의 실행 계획을 정의합니다.
 
 ---
 
-## 🏗️ Phase 1: Vector DB & Data Ingestion (Backend)
+## 🛠️ Phase 1: 데이터 규격화 (Vector DB Integration)
 
-현재의 JSON 기반 정적 데이터를 Supabase Vector DB(`pgvector`)로 전환하여 대용량 문서 처리 및 유사도 검색을 지원합니다.
+모든 형태의 입력 데이터(PDF, DOCS, Markdown 등)를 정형화된 벡터 데이터로 변환하여 관리합니다.
 
-### 1.1 Supabase Schema 설정
-- `pgvector` 확장 활성화.
-- `doc_chunks` 테이블 생성:
-  - `id`: uuid (PK)
-  - `content`: text (문서 청크 내용)
-  - `metadata`: jsonb (파일명, 페이지, hierarchy 정보 등)
-  - `embedding`: vector(3072) -- **Gemini Embedding 2** 기준
-- `HNSW` 인덱스 생성으로 검색 성능 최적화.
+### 1.1 Supabase Vector Schema 구축
+- `pgvector` 확장 활성화 및 `doc_chunks` 테이블 생성.
+- **Gemini Embedding 2** (3072차원)를 기준으로 벡터 필드 설정.
+- 데이터의 출처, 메타데이터, 청크 내용을 포함하는 규격화된 스키마 정의.
 
-### 1.2 Data Ingestion Pipeline (`ingestion_api.py`) [NEW]
-- **File Support**: PDF, DOCS, Markdown 지원.
-- **Embedding Model**: **Gemini Embedding 2** (`text-multimodal-embedding-002`) 활용.
-  - 네이티브 멀티모달 지원 (텍스트, 이미지, PDF 직접 처리 가능).
-  - 8192 토큰 컨텍스트.
-- **Logic**:
-  - `RecursiveCharacterTextSplitter`로 의미 단위 청킹.
-  - 각 청크에 대해 임베딩 생성 및 Supabase 저장.
+### 1.2 Ingestion 파이프라인 (`ingestion_api.py`)
+- 다양한 문서 포맷 지원 및 텍스트 추출.
+- `RecursiveCharacterTextSplitter`를 이용한 논리적 청킹.
+- Gemini Embedding 2를 통한 네이티브 멀티모달 임베딩 생성 및 저장.
 
 ---
 
-## 📂 Phase 2: Hierarchy 기반 필터링 & 샘플링
+## 📂 Phase 2: 데이터 기반 Hierarchy 구성
 
-대량의 문서 중 특정 카테고리의 문서만 선택하여 QA를 생성하고, 중복 생성을 방지합니다.
+규격화된 데이터를 바탕으로 서비스의 계층 구조를 자동/수동으로 분류하고 관리합니다.
 
-### 2.1 API 연동 (`generation_api.py` [MODIFY])
-- `hierarchy_filter` (Level 1, 2, 3) 파라미터 추가.
-- **Stratified Sampling (균형 샘플링)**:
-  - 선택된 범위 내에서 하위 카테고리별로 고르게 문서를 추출.
-  - **중복 제외**: Supabase 기록을 조회하여 이미 QA가 생성된 문서는 우선 제외.
+### 2.1 계층 구조 생성 및 매핑
+- 저장된 문서의 메타데이터를 분석하여 Level 1~3의 계층 구조 자동 제안.
+- 사용자가 직접 계층을 수정하거나 매핑할 수 있는 관리 기능 제공.
 
-### 2.2 Hierarchy 데이터 관리
-- `GET /api/hierarchy`: UI 구성을 위한 전체 계층 구조 반환.
-- `GET /api/hierarchy/usage`: 각 계층별 문서 소진 현황(전체/미사용) 반환.
+### 2.2 Hierarchy Navigator UI
+- **Searchable Sidebar**: 수백 개의 카테고리를 직관적으로 탐색.
+- **Real-time Stats**: 각 계층별 문서 보유량 및 사용 현황 실시간 모니터링.
 
 ---
 
-## 🎨 Phase 3: Frontend & UI/UX 개선
+## 🤖 Phase 3: 데이터 생성 및 평가 (QA Pipeline)
 
-사용자가 문서를 쉽게 탐색하고, 프리미엄한 디자인 경험을 느낄 수 있도록 UI를 개편합니다.
+구성된 계층 구조와 정밀한 벡터 검색을 활용하여 고품질의 QA를 생성하고 평가합니다.
 
-### 3.1 Hierarchy Navigator [NEW]
-- **Searchable Sidebar**: 100개가 넘는 Level 3 카테고리를 검색하고 멀티 선택할 수 있는 탐색기.
-- **Real-time Badges**: "미사용 12 / 전체 48"과 같은 상태를 실시간 표시.
+### 3.1 계층 기반 생성 로직
+- 특정 Hierarchy 영역을 타겟팅한 QA 생성.
+- **균형 샘플링**: 하위 카테고리별로 고르게 문서를 추출하여 커버리지 극대화.
+- **중복 방지**: 기존 생성 이력과의 docId 매칭을 통한 반복 생성 방지.
 
-### 3.2 UI Aesthetic Theme 적용
-- **Option A: Glassmorphism (Default)**: 반투명 유리 질감, `backdrop-blur`, 부드러운 그라데이션.
-- **Option B: Neo Brutalism**: 강한 테두리, 높은 대비, 굵은 폰트 중심의 힙한 도구 느낌.
-- 유저 선택 또는 단계별 적용 검토.
+### 3.2 4단계 병렬 평가
+- Syntax, Stats, RAG Triad, Quality의 4단계 평가 수행.
+- 계층별 품질 점수(Quality Score) 추적.
 
 ---
 
-## 🧪 Phase 4: Verification & Test
+## 📊 Phase 4: 리포트 구성 (Reporting & Insights)
 
-1. **Unit Test**: PDF 추출 및 Gemini 임베딩 생성 정확도 검증.
-2. **Search Test**: 특정 키워드/계층 검색 시 관련 청크 반환 여부 확인.
-3. **E2E Test**: 파일 업로드 -> 벡터 저장 -> 계층 필터링 -> QA 생성 -> 평가 및 저장 전과정 확인.
+생성 및 평가 결과를 종합하여 인사이트를 제공하는 최종 리포트를 구성합니다.
+
+### 4.1 통합 대시보드
+- 전체 데이터셋 건강도(Health Score) 가시화.
+- 계층별/모델별 성능 비교 분석 리포트.
+- 개선이 필요한 '취약 계층' 자동 탐지 및 추천.
+
+---
+
+## 🧪 Verification Plan
+- **Standardization Check**: 다양한 파일이 동일한 벡터 규격으로 저장되는지 확인.
+- **Hierarchy Mapping Check**: 문서가 올바른 카테고리에 분류되는지 검증.
+- **QA & Eval Check**: 계층 필터가 적용된 상태에서 정상적으로 생성/평가되는지 확인.
+- **Report Check**: 수집된 데이터가 논리적인 리포트로 변환되는지 확인.
 
 ---
 
