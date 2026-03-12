@@ -28,7 +28,7 @@ VALIDATED_OUTPUT_DIR = BASE_DIR / "validated_output"
 
 # ============= Rate Limit 기반 프로바이더별 최대 워커 수 =============
 PROVIDER_MAX_WORKERS: Dict[str, int] = {
-    "anthropic": 3,   # 50 RPM — claude-haiku/sonnet
+    "anthropic": 2,   # 50 RPM / 50K TPM — claude-haiku/sonnet (Tier 1은 TPM이 낮아 2가 안전)
     "google":    10,  # 1,000 RPM — gemini-2.5-flash / 3.1-flash (Tier 1 Paid)
     "openai":    8,   # 500 RPM — gpt-5.1 / gpt-5.2
 }
