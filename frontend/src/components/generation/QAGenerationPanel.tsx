@@ -373,7 +373,7 @@ export function QAGenerationPanel() {
                     isGenerating && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <option value="v1">v1 (최적화)</option>
+                  <option value="v1">v1 (베타)</option>
                 </select>
               </div>
 
