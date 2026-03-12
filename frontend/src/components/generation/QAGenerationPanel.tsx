@@ -19,6 +19,7 @@ interface GenerationStatus {
   message?: string;
   error?: string;
   result_file?: string;
+  result_id?: string; // Supabase UUID
   timestamp?: string;
 }
 
@@ -52,6 +53,7 @@ export function QAGenerationPanel() {
   const [error, setError] = useState<string | null>(null);
   const [sampleInputValue, setSampleInputValue] = useState(""); // 샘플 수 입력칸용
   const [resultFile, setResultFile] = useState<string | null>(null);
+  const [generationId, setGenerationId] = useState<string | null>(null);
   const [evalReport, setEvalReport] = useState<string | null>(null);
   // 4단계 평가 상태 추적
   const [evalLayers, setEvalLayers] = useState<any>({
@@ -93,22 +95,26 @@ export function QAGenerationPanel() {
         setStatusMessage(data.message || "");
 
         if (data.status === 'completed') {
-          console.log(`[Generation Complete]`, { file: data.result_file });
+          console.log(`[Generation Complete]`, { file: data.result_file, result_id: data.result_id });
           setIsGenerating(false);
           setResultFile(data.result_file || null);
+          setGenerationId(data.result_id || null);
           addLog(`✓ Generation completed: ${data.result_file}`, 'success');
+          if (data.result_id) {
+            addLog(`✓ Saved to Supabase: ${data.result_id}`, 'success');
+          }
           clearInterval(pollInterval);
           setJobId(null); // 폴링 중지
 
           // Auto-evaluate if enabled
           if (formValues.autoEvaluate && data.result_file) {
-            console.log(`[Auto-Evaluate] Starting evaluation for ${data.result_file}`);
+            console.log(`[Auto-Evaluate] Starting evaluation for ${data.result_file}`, { generationId: data.result_id });
             setPhase('evaluating');
             setProgress(0);
             addLog('Starting auto-evaluation...', 'info');
             
             // Start evaluation
-            startEvaluation(data.result_file);
+            startEvaluation(data.result_file, data.result_id);
           } else {
             setPhase('complete');
           }
@@ -215,8 +221,8 @@ export function QAGenerationPanel() {
     setLogs(prev => [...prev, `${timestamp} ${prefix} ${message}`]);
   };
 
-  const startEvaluation = async (resultFile: string) => {
-    console.log(`[Start Evaluation] resultFile: ${resultFile}`);
+  const startEvaluation = async (resultFile: string, genId?: string) => {
+    console.log(`[Start Evaluation] resultFile: ${resultFile}, generationId: ${genId}`);
     
     try {
       console.log(`[Evaluation API] Sending request to /api/evaluate with model: ${formValues.evaluatorModel}`);
@@ -224,9 +230,10 @@ export function QAGenerationPanel() {
       const evalResponse = await fetch(`${API_BASE}/api/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           result_filename: resultFile,
-          evaluator_model: formValues.evaluatorModel
+          evaluator_model: formValues.evaluatorModel,
+          generation_id: genId,
         })
       });
 
