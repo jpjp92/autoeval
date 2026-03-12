@@ -1,258 +1,106 @@
 # 🎯 AutoEval: QA 생성 및 평가 시스템
 
-**LLM 기반 자동 QA 생성 및 멀티 모델 평가 플랫폼**
+**LLM 기반 자동 QA 생성, 계층형 컨텍스트 관리 및 멀티 모델 평가 플랫폼**
 
-> AI 모델을 활용하여 대규모 고품질 QA 데이터셋을 자동 생성하고, 3가지 평가 모델로 검증하는 엔드-투-엔드 시스템
+> **Gemini Embedding 2**와 **Supabase Vector DB**를 활용하여 데이터 규격화부터 계층별 QA 생성, 정밀 평가, 인사이트 리포트까지 제공하는 엔드-투-엔드 시스템
 
 ---
 
 ## 📋 목차
 
-1. [시스템 개요](#-시스템-개요)
-2. [모델 구성](#-모델-구성)
-3. [시스템 아키텍처](#-시스템-아키텍처)
+1. [시스템 워크플로우](#-시스템-워크플로우)
+2. [핵심 기술 스택](#-핵심-기술-스택)
+3. [모델 및 레이트 리밋](#-모델-구성-및-rate-limit)
 4. [빠른 시작](#-빠른-시작)
-5. [실행 방법](#-실행-방법)
-6. [디렉토리 구조](#-디렉토리-구조)
-7. [개발 노트](#-개발-노트)
+5. [디렉토리 구조](#-디렉토리-구조)
+6. [개발 노트](#-개발-노트)
 
 ---
 
-## 🎯 시스템 개요
+## 🔄 시스템 워크플로우
 
-### 목표
-- **자동 QA 생성**: 3개 선택 모델로 고품질 QA 데이터셋 생성
-- **멀티 모델 평가**: 3개의 평가 모델로 생성된 QA를 독립적으로 검증
-- **실시간 모니터링**: 웹 대시보드에서 생성/평가 상황 실시간 추적
-- **비용 최적화**: 다양한 모델 선택으로 비용 효율적 운영
+본 시스템은 데이터의 품질과 관리 효율성을 극대화하기 위해 다음 4단계 프로세스를 따릅니다.
 
-### 핵심 기능
-✅ **QA 자동 생성**: Claude/Gemini/GPT 3개 모델 선택 가능  
-✅ **자동 평가**: Relevance/Groundedness/Clarity 3개 지표로 평가  
-✅ **실시간 대시보드**: 진행률 모니터링 및 결과 확인  
-✅ **한영 지원**: 한국어/영어 자유롭게 선택  
-✅ **비용 추적**: 사용한 모든 모델의 토큰 비용 자동 계산  
+1.  **데이터 규격화 (Standardization)**: 다양한 문서(PDF, DOCS 등)를 **Gemini Embedding 2**를 통해 정형화된 벡터 데이터로 변환하여 **Supabase pgvector**에 통합 관리합니다.
+2.  **계층 기반 구성 (Hierarchy)**: 규격화된 데이터를 바탕으로 서비스 구조(Level 1~3)를 분류하고, 검색 가능한 **Hierarchy Navigator**를 통해 문서를 정밀하게 타겟팅합니다.
+3.  **데이터 생성 및 평가 (QA Pipeline)**: 타겟팅된 계층에 대해 **균형 샘플링**과 **중복 방지** 로직을 적용하여 고품질 QA를 생성하고, 4단계 병렬 평가 파이프라인으로 검증합니다.
+4.  **리포트 및 인사이트 (Reporting)**: 평가 결과를 종합하여 계층별 품질 점수와 취약 카테고리 분석 리포트를 제공합니다.
 
 ---
 
-## 💼 모델 구성
+## 🛠️ 핵심 기술 스택
 
-### 📝 QA 생성 모델 (3개)
+- **Frontend**: React 19, Tailwind CSS, Lucide icons (Glassmorphism & Neo Brutalism 테마 적용)
+- **Backend**: FastAPI (Python 3.12+), Uvicorn
+- **Database**: Supabase (PostgreSQL + **pgvector**)
+- **Embeddings**: **Gemini Embedding 2** (text-multimodal-embedding-002) - 3072 dims
+- **Orchestration**: Custom JobManager for parallel processing
 
-| 모델 | 공급사 | API 명 | 비용 (M토큰) | 특징 |
-|------|--------|--------|-------------|------|
-| **Claude Sonnet 4.6** | Anthropic | claude-sonnet-4-6 | $3 / $15 | 🏆 최고 품질 |
-| **Gemini 3.1 Flash** | Google | gemini-3-flash-preview | $0.30 / $1.2 | ⚡ 최저가 |
-| **GPT-5.2** | OpenAI | gpt-5.2-2025-12-11 | $1.75 / $14 | 📊 안정적 |
+---
 
-### 📊 평가 모델 (3개)
+## 💼 모델 구성 및 Rate Limit
 
-| 모델 | 공급사 | API 명 | 비용 (M토큰) | 평가 항목 |
-|------|--------|--------|-------------|---------|
-| **Claude Haiku 4.5** | Anthropic | claude-haiku-4-5 | $1 / $5 | Relevance, Groundedness, Clarity |
-| **Gemini 2.5 Flash** | Google | gemini-2.5-flash | $0.075 / $0.3 | (동일) |
-| **GPT-5.1** | OpenAI | gpt-5.1-2025-11-13 | $1.25 / $10 | (동일) |
+### 📝 QA 생성 및 임베딩 모델
 
-### 🗂️ 프롬프트 버전
+| 모델                   | 용도          | API 명                        | RPM   | TPM  | 특징                 |
+| ---------------------- | ------------- | ----------------------------- | ----- | ---- | -------------------- |
+| **Gemini Embedding 2** | 데이터 규격화 | text-multimodal-embedding-002 | 3,000 | 1M   | 🖼️ 네이티브 멀티모달 |
+| **Claude Sonnet 4.6**  | 고품질 생성   | claude-sonnet-4-6             | 50    | 30K  | 🏆 최고 추론 성능    |
+| **Gemini 3.1 Flash**   | 고속 생성     | gemini-3-flash-preview        | 1,000 | 2M   | ⚡ 압도적 속도/비용  |
+| **GPT-5.2**            | 범용 생성     | gpt-5.2-2025-12-11            | 500   | 500K | 📊 높은 안정성       |
 
-- **V1** ✅ (현재 사용)
-  - 한국어: `SYSTEM_PROMPT_KO_V1`, `USER_TEMPLATE_KO_V1`
-  - 영어: `SYSTEM_PROMPT_EN_V1`, `USER_TEMPLATE_EN_V1`
-  - 위치: `backend/config/prompts.py`
+### 📊 평가 모델
+
+| 모델                 | API 명             | RPM   | TPM  | 역할                     |
+| -------------------- | ------------------ | ----- | ---- | ------------------------ |
+| **Claude Haiku 4.5** | claude-haiku-4-5   | 50    | 50K  | RAG Triad & Quality Eval |
+| **Gemini 2.5 Flash** | gemini-2.5-flash   | 1,000 | 1M   | (동일)                   |
+| **GPT-5.1**          | gpt-5.1-2025-11-13 | 500   | 500K | (동일)                   |
 
 ---
 
 ## 🏗️ 시스템 아키텍처
 
-### 전체 구조
-
-```mermaid
-architecture-beta
-    group frontend(cloud)[Frontend]
-    group backend(cloud)[Backend]
-    group external(cloud)[External APIs]
-    
-    service react(server)[QA Panel] in frontend
-    
-    service mainhub(database)[Main Hub] in backend
-    service genapi(server)[Generation API] in backend
-    service evalapi(server)[Evaluation API] in backend
-    service configs(disk)[Config] in backend
-    
-    service anthropic(internet)[Anthropic] in external
-    service google(internet)[Google] in external
-    service openai(internet)[OpenAI] in external
-    
-    react:R --> L:genapi
-    genapi:B --> T:mainhub
-    mainhub:L --> R:configs
-    evalapi:B --> T:mainhub
-    react:R --> L:evalapi
-    
-    mainhub:R --> L:anthropic
-    mainhub:R --> L:google
-    mainhub:R --> L:openai
-```
-
-### 컴포넌트 설명
-
-**Frontend (React 19, Port 5173)**
-- `QAGenerationPanel.tsx`: 메인 UI 컴포넌트
-  - 생성 모델 선택 (Claude Sonnet/Gemini/GPT)
-  - 언어 선택 (한국어/영어)
-  - 샘플 수 입력
-  - 평가 모델 선택
-  - 실시간 진행률 모니터링 (1초 폴링)
-
-**Backend (FastAPI, Port 8000)**
-- `backend/main.py`: 중앙 허브
-  - 모든 QA 생성 로직 내재
-  - `get_client()`: API 클라이언트 팩토리
-  - `generate_qa()`: 오케스트레이션 함수
-  - MODEL_CONFIG 룩업
-
-- `generation_api.py`: QA 생성 엔드포인트
-  - `POST /api/generate`: QA 생성 시작
-  - `GET /api/generate/{job_id}/status`: 진행률 조회
-  - JobManager: 비동기 작업 추적
-
-- `evaluation_api.py`: QA 평가 엔드포인트
-  - `POST /api/evaluate`: 평가 시작
-  - `GET /api/evaluate/{job_id}/status`: 결과 조회
-  - RAGTriadEvaluator: 3개 지표 평가 (Relevance, Groundedness, Clarity)
-  - 자동 공급사 감지 (claude/gemini/gpt)
-
-- `backend/config/`: 중앙 설정
-  - `models.py`: 6개 모델 정의 (API 명, 비용)
-  - `prompts.py`: V1 프롬프트 (한영)
-  - `__init__.py`: 중앙 임포트
-
-**External APIs**
-- **Anthropic**: Claude Sonnet 4.6 (생성), Claude Haiku 4.5 (평가)
-- **Google**: Gemini 3.1 Flash (생성), Gemini 2.5 Flash (평가)
-- **OpenAI**: GPT-5.2 (생성), GPT-5.1 (평가)
-
-### 데이터 플로우
-
 ```mermaid
 flowchart TD
-    A["사용자 입력<br/>Model | Language<br/>Samples | Evaluator"] -->|React Input| B["QAGenerationPanel<br/>POST /api/generate"]
-    B -->|JobID| C["generation_api.py<br/>JobManager 생성"]
-    C -->|generate_qa 호출| D["backend/main.py<br/>중앙 허브"]
-    D -->|조회| E["backend/config/<br/>models.py<br/>prompts.py"]
-    E -->|설정 로드| D
-    D -->|공급사別 클라이언트| F{모델 공급사<br/>판별}
-    F -->|claude| G["Anthropic API<br/>Claude호출"]
-    F -->|gemini| H["Google API<br/>Gemini호출"]
-    F -->|gpt| I["OpenAI API<br/>GPT호출"]
-    G -->|QA생성| J["JSON 저장<br/>output/qa_*.json"]
-    H -->|QA생성| J
-    I -->|QA생성| J
-    J -->|상태 업데이트| C
-    C -->|GET status 폴링| K["프론트엔드<br/>진행률 표시"]
-    K -->|자동 평가<br/>활성화| L["evaluation_api.py<br/>POST /api/evaluate"]
-    L -->|평가 실행| M["RAGTriadEvaluator<br/>Relevance<br/>Groundedness<br/>Clarity"]
-    M -->|평가 결과| N["validated_output/<br/>평가 완료"]
-    N -->|결과 표시| K
+    subgraph Ingestion
+        A[Files: PDF/DOCS] --> B[Gemini Embedding 2]
+        B --> C[(Supabase pgvector)]
+    end
+
+    subgraph Management
+        C --> D[Hierarchy Navigator]
+        D --> E[Stratified Sampling]
+    end
+
+    subgraph Pipeline
+        E --> F[QA Generation]
+        F --> G{4-Layer Eval}
+        G --> G1[Syntax]
+        G --> G2[Stats]
+        G --> G3[RAG Triad]
+        G --> G4[Quality]
+    end
+
+    subgraph Analytics
+        G --> H[Final Report]
+        H --> I[Dashboard Insights]
+    end
 ```
 
 ---
 
 ## ⚡ 빠른 시작
 
-### 1️⃣ 환경 설정
-
-```bash
-cd /home/jpjp92/devs/works/autoeval
-
-# Python 가상 환경 활성화
-source .venv/bin/activate
-
-# 또는 uv로 설치
-uv sync
-```
-
-### 2️⃣ API 키 설정
-
-`.env` 파일 생성:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=AIza...
-OPENAI_API_KEY=sk-...
-```
-
-### 3️⃣ 백엔드 & 프론트엔드 실행
-
-**터미널 1 (백엔드)**
-```bash
-cd /home/jpjp92/devs/works/autoeval
-python -m uvicorn backend.main:app --reload --port 8000
-```
-
-**터미널 2 (프론트엔드)**
-```bash
-cd /home/jpjp92/devs/works/autoeval/frontend
-npm install  # 첫 실행만
-npm run dev  # http://localhost:5173
-```
-
-### 4️⃣ 웹 대시보드 열기
-
-브라우저: `http://localhost:5173`
-
-![AutoEval 대시보드](docs/images/sample.png)
-
-**대시보드 기능:**
-- 🎯 **설정**: 생성 모델, 언어, 샘플 수 선택
-- 📊 **평가**: 평가 모델 선택 및 자동 평가 토글
-- ▶️ **시작**: "생성 및 평가 시작" 버튼으로 작업 시작
-- 📈 **모니터링**: 실시간 진행률 및 로그 확인
-- ✅ **결과**: 생성된 QA와 평가 결과 자동 저장
+1.  **환경 설정**: `uv sync` 또는 `pip install -r backend/requirements.txt`
+2.  **API 키**: `.env` 파일에 `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY` 설정
+3.  **실행**:
+    - Backend: `python -m uvicorn backend.main:app --reload`
+    - Frontend: `cd frontend && npm run dev`
 
 ---
 
-## 🖥️ 실행 방법
-
-### 방법 1️⃣: 웹 UI (권장)
-
-```bash
-# 백엔드 & 프론트엔드 모두 실행 필수
-# http://localhost:5173 에서 사용
-# • 모델, 언어, 평가 모델 선택
-# • 샘플 수 입력
-# • 생성 시작
-# • 실시간 진행률 모니터링
-```
-
-### 방법 2️⃣: API 직접 호출 (개발용)
-
-```bash
-# QA 생성
-curl -X POST http://localhost:8000/api/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "item": {"content": "Q: ...", "context": "..."},
-    "model": "claude-sonnet",
-    "lang": "ko",
-    "prompt_version": "v1"
-  }'
-
-# 진행 상황 확인
-curl http://localhost:8000/api/generate/{job_id}/status
-
-# 평가 실행
-curl -X POST http://localhost:8000/api/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "evaluation_model": "claude-haiku",
-    "qa_file": "output/qa_*.json"
-  }'
-```
-
----
-
-## 📁 디렉토리 구조
+## 📁 디렉토리 구조 (Repository 기반)
 
 ```
 autoeval/
@@ -261,145 +109,78 @@ autoeval/
 │   ├── generation_api.py                # /api/generate 엔드포인트
 │   ├── evaluation_api.py                # /api/evaluate 엔드포인트
 │   ├── requirements.txt                 # Python 패키지 (백엔드)
-│   └── config/
-│       ├── __init__.py                  # 중앙 임포트 (V1 프롬프트)
-│       ├── models.py                    # 6개 모델 정의 (생성 3, 평가 3)
-│       ├── prompts.py                   # V1 프롬프트 (KO/EN)
-│       └── constants.py                 # 상수
+│   └── config/                          # 중앙 설정 (모델, 프롬프트, 상수)
 │
 ├── 🟣 frontend/
 │   ├── index.html                       # HTML 진입점
 │   ├── package.json                     # Node 의존성
-│   ├── tsconfig.json                    # TypeScript 설정
 │   ├── vite.config.ts                   # Vite 설정
-│   ├── README.md                        # 프론트엔드 문서
-│   └── src/
-│       ├── main.tsx                     # React 진입점
+│   └── src/                             # React 소스 코드
 │       ├── App.tsx                      # 메인 App 컴포넌트
-│       └── components/
-│           └── generation/
-│               └── QAGenerationPanel.tsx # 메인 UI (모델 선택, 진행률)
-│
-├── 📊 output/                           # 생성된 QA JSON 파일
-│   └── qa_*.json
-│
-├── 📈 validated_output/                 # 평가 완료된 결과
-│   └── evaluated_qa_*.json, qa_quality_results_*.json
-│
-├── 📁 docs/                             # 문서 및 분석
-│   ├── comparison.md                    # 모델 비교 분석
-│   ├── hierarchy.md                     # 카테고리 계층
-│   ├── pipeline-plan.md                 # 파이프라인 계획
-│   └── ...
-│
-├── 🔍 data_check/                       # 데이터 검증 및 분석
-│   ├── normalize_data.py                # 데이터 정규화
-│   ├── quality_eval.py                  # 휴리스틱 기반 품질 평가
-│   └── analyze_*.py                     # 모델별 분석
-│
-├── 🧪 test/                             # 테스트 스크립트
-│   ├── test_gen1-1.py, test_gen1-2.py   # Claude Sonnet
-│   ├── test_gen2-1.py, test_gen2-2.py   # Gemini (구)
-│   ├── test_gen3-1.py, test_gen3-2.py   # GPT-5.1
-│   └── ...
+│       └── components/                  # UI 컴포넌트 (generation, evaluation 등)
 │
 ├── 📚 ref/                              # 참고 데이터
-│   ├── category.csv, hierarchy.csv      # 분류 정보
-│   ├── 고객지원.md, 상품.md, ...         # 카테고리별 문서
-│   └── data/                            # 원본 데이터
+│   └── *.json                           # 계층 및 도메인 지식 데이터 (Git Tracked)
 │
-├── 🌐 dashboard_sample/                 # 대시보드 샘플 HTML
-│   └── index.html
+├── 📁 docs/                             # 상세 분석 및 가이드 문서
+│   ├── gemini_embedding.md              # Gemini Embedding 2 활용 가이드
+│   ├── comparison.md                    # 모델 상세 비교
+│   └── hierarchy.md                     # 카테고리 계층 구조 데이터
 │
-├── 📄 DEV_260311.md                     # 개발 세션 로그 (최신)
+├── IMPLEMENTATION_PLAN.md               # 메인 실행 계획 (Approved)
+├── DEV_260312.md                        # 개발 세션 로그 (2026-03-12)
 ├── pyproject.toml                       # Python 환경 설정 (uv)
-├── .env                                 # API 키 (git ignored)
-└── README.md                            # 이 파일
+└── README.md                            # 프로젝트 개요
 ```
 
 ---
 
 ## 📖 개발 노트
 
-### 최근 업데이트 (2025-03-11)
+### 최근 업데이트 (2026-03-12)
 
 #### ✅ 완료된 작업
-
-1. **모델 정품화**: 
-   - 생성: Claude Sonnet 4.6, Gemini 3.1 Flash, GPT-5.2 (3개)
-   - 평가: Claude Haiku 4.5, Gemini 2.5 Flash, GPT-5.1 (3개)
-   - 모든 모델 `backend/config/models.py`에 중앙 정의
-
-2. **프롬프트 마이그레이션**:
-   - V2 → V1 완전 전환
-   - `backend/config/prompts.py` 에 한영 V1 프롬프트 통합
-   - `backend/config/__init__.py` 임포트 업데이트
-
-3. **백엔드 중앙화**:
-   - `backend/main.py` 를 중앙 허브로 설정
-   - 5개 QA 생성 함수 추가:
-     - `get_client(provider)`: API 클라이언트 팩토리
-     - `generate_qa_anthropic()`, `generate_qa_google()`, `generate_qa_openai()`: 공급사별 구현
-     - `generate_qa()`: 메인 오케스트레이션 + MODEL_CONFIG 룩업
-
-4. **평가 API 강화**:
-   - 3-공급사 지원 구현
-   - `RAGTriadEvaluator` 자동 공급사 감지 (claude/gemini/gpt)
-   - 3개 평가 지표: Relevance, Groundedness, Clarity
-
-5. **GitHub 배포**:
-   - 59개 파일, 26,117 라인 커밋
-   - URL: https://github.com/jpjp92/autoeval
-   - 병합 커밋 완료 (README.md 충돌 해결)
+1.  **UI/UX 단순화**: 'Models' 탭을 제거하고 핵심 워크플로우(생성, 평가)에 집중하도록 사이드바 및 레이아웃 개편.
+2.  **시스템 워크플로우 재정립**: 데이터 규격화(Standardization) -> 계층 구성(Hierarchy) -> QA 생성/평가(Pipeline) -> 리포트 구성의 4단계 프로세스 확립.
+3.  **데이터 규격화 설계**: Gemini Embedding 2와 Supabase Vector DB(`pgvector`)를 활용한 대용량 문서 처리 및 유사도 검색 기반 QA 생성 설계 완료.
+4.  **문서화 고도화**: `IMPLEMENTATION_PLAN.md` 및 `README.md`를 신규 4단계 워크플로우에 맞춰 전면 개편.
 
 #### 🔧 주요 수정사항
-
-| 파일 | 변경 사항 | 상태 |
-|------|---------|------|
-| `backend/config/__init__.py` | V2 → V1 임포트 | ✅ 완료 |
-| `backend/generation_api.py` | 기본 모델 gemini-3.1-flash 설정 | ✅ 완료 |
-| `backend/config/models.py` | gemini-3-flash-preview (정확한 API 명) | ✅ 완료 |
-| `backend/evaluation_api.py` | 3-공급사 RAGTriadEvaluator | ✅ 완료 |
-| `frontend/src/...` | 모델 드롭다운 정렬 (알파벳) | ✅ 완료 |
-
-#### 📚 참고 문서
-
-- **[DEV_260311.md](DEV_260311.md)**: 전체 세션 로그 및 파이프라인 검증
-- **[docs/comparison.md](docs/comparison.md)**: 모델 상세 비교
-- **[backend/README.md](backend/README.md)**: 백엔드 API 문서
-- **[frontend/README.md](frontend/README.md)**: 프론트엔드 셋업 가이드
+-   `frontend/src/App.tsx` & `Sidebar.tsx`: 'Models' 메뉴 및 관련 로직 제거.
+-   `README.md`: 4단계 워크플로우 및 최신 기술 스택(Gemini Embedding 2) 반영.
+-   `DEV_260312.md`: Gemini Embedding 2의 공식 스펙 및 Rate Limit 정보 기록.
 
 ---
 
-## 🚀 다음 단계
+## 📚 참고 문서
 
-### 즉시
-- [ ] 각 모델(Claude Sonnet, Gemini 3.1 Flash, GPT-5.2)로 생성 테스트
-- [ ] 각 평가 모델(Claude Haiku, Gemini 2.5 Flash, GPT-5.1)로 평가 테스트
-- [ ] end-to-end 파이프라인 검증
+시스템 구성 및 기술적 상세 내용은 다음 문서들을 참고하십시오.
 
-### 단기
-- [ ] 성능 벤치마크 (생성/평가 시간, 토큰, 비용)
-- [ ] 대규모 배치 생성 최적화
-- [ ] CI/CD 파이프라인 구축
-
-### 중기
-- [ ] 데이터베이스 통합 (결과 영속성)
-- [ ] 고급 필터링 (의도별, 난이도별, 범주별)
-- [ ] 평가 결과 시각화 개선
+-   **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**: 전체 통합 실행 계획 (2026-03-12 기준)
+-   **[DEV_260312.md](DEV_260312.md)**: 최신 개발 로그, 모델 설정 및 Rate Limit 정보
+-   **[docs/gemini_embedding.md](docs/gemini_embedding.md)**: Gemini Embedding 2 모델 활용 방법 (공식 문서 기반)
+-   **[docs/comparison.md](docs/comparison.md)**: 모델별 성능 및 비용 비교 분석
 
 ---
 
-## 📞 지원
+## 🚀 다음 단계 (Next Steps)
 
-문제 발생 시:
-1. [DEV_260311.md](DEV_260311.md) 에서 관련 섹션 확인
-2. [docs/](docs/) 폴더의 문서 참고
-3. `backend/` 및 `frontend/` README 참고
+### 1️⃣ Phase 1: 데이터 규격화 (진행 예정)
+- [ ] Supabase `doc_chunks` 테이블 생성 및 `pgvector` 인덱스 구축 (SQL).
+- [ ] `backend/ingestion_api.py` 구현: PDF/DOCS 파싱 및 Gemini 임베딩 연동.
+- [ ] 프론트엔드 문서 업로드 드래그&드롭 컴포넌트 구현.
 
----
+### 2️⃣ Phase 3: 데이터 생성 및 평가 (QA Pipeline)
+- [ ] 계층 기반 샘플링 및 중복 방지 로직 고도화.
+- [ ] **Page Transition**: 생성 완료 시 Evaluation 페이지로 자동 페이지 전환 구현.
 
-**Last Updated**: 2025-03-11  
+### 3️⃣ Phase 4: 리포트 및 시각화
+- [ ] Evaluation 페이지 내 상세 시각화 리포트(차트) 구현.
+- [ ] 계층별 품질 분석 및 개선 인사이트 제공.
+
+### 4️⃣ Final Phase: 통합 대시보드
+- [ ] 전체 통계 및 모델 성능 비교 최종 정리.
+
+**Last Updated**: 2026-03-12  
 **Repository**: https://github.com/jpjp92/autoeval  
-**Branch**: main  
-**Commit**: cf8d14b (Merge: Keep local README, add remote source)
+**Branch**: main

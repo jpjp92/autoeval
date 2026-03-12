@@ -16,7 +16,6 @@ function App() {
     if (activeTab === "evaluation") return "Evaluation";
     if (activeTab === "generation") return "Data Generation";
     if (activeTab === "overview") return "Dashboard";
-    if (activeTab === "models") return "Models";
     return activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
   };
 
@@ -47,9 +46,6 @@ function App() {
               <QAEvaluationDashboard />
             )}
 
-            {activeTab === "models" && (
-              <AgentTable />
-            )}
 
             {activeTab === "playground" && (
               <ChatPlayground />
@@ -59,7 +55,7 @@ function App() {
               <SettingsPanel />
             )}
             
-            {activeTab !== "overview" && activeTab !== "generation" && activeTab !== "evaluation" && activeTab !== "models" && activeTab !== "playground" && activeTab !== "settings" && (
+            {activeTab !== "overview" && activeTab !== "generation" && activeTab !== "evaluation" && activeTab !== "playground" && activeTab !== "settings" && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4">
                   <span className="text-2xl">🚧</span>

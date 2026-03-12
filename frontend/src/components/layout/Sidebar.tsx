@@ -14,7 +14,6 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
     { id: "generation", label: "Data Generation", icon: FilePlus },
     { id: "evaluation", label: "Evaluation", icon: Target },
-    { id: "models", label: "Models", icon: Bot },
     { id: "playground", label: "Playground", icon: MessageSquare },
     { id: "settings", label: "Settings", icon: Settings },
   ];

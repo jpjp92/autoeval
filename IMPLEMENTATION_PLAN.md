@@ -43,20 +43,23 @@
 - **균형 샘플링**: 하위 카테고리별로 고르게 문서를 추출하여 커버리지 극대화.
 - **중복 방지**: 기존 생성 이력과의 docId 매칭을 통한 반복 생성 방지.
 
-### 3.2 4단계 병렬 평가
-- Syntax, Stats, RAG Triad, Quality의 4단계 평가 수행.
-- 계층별 품질 점수(Quality Score) 추적.
+### 3.2 UI Flow & Page Transition [NEW]
+- **Auto-Navigation**: QA 생성이 완료되면 자동으로 **Evaluation 페이지**로 전환하여 결과를 즉시 확인할 수 있도록 UX 개선.
+- **Contextual Linking**: 생성된 각 데이터가 어떤 계층(Hierarchy)에서 왔는지 평가 화면에서도 유지.
 
 ---
 
-## 📊 Phase 4: 리포트 구성 (Reporting & Insights)
+## 📊 Phase 4: 리포트 구성 & 시각화 (Reporting)
 
-생성 및 평가 결과를 종합하여 인사이트를 제공하는 최종 리포트를 구성합니다.
+평가 결과를 정밀하게 분석하고 사용자에게 인사이트를 제공합니다.
 
-### 4.1 통합 대시보드
-- 전체 데이터셋 건강도(Health Score) 가시화.
-- 계층별/모델별 성능 비교 분석 리포트.
-- 개선이 필요한 '취약 계층' 자동 탐지 및 추천.
+### 4.1 Evaluation 리포트 상세
+- **Visual Charts**: 계층별 품질 점수(Relevance, Groundedness 등)를 레이더 차트나 바 차트로 시각화.
+- **Error Analysis**: 점수가 낮은 취약 계층을 자동으로 하이라이트하여 개선 가이드 제공.
+
+### 4.2 통합 대시보드 (Final Step)
+- 모든 파일과 계층의 데이터를 종합한 최종 통계 정리.
+- 전체 데이터셋의 건강도(Health Score) 및 모델 성능 비교 집계.
 
 ---
 
