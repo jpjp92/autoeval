@@ -268,6 +268,8 @@ async def run_qa_generation_real(
     logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 문서 × workers={max_workers} ({model})")
 
     results_map: Dict[int, Any] = {}
+    total_input_tokens  = 0
+    total_output_tokens = 0
     token_lock = Lock()
     completed_count = 0
     progress_lock = Lock()
