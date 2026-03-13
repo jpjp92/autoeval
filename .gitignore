@@ -20,6 +20,7 @@ ref/
 dashboard_sample/
 data_check/
 test/
+default.sqlite
 
 # output
 output/

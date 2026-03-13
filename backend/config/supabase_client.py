@@ -276,6 +276,150 @@ def is_supabase_available() -> bool:
     return supabase_client is not None
 
 
+# ============================================================================
+# Document Chunks (Vector DB) 저장 및 조회
+# ============================================================================
+
+async def save_doc_chunk(
+    content: str,
+    embedding: list,
+    metadata: Dict[str, Any] = None
+) -> Optional[str]:
+    """
+    문서 청크와 임베딩을 Supabase에 저장
+    
+    Args:
+        content: 청크 텍스트
+        embedding: 벡터 리스트
+        metadata: 메타데이터 (파일명, 계층 등)
+        
+    Returns:
+        생성된 UUID
+    """
+    if not supabase_client:
+        return None
+    
+    try:
+        data = {
+            "content": content,
+            "embedding": embedding,
+            "metadata": metadata or {},
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        
+        response = supabase_client.table("doc_chunks").insert(data).execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]["id"]
+        return None
+    except Exception as e:
+        logger.error(f"❌ Failed to save doc chunk: {e}")
+        return None
+
+
+async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any]) -> bool:
+    """
+    특정 청크의 메타데이터를 개별적으로 업데이트
+    """
+    if not supabase_client:
+        return False
+    
+    try:
+        supabase_client.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to update chunk metadata: {e}")
+        return False
+
+
+async def search_doc_chunks(
+    query_embedding: list,
+    match_threshold: float = 0.5,
+    match_count: int = 5,
+    filter: Dict[str, Any] = None
+) -> list:
+    """
+    유사도 기반 문서 청크 검색 (RPC 호출)
+    
+    Args:
+        query_embedding: 검색 쿼리의 벡터
+        match_threshold: 유사도 임계값
+        match_count: 반환할 결과 개수
+        filter: 메타데이터 필터 (JSONB match)
+        
+    Returns:
+        검색된 청크 리스트
+    """
+    if not supabase_client:
+        return []
+    
+    try:
+        response = supabase_client.rpc(
+            "match_doc_chunks",
+            {
+                "query_embedding": query_embedding,
+                "match_threshold": match_threshold,
+                "match_count": match_count,
+                "filter": filter or {}
+            }
+        ).execute()
+        
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ Failed to search doc chunks: {e}")
+        return []
+
+
+async def get_document_chunks(source_name: str, limit: int = 10) -> list:
+    """
+    특정 문서의 청크들을 조회 (주로 계층 구조 분석용)
+    """
+    if not supabase_client:
+        return []
+    
+    try:
+        response = supabase_client.table("doc_chunks").select("id, content, metadata").eq("metadata->>source", source_name).order("created_at").limit(limit).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ Failed to get document chunks: {e}")
+        return []
+
+
+async def update_document_hierarchy(source_name: str, l1: str, l2: str, l3: str) -> bool:
+    """
+    특정 문서에 속한 모든 청크의 계층 정보(L1, L2, L3)를 업데이트
+    """
+    if not supabase_client:
+        return False
+    
+    try:
+        # 기존 메타데이터를 유지하면서 계층 정보만 추가/업데이트하기 위해 
+        # supabase의 컬럼 단위 업데이트 보다는 jsonb_set 같은 기능이 좋으나 
+        # python client에서는 전체 metadata 필드를 교체해야 할 수도 있음.
+        # 여기서는 doc_chunks의 metadata 컬럼을 가져와서 합치는 방식 또는 
+        # 그냥 hierarchy 필드를 명시적으로 업데이트하는 전략 사용
+        
+        # 1. 대상 청크 조회
+        chunks = await get_document_chunks(source_name, limit=1000)
+        if not chunks:
+            return False
+            
+        for chunk in chunks:
+            current_metadata = chunk.get("metadata", {})
+            current_metadata.update({
+                "hierarchy_l1": l1,
+                "hierarchy_l2": l2,
+                "hierarchy_l3": l3
+            })
+            
+            supabase_client.table("doc_chunks").update({"metadata": current_metadata}).eq("id", chunk["id"]).execute()
+            
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to update document hierarchy: {e}")
+        return False
+
+
 async def health_check() -> Dict[str, Any]:
     """Supabase 헬스 체크"""
     if not supabase_client:
