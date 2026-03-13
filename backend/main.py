@@ -37,10 +37,76 @@ from config.constants import (
     DATA_FILE,
 )
 
-# Configure logging
-log_level = os.getenv("LOG_LEVEL", "INFO")
-logging.basicConfig(level=log_level)
-logger = logging.getLogger(__name__)
+# ============= Logging Configuration =============
+class ColoredFormatter(logging.Formatter):
+    """로그 레벨별로 색상을 적용하는 커스텀 포맷터"""
+    COLORS = {
+        'DEBUG': '\033[94m',    # Blue
+        'INFO': '\033[92m',     # Green
+        'WARNING': '\033[93m',  # Yellow
+        'ERROR': '\033[91m',    # Red
+        'CRITICAL': '\033[1;91m', # Bold Red
+        'RESET': '\033[0m'
+    }
+
+    def __init__(self, fmt=None, datefmt=None, style='%', validate=True, **kwargs):
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
+
+    def format(self, record):
+        log_color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
+        reset = self.COLORS['RESET']
+        # 레벨 이름에 색상 입히기
+        original_levelname = record.levelname
+        record.levelname = f"{log_color}{original_levelname}{reset}"
+        result = super().format(record)
+        # 다른 로그에 영향을 주지 않도록 원복
+        record.levelname = original_levelname
+        return result
+
+LOG_FORMAT = "[%(asctime)s] %(levelname)s: %(message)s"
+LOG_DATE_FORMAT = "%H:%M:%S"
+
+# 루트 로거 설정 수정
+handler = logging.StreamHandler()
+handler.setFormatter(ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+logging.root.handlers = [handler]
+logging.root.setLevel(os.getenv("LOG_LEVEL", "INFO"))
+
+logger = logging.getLogger("autoeval.main")
+
+# Uvicorn 로그 설정 (색상 지원 포맷터 사용)
+UVICORN_LOG_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "()": "__main__.ColoredFormatter", # 커스텀 포맷터 클래스 참조
+            "fmt": LOG_FORMAT,
+            "datefmt": LOG_DATE_FORMAT,
+        },
+        "access": {
+            "()": "__main__.ColoredFormatter", # 커스텀 포맷터 클래스 참조
+            "fmt": LOG_FORMAT,
+            "datefmt": LOG_DATE_FORMAT,
+        },
+    },
+    "handlers": {
+        "default": {
+            "formatter": "default",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+        },
+        "access": {
+            "formatter": "access",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "loggers": {
+        "uvicorn.error": {"handlers": ["default"], "level": "INFO", "propagate": False},
+        "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
+    },
+}
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -535,11 +601,15 @@ def get_status():
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    return {
-        "success": False,
-        "error": exc.detail,
-        "status_code": exc.status_code
-    }
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.detail,
+            "status_code": exc.status_code
+        }
+    )
 
 
 if __name__ == "__main__":
@@ -549,6 +619,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         log_level="info",
-        access_log=False,  # 평가 상태 체크 로그 제거
-        use_colors=True    # 터미널 색상 활성화
+        access_log=False,
+        use_colors=True,
+        log_config=UVICORN_LOG_CONFIG # 커스텀 로그 설정 적용
     )

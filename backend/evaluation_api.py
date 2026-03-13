@@ -22,7 +22,7 @@ logging.getLogger("trulens.core.database.sqlalchemy").setLevel(logging.WARNING)
 logging.getLogger("alembic").setLevel(logging.WARNING)
 logging.getLogger("trulens.experimental.otel_tracing.core.session").setLevel(logging.WARNING)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("autoeval.evaluation")
 
 # ============= evaluators 패키지에서 모두 import =============
 try:
