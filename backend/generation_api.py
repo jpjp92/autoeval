@@ -19,6 +19,7 @@ from threading import Lock
 from typing import Optional, Dict, Any
 from enum import Enum
 from dataclasses import dataclass, asdict
+import numpy as np
 
 # Main.py 모듈 import (지연 import로 순환 참조 방지)
 # Import backend/main.py for generate_qa function
@@ -90,6 +91,12 @@ class GenerateRequest(BaseModel):
     samples: int = 10
     qa_per_doc: Optional[int] = None
     prompt_version: str = "v1"
+    
+    # Hierarchy filters for vector search
+    hierarchy_l1: Optional[str] = None
+    hierarchy_l2: Optional[str] = None
+    hierarchy_l3: Optional[str] = None
+    retrieval_query: Optional[str] = None
 
 class GenerationStatus(BaseModel):
     job_id: str
@@ -247,21 +254,90 @@ async def run_qa_generation_real(
     logger.info(f"[{job_id}] Loading data...")
     job_manager.update_job(job_id, progress=5, message="Loading document data...")
     
-    # Load data
-    data_file = Path(__file__).parent.parent / "ref/data/data_2026-03-06_normalized.json"
+    # 1. 결정: Vector DB에서 가져올지, 로컬 JSON에서 가져올지
+    # hierarchy 필터가 하나라도 있으면 Vector DB 검색 시도
+    config = job_manager.get_job(job_id).config or {}
+    h1 = config.get("hierarchy_l1")
+    h2 = config.get("hierarchy_l2")
+    h3 = config.get("hierarchy_l3")
+    r_query = config.get("retrieval_query")
     
-    if not data_file.exists():
-        raise FileNotFoundError(f"Data file not found: {data_file}")
+    items = []
     
-    with open(data_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    from config.supabase_client import search_doc_chunks, is_supabase_available
     
-    # Extract items
-    items = data if isinstance(data, list) else data.get("documents", [])
-    items = items[:samples]
+    if is_supabase_available() and (h1 or h2 or h3 or r_query):
+        logger.info(f"[{job_id}] Using Vector DB retrieval (hierarchy filters present)")
+        job_manager.update_job(job_id, message="Searching Vector DB...")
+        
+        # 필터 구성
+        filter_dict = {}
+        if h1: filter_dict["hierarchy_l1"] = h1
+        if h2: filter_dict["hierarchy_l2"] = h2
+        if h3: filter_dict["hierarchy_l3"] = h3
+        
+        # 쿼리 임베딩 생성 (유사도 검색 필요시)
+        query_vector = None
+        if r_query:
+            from google import genai as google_genai
+            gemini_client = google_genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+            res = gemini_client.models.embed_content(
+                model="gemini-embedding-2-preview",
+                contents=r_query,
+                config=google_genai.types.EmbedContentConfig(
+                    task_type="RETRIEVAL_QUERY",
+                    output_dimensionality=1536
+                )
+            )
+            query_vector_values = res.embeddings[0].values
+            
+            # L2 Normalization
+            v_np = np.array(query_vector_values)
+            v_norm = np.linalg.norm(v_np)
+            query_vector = (v_np / v_norm).tolist() if v_norm > 0 else query_vector_values
+        
+        # 만약 query_vector가 없으면 빈 벡터(모두 0)를 보내거나, 
+        # 그냥 전체 리스트를 가져오는 RPC를 사용할 수도 있지만 
+        # 현재 match_doc_chunks는 query_embedding이 필수이므로 더미를 보내거나 random sample
+        if query_vector is None:
+            query_vector = [0.0] * 1536 # Dummy for metadata filter only
+            
+        chunks = await search_doc_chunks(
+            query_embedding=query_vector,
+            match_threshold=0.0, # 필터링 위주
+            match_count=samples,
+            filter=filter_dict
+        )
+        
+        # Chunk -> Item 형식으로 변환
+        for c in chunks:
+            meta = c.get("metadata", {})
+            items.append({
+                "docId": c.get("id"),
+                "hierarchy": [meta.get("hierarchy_l1"), meta.get("hierarchy_l2"), meta.get("hierarchy_l3")],
+                "text": c.get("content"),
+                "metadata": meta
+            })
+            
+        logger.info(f"[{job_id}] Vector DB found {len(items)} chunks")
     
-    logger.info(f"[{job_id}] Loaded {len(items)} documents")
-    job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} documents")
+    # 2. Vector DB에서 결과가 없거나 필터가 없는 경우 로컬 JSON 폴백
+    if not items:
+        logger.info(f"[{job_id}] Using local JSON data file")
+        data_file = Path(__file__).parent.parent / "ref/data/data_2026-03-06_normalized.json"
+        
+        if not data_file.exists():
+            raise FileNotFoundError(f"Data file not found: {data_file}")
+        
+        with open(data_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Extract items
+        items = data if isinstance(data, list) else data.get("documents", [])
+        items = items[:samples]
+    
+    logger.info(f"[{job_id}] Loaded {len(items)} items for generation")
+    job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} items")
     
     # Generate QA for each document (병렬 처리)
     max_workers = _get_generation_workers(model)

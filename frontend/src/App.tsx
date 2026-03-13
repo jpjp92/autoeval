@@ -7,14 +7,18 @@ import { ChatPlayground } from "./components/playground/ChatPlayground";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { QAEvaluationDashboard } from "./components/evaluation/QAEvaluationDashboard";
 import { QAGenerationPanel } from "./components/generation/QAGenerationPanel";
+import { DataStandardizationPanel } from "./components/standardization/DataStandardizationPanel";
+import { HierarchyConstructionPanel } from "./components/standardization/HierarchyConstructionPanel";
 import { motion } from "motion/react";
 
 function App() {
-  const [activeTab, setActiveTab] = useState("generation");
+  const [activeTab, setActiveTab] = useState("overview");
 
   const getHeaderTitle = () => {
     if (activeTab === "evaluation") return "Evaluation";
     if (activeTab === "generation") return "Data Generation";
+    if (activeTab === "hierarchy") return "Hierarchy Construction";
+    if (activeTab === "standardization") return "Data Standardization";
     if (activeTab === "overview") return "Dashboard";
     return activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
   };
@@ -38,6 +42,14 @@ function App() {
               <DashboardOverview setActiveTab={setActiveTab} />
             )}
 
+            {activeTab === "standardization" && (
+              <DataStandardizationPanel />
+            )}
+            
+            {activeTab === "hierarchy" && (
+              <HierarchyConstructionPanel />
+            )}
+
             {activeTab === "generation" && (
               <QAGenerationPanel />
             )}
@@ -55,7 +67,7 @@ function App() {
               <SettingsPanel />
             )}
             
-            {activeTab !== "overview" && activeTab !== "generation" && activeTab !== "evaluation" && activeTab !== "playground" && activeTab !== "settings" && (
+            {activeTab !== "overview" && activeTab !== "standardization" && activeTab !== "hierarchy" && activeTab !== "generation" && activeTab !== "evaluation" && activeTab !== "playground" && activeTab !== "settings" && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4">
                   <span className="text-2xl">🚧</span>

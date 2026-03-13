@@ -250,6 +250,14 @@ except ImportError as e:
     logger.warning(f"Evaluation API import failed: {e}. /api/evaluate endpoints will not be available.")
     eval_manager = None
 
+# ============= Ingestion API Integration =============
+try:
+    from ingestion_api import setup_ingestion_routes
+    setup_ingestion_routes(app)
+    logger.info("✓ Ingestion API integrated successfully")
+except ImportError as e:
+    logger.warning(f"Ingestion API import failed: {e}. /api/ingestion endpoints will not be available.")
+
 # ============= Configuration =============
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
