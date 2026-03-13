@@ -21,6 +21,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pandas>=3.0.1",
     "pydantic>=2.12.5",
+    "pymupdf>=1.27.2",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.22",
     "requests>=2.32.5",

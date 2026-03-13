@@ -52,7 +52,7 @@ from config.supabase_client import (
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("autoeval.generation")
 
 # 프로바이더별 최대 동시 생성 workers
 # 생성은 평가보다 요청당 토큰이 무거우므로 평가보다 낮게 설정

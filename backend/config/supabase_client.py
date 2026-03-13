@@ -15,7 +15,7 @@ from uuid import UUID
 
 from supabase import create_client, Client
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("autoeval.config.supabase")
 
 # Supabase 클라이언트 초기화
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -378,7 +378,7 @@ async def get_document_chunks(source_name: str, limit: int = 10) -> list:
         return []
     
     try:
-        response = supabase_client.table("doc_chunks").select("id, content, metadata").eq("metadata->>source", source_name).order("created_at").limit(limit).execute()
+        response = supabase_client.table("doc_chunks").select("id, content, metadata").eq("metadata->>filename", source_name).order("created_at").limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
         logger.error(f"❌ Failed to get document chunks: {e}")
