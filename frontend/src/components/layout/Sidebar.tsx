@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutDashboard, Users, MessageSquare, Settings, Bot, Zap, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database, Layers } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, Settings, Bot, Zap, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface SidebarProps {
@@ -13,7 +13,6 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   const menuItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
     { id: "standardization", label: "Standardization", icon: Database },
-    { id: "hierarchy", label: "Hierarchy", icon: Layers },
     { id: "generation", label: "Data Generation", icon: FilePlus },
     { id: "evaluation", label: "Evaluation", icon: Target },
     { id: "playground", label: "Playground", icon: MessageSquare },
