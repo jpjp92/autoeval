@@ -262,40 +262,43 @@ def _resolve_chunk_page(chunk_text: str, section_text: str, block_page_offsets: 
 def is_toc_chunk(text: str) -> bool:
     """
     목차(Table of Contents) 청크인지 판단하는 휴리스틱 (Phase 2.13)
-    
+
     핵심 원칙: 가운뎃점(·) 을 TOC 신호로 사용 → 마크다운 표 false positive 제거
-    - Layer 1: 가운뎃점(·) 밀도 — 마크다운 표는 · 없으므로 안전
+    - Layer 1: 가운뎃점(·) 밀도 — 표 청크 제외 (셀 내용에 · 구분자 정상 사용)
     - Layer 2: 연속 가운뎃점 패턴 (·····) — TOC 점선 직접 감지
     - Layer 3: 점선 + 페이지번호 라인 비율 — 60% 이상이면 TOC
     """
     if not text or len(text) < 20:
         return False
 
-    # Layer 1: 가운뎃점(·) 밀도 체크 — TOC 점선 전용
-    # 정상 콘텐츠(표, 본문)에는 · 가 거의 없음
-    special_dots = text.count('·')
-    if special_dots > 10 and special_dots / len(text) > 0.05:
-        return True
+    # 표 청크 판별 — '|' 파이프가 4개 이상이면 마크다운 표로 간주
+    # 표 셀 내용에 · 구분자가 정상적으로 사용될 수 있으므로 Layer 1/3 밀도 체크 제외
+    is_table_content = text.count('|') >= 4
+
+    # Layer 1: 가운뎃점(·) 밀도 체크 — 표 청크는 건너뜀 (Phase 2.16 수정)
+    if not is_table_content:
+        special_dots = text.count('·')
+        if special_dots > 10 and special_dots / len(text) > 0.05:
+            return True
 
     # Layer 2: 연속 가운뎃점 4개 이상 → TOC 점선 패턴
     if re.search(r'[·]{4,}', text):
         return True
 
-    # Layer 3: 라인 단위 분석 — 점선 AND 페이지번호 동시 패턴
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if not lines:
-        return False
+    # Layer 3: 라인 단위 분석 — 점선 AND 페이지번호 동시 패턴 (표 청크 제외)
+    if not is_table_content:
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        if lines:
+            toc_lines = 0
+            for line in lines:
+                has_dots = line.count('·') > 3 or line.count('.') > 5
+                has_page_number = any(c.isdigit() for c in line[-5:])
+                if has_dots and has_page_number:
+                    toc_lines += 1
 
-    toc_lines = 0
-    for line in lines:
-        has_dots = line.count('·') > 3 or line.count('.') > 5
-        has_page_number = any(c.isdigit() for c in line[-5:])
-        if has_dots and has_page_number:
-            toc_lines += 1
-
-    # 60% 이상의 라인이 "점선 + 페이지번호" 패턴 → TOC
-    if len(lines) > 0 and toc_lines / len(lines) >= 0.6:
-        return True
+            # 60% 이상의 라인이 "점선 + 페이지번호" 패턴 → TOC
+            if toc_lines / len(lines) >= 0.6:
+                return True
 
     return False
 
@@ -478,6 +481,8 @@ def normalize_text(text: str) -> str:
     RAG 품질을 위한 텍스트 정규화 (Phase 2.1: 구조 보존형)
     - Ÿ/특수문자 불릿 아티팩트 제거 (PDF 폰트 인코딩 오류)
     - 불렛 기호 표준화 (•, *, l -> -)
+    - 체크박스/폼 필드 기호 정규화 (□ → [ ], ☑ → [v])
+    - 중첩 표 아티팩트 제거 (⋮, ⋯ 수직 생략 기호)
     - 다중 공백 제거
     - 문장 중간 줄바꿈 → 공백 결합 (단락/불릿/표 경계 보존)
     """
@@ -486,6 +491,15 @@ def normalize_text(text: str) -> str:
 
     # 0. PDF 불릿 폰트 아티팩트 정규화 (Ÿ, ÿ 등 → -)
     text = re.sub(r'[\u0178\u00ff\ufffd]', '-', text)
+
+    # 0-1. 체크박스/폼 필드 기호 정규화 (Phase 2.15)
+    # □ (U+25A1), ☐ (U+2610) → [ ], ☑ (U+2611), ✓ (U+2713) → [v]
+    text = re.sub(r'[□☐\u25a1\u2610]', '[ ]', text)
+    text = re.sub(r'[☑✓✔\u2611\u2713\u2714]', '[v]', text)
+
+    # 0-2. 중첩 표 아티팩트 — 수직 생략 기호 제거 (Phase 2.15)
+    # ⋮ (U+22EE), ⋯ (U+22EF), ⋰ (U+22F0), ⋱ (U+22F1)
+    text = re.sub(r'[\u22ee\u22ef\u22f0\u22f1]', '', text)
 
     # 1. 불렛 기호 표준화 (•, *, l -> -)
     text = re.sub(r'^[ \t]*[•*l][ \t]+', '- ', text, flags=re.MULTILINE)
@@ -497,6 +511,25 @@ def normalize_text(text: str) -> str:
     text = _smart_join_lines(text)
 
     return text.strip()
+
+
+def _is_symbol_noise_chunk(text: str) -> bool:
+    """
+    기호/체크박스 위주의 의미없는 청크 감지 (Phase 2.15)
+
+    중첩 표, 폼 필드, checkbox 그리드 등에서 발생하는
+    `| [ ] | [ ] | [v] |` 형태의 저정보 청크를 필터링.
+
+    의미 있는 문자(한글, 영문, 숫자) 비율이 15% 미만이면 noise로 판단.
+    """
+    if not text or len(text) < 10:
+        return False
+    # 파이프, 공백, 줄바꿈, 대시 제거 후 실제 내용 비율 계산
+    base = re.sub(r'[\s|]', '', text)
+    if not base:
+        return True
+    meaningful = len(re.findall(r'[가-힣a-zA-Z0-9]', base))
+    return len(base) >= 15 and meaningful / len(base) < 0.15
 
 def is_inside_table(block_bbox, table_bboxes: list) -> bool:
     """
@@ -844,6 +877,11 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     logger.info(f"[{filename}] Colophon chunk filtered (p{sec['page']}): {chunk_text[:50]!r}")
                     continue
 
+                # Phase 2.15: 기호/체크박스 노이즈 청크 필터 (중첩 표, 폼 필드 등)
+                if _is_symbol_noise_chunk(chunk_text):
+                    logger.info(f"[{filename}] Symbol noise chunk filtered (p{sec['page']}): {chunk_text[:60]!r}")
+                    continue
+
                 # 🔴 Layer 3: footer/header bleed-through 노이즈 제거 (Phase 2.5)
                 chunk_text = remove_footer_noise(chunk_text, repeated_headers)
 
@@ -1124,15 +1162,16 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
 
 
 @router.get("/hierarchy-list")
-async def get_hierarchy_list_endpoint():
+async def get_hierarchy_list_endpoint(filename: str = None):
     """
     doc_chunks에 저장된 hierarchy_l1, hierarchy_l2 고유 목록 반환
     프론트엔드 QA 생성 UI의 계층 선택 드롭다운에서 사용
+    filename 지정 시 해당 문서 청크만 대상으로 조회 (GET ?filename=xxx)
     """
     if not is_supabase_available():
         return {"success": False, "l1_list": [], "l2_by_l1": {}, "message": "Supabase not available"}
 
-    result = await get_hierarchy_list()
+    result = await get_hierarchy_list(filename=filename)
     return {"success": True, **result}
 
 

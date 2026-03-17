@@ -66,7 +66,8 @@ class RAGTriadEvaluator:
                 api_key = os.getenv("GOOGLE_API_KEY")
                 if api_key:
                     self.judge_model = ChatGoogleGenerativeAI(
-                        model=self.evaluator_model, google_api_key=api_key, temperature=0
+                        model=self.evaluator_model, google_api_key=api_key, temperature=0,
+                        timeout=90,
                     )
                     logger.info(f"✓ Judge model initialized (Google): {self.evaluator_model}")
                 else:

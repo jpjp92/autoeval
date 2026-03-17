@@ -3,6 +3,7 @@ QA Quality Evaluator
 LLM CoT 기반 품질 평가 (Layer 3)
 멀티 프로바이더 지원: OpenAI / Google Gemini / Anthropic Claude
 """
+import json
 import logging
 import os
 import re
@@ -54,7 +55,8 @@ class QAQualityEvaluator:
                 api_key = os.getenv("GOOGLE_API_KEY")
                 if api_key:
                     self.judge_model = ChatGoogleGenerativeAI(
-                        model=self.model_id, google_api_key=api_key, temperature=0
+                        model=self.model_id, google_api_key=api_key, temperature=0,
+                        timeout=90,
                     )
                     logger.info(f"✓ QAQualityEvaluator initialized (Google): {self.model_id}")
                 else:
@@ -90,116 +92,61 @@ class QAQualityEvaluator:
             return "anthropic"
         return "openai"
 
-    def _call_llm(self, prompt: str) -> str:
-        """단순 응답 LLM 호출"""
+    def _call_llm_combined(self, prompt: str) -> str:
+        """3개 지표를 단일 호출로 평가 — JSON 응답"""
+        sys_msg = (
+            "You are a strict but fair data quality auditor. "
+            "Evaluate all three dimensions and respond ONLY with valid JSON. "
+            "No explanation outside the JSON block."
+        )
         try:
             if self.provider == "openai" and self.client:
                 response = self.client.chat.completions.create(
                     model=self.model_id,
                     messages=[
-                        {"role": "system", "content": "Respond with ONLY a single digit (0-10). No explanation."},
-                        {"role": "user",   "content": prompt}
-                    ],
-                    temperature=0,
-                    max_completion_tokens=100,
-                )
-                if not response or not response.choices:
-                    return "5"
-                result = (response.choices[0].message.content or "").strip()
-                digits = [c for c in result if c.isdigit()]
-                return digits[0] if digits else "5"
-
-            elif self.judge_model:
-                response = self.judge_model.invoke(
-                    f"Respond with ONLY a single digit (0-10). No explanation.\n\n{prompt}"
-                )
-                result = (response.content or "").strip()
-                digits = [c for c in result if c.isdigit()]
-                return digits[0] if digits else "5"
-
-        except Exception as e:
-            logger.warning(f"LLM API error: {e}")
-        return "5"
-
-    def _call_llm_with_reasoning(self, prompt: str) -> str:
-        """CoT 방식 LLM 호출"""
-        try:
-            if self.provider == "openai" and self.client:
-                response = self.client.chat.completions.create(
-                    model=self.model_id,
-                    messages=[
-                        {"role": "system", "content": "You are a strict but fair data quality auditor. Think step by step, then provide your score."},
-                        {"role": "user",   "content": prompt}
+                        {"role": "system", "content": sys_msg},
+                        {"role": "user",   "content": prompt},
                     ],
                     temperature=0,
                     max_completion_tokens=300,
                 )
                 if not response or not response.choices:
-                    return "Score: 5"
-                return (response.choices[0].message.content or "Score: 5").strip()
+                    return "{}"
+                return (response.choices[0].message.content or "{}").strip()
 
             elif self.judge_model:
-                sys_prompt = "You are a strict but fair data quality auditor. Think step by step, then provide your score."
-                response = self.judge_model.invoke(f"{sys_prompt}\n\n{prompt}")
-                return (response.content or "Score: 5").strip()
+                response = self.judge_model.invoke(f"{sys_msg}\n\n{prompt}")
+                return (response.content or "{}").strip()
 
         except Exception as e:
-            logger.warning(f"LLM reasoning error: {e}")
-        return "Score: 5"
+            logger.warning(f"LLM combined eval error: {e}")
+        return "{}"
 
-    def _parse_cot_score(self, raw: str) -> float:
-        """CoT 응답에서 Score 파싱"""
+    def _parse_combined(self, raw: str) -> dict:
+        """JSON 응답에서 3개 점수 파싱 — 실패 시 0.5 fallback"""
+        # 마크다운 코드블록 제거
+        text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
-            matches = re.findall(r'Score:\s*(\d+)', raw, re.IGNORECASE)
-            if matches:
-                return min(10, max(0, int(matches[-1]))) / 10.0
-            digits = re.findall(r'\b(\d+)\b', raw)
-            if digits:
-                return min(10, max(0, int(digits[-1]))) / 10.0
-            return 0.5
+            data = json.loads(text)
+            def _score(key: str) -> float:
+                val = data.get(key, 5)
+                return min(10, max(0, int(val))) / 10.0
+            return {
+                "factuality":   _score("factuality"),
+                "completeness": _score("completeness"),
+                "groundedness": _score("groundedness"),
+            }
         except Exception:
-            return 0.5
+            logger.warning(f"Combined parse failed, raw: {raw[:200]}")
+            return {"factuality": 0.5, "completeness": 0.5, "groundedness": 0.5}
 
-    def evaluate_factuality(self, answer: str, context: str) -> float:
-        """사실성 평가 (0-1) - CoT 기반"""
+    def evaluate_all(self, question: str, answer: str, context: str) -> dict:
+        """사실성·완전성·근거성을 단일 LLM 호출로 평가 (3 calls → 1 call)"""
         clean_ctx = clean_markdown(context)
-        prompt = f"""You are a strict data quality auditor evaluating FACTUAL ACCURACY.
-
-CRITICAL RULES:
-- Evaluate SEMANTIC MEANING, not word-for-word matching.
-- Paraphrasing or summarizing the same fact = ACCURATE.
-- Only penalize if the answer states something CONTRARY to the context.
+        prompt = f"""Evaluate the QA pair below on three dimensions. Score each 0-10.
 
 [CONTEXT]
-{clean_ctx[:4000]}
-
-[ANSWER]
-{answer}
-
-[TASK]
-Step 1: Find the key claims in the answer.
-Step 2: Check if each claim is supported by (or at least not contradicted by) the context.
-Step 3: Give a score.
-
-[SCALE]
-10: All claims semantically match the context
-8-9: Nearly all claims match, trivial gaps
-6-7: Core claims match, minor discrepancies
-4-5: Some claims unsupported or partially wrong
-1-3: Most claims contradict or cannot be derived from context
-0: Completely contradicts the context
-
-[OUTPUT FORMAT]
-Reasoning: <your reasoning>
-Score: <digit 0-10>"""
-        try:
-            return self._parse_cot_score(self._call_llm_with_reasoning(prompt))
-        except Exception:
-            return 0.5
-
-    def evaluate_completeness(self, question: str, answer: str) -> float:
-        """완전성 평가 (0-1)"""
-        prompt = f"""Rate how completely this answer addresses the question.
+{clean_ctx[:3500]}
 
 [QUESTION]
 {question}
@@ -207,54 +154,26 @@ Score: <digit 0-10>"""
 [ANSWER]
 {answer}
 
-[SCALE]
-10: Comprehensive answer to all aspects
-8-9: Addresses main points well
-6-7: Addresses core question but lacks some detail
-4-5: Partially addresses question
-1-3: Minimal coverage
-0: Doesn't address question
+[SCORING DIMENSIONS]
+1. factuality (0-10): Are the answer's claims factually consistent with the context?
+   - 10: All claims match context semantically
+   - 6-7: Core claims match, minor gaps
+   - 0-3: Claims contradict or cannot be derived from context
 
-[OUTPUT]
-Respond with ONLY a single digit (0-10)."""
+2. completeness (0-10): Does the answer fully address the question?
+   - 10: Comprehensive, covers all aspects
+   - 6-7: Addresses main point, lacks some detail
+   - 0-3: Barely addresses the question
+
+3. groundedness (0-10): Can the answer be derived/inferred from the context?
+   - 10: All claims clearly derivable from context
+   - 6-7: Core claims derivable, minor unsupported details
+   - 0-3: Most claims cannot be traced to context
+
+[OUTPUT — valid JSON only]
+{{"factuality": <0-10>, "completeness": <0-10>, "groundedness": <0-10>}}"""
         try:
-            return min(10, max(0, int(self._call_llm(prompt).strip()))) / 10.0
-        except ValueError:
-            return 0.5
-
-    def evaluate_groundedness(self, answer: str, context: str) -> float:
-        """근거성 평가 (0-1) - CoT 기반"""
-        clean_ctx = clean_markdown(context)
-        prompt = f"""You are a strict data quality auditor evaluating GROUNDEDNESS.
-
-CRITICAL RULES:
-- Do NOT require exact quotes or identical wording.
-- If the answer's meaning can be DERIVED or INFERRED from the context, it is grounded.
-- Only penalize if the answer asserts something the context does NOT support at all.
-
-[CONTEXT]
-{clean_ctx[:4000]}
-
-[ANSWER]
-{answer}
-
-[TASK]
-Step 1: Identify the main claims in the answer.
-Step 2: For each claim, check if it can be derived from the context.
-Step 3: Give a score.
-
-[SCALE]
-10: All claims clearly derivable from context
-8-9: Nearly all claims derivable, trivial additions
-6-7: Core claims derivable, some minor unsupported details
-4-5: Mixed - some claims derivable, others unclear
-1-3: Most claims cannot be traced to context
-0: Contradicts or is completely unrelated to context
-
-[OUTPUT FORMAT]
-Reasoning: <your reasoning>
-Score: <digit 0-10>"""
-        try:
-            return self._parse_cot_score(self._call_llm_with_reasoning(prompt))
+            raw = self._call_llm_combined(prompt)
+            return self._parse_combined(raw)
         except Exception:
-            return 0.5
+            return {"factuality": 0.5, "completeness": 0.5, "groundedness": 0.5}

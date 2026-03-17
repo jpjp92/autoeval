@@ -12,6 +12,8 @@ import { motion } from "motion/react";
 
 function App() {
   const [activeTab, setActiveTab] = useState("overview");
+  const [currentFilename, setCurrentFilename] = useState<string | null>(null);
+  const [lastEvalJobId, setLastEvalJobId] = useState<string | null>(null);
 
   const getHeaderTitle = () => {
     if (activeTab === "evaluation") return "Evaluation";
@@ -41,15 +43,24 @@ function App() {
             )}
 
             {activeTab === "standardization" && (
-              <DataStandardizationPanel setActiveTab={setActiveTab} />
+              <DataStandardizationPanel
+                setActiveTab={setActiveTab}
+                onUploadComplete={(filename) => setCurrentFilename(filename)}
+              />
             )}
-            
+
             {activeTab === "generation" && (
-              <QAGenerationPanel />
+              <QAGenerationPanel
+                currentFilename={currentFilename}
+                onEvalComplete={(evalJobId) => {
+                  setLastEvalJobId(evalJobId);
+                }}
+                onGoToEvaluation={() => setActiveTab("evaluation")}
+              />
             )}
 
             {activeTab === "evaluation" && (
-              <QAEvaluationDashboard />
+              <QAEvaluationDashboard evalJobId={lastEvalJobId} />
             )}
 
 

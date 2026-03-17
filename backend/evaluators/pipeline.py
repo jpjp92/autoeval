@@ -113,21 +113,26 @@ def _rag_worker(args):
 
 
 def _quality_worker(args):
-    """Layer 3: 단일 QA Quality 평가 worker"""
+    """Layer 3: 단일 QA Quality 평가 worker (3 calls → 1 call 통합)"""
     i, qa, quality_evaluator, job_id = args
     try:
-        factuality   = quality_evaluator.evaluate_factuality(qa.get("a", ""), qa.get("context", ""))
-        completeness = quality_evaluator.evaluate_completeness(qa.get("q", ""), qa.get("a", ""))
-        groundedness = quality_evaluator.evaluate_groundedness(qa.get("a", ""), qa.get("context", ""))
+        scores = quality_evaluator.evaluate_all(
+            question=qa.get("q", ""),
+            answer=qa.get("a", ""),
+            context=qa.get("context", ""),
+        )
+        factuality   = scores["factuality"]
+        completeness = scores["completeness"]
+        groundedness = scores["groundedness"]
 
         avg_quality = (factuality + completeness + groundedness) / 3
         return i, {
-            "qa_index":    i,
-            "factuality":  round(factuality, 3),
+            "qa_index":     i,
+            "factuality":   round(factuality, 3),
             "completeness": round(completeness, 3),
             "groundedness": round(groundedness, 3),
-            "avg_quality": round(avg_quality, 3),
-            "pass":        avg_quality >= 0.70,
+            "avg_quality":  round(avg_quality, 3),
+            "pass":         avg_quality >= 0.70,
         }
     except Exception as e:
         logger.warning(f"[{job_id}] Quality evaluation error at index {i}: {e}")
@@ -173,7 +178,7 @@ def run_full_evaluation_pipeline(
     if "syntax" in layers:
         logger.info(f"[{job_id}] 🔍 Layer 1-A: Syntax Validation starting (workers={SYNTAX_MAX_WORKERS})...")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message="1️⃣ 구문 검증 중...", progress=5)
+            eval_manager.update_job(job_id, message="Layer 1-A: 구문 검증 중...", progress=5)
             eval_manager.update_layer_status(job_id, "syntax", "running", 50, "필드, 타입, 길이 검증 중...")
 
         validator = SyntaxValidator()
@@ -206,7 +211,7 @@ def run_full_evaluation_pipeline(
         }
 
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"1️⃣ 구문 검증 완료: {len(valid_qa)}/{len(qa_list)} 통과", progress=15)
+            eval_manager.update_job(job_id, message=f"Layer 1-A: 구문 검증 완료 {len(valid_qa)}/{len(qa_list)} 통과", progress=15)
             eval_manager.update_layer_status(job_id, "syntax", "completed", 100, f"✓ {len(valid_qa)}/{len(qa_list)} 통과")
         logger.info(f"[{job_id}] ✓ Layer 1-A completed: {len(valid_qa)}/{len(qa_list)} passed")
 
@@ -232,7 +237,7 @@ def run_full_evaluation_pipeline(
     if "rag" in layers and valid_qa:
         logger.info(f"[{job_id}] 🎯 Layer 2: RAG Triad Evaluation starting (workers={max_api_workers})...")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"3️⃣ RAG Triad 평가 진행 중... (0/{len(valid_qa)})", progress=45)
+            eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 평가 진행 중... (0/{len(valid_qa)})", progress=45)
             eval_manager.update_layer_status(job_id, "rag", "running", 5, f"관련성, 근거성, 명확성 평가 중... (0/{len(valid_qa)})")
 
         rag_evaluator = RAGTriadEvaluator(evaluator_model)
@@ -277,7 +282,7 @@ def run_full_evaluation_pipeline(
 
         if eval_manager and job_id:
             rag_avg = results["layers"]["rag"]["summary"]["avg_score"]
-            eval_manager.update_job(job_id, message=f"3️⃣ RAG Triad 평가 완료: {rag_avg:.3f}", progress=70)
+            eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 완료: {rag_avg:.3f}", progress=70)
             eval_manager.update_layer_status(job_id, "rag", "completed", 100, f"✓ 점수: {rag_avg:.3f}")
         logger.info(f"[{job_id}] ✓ Layer 2 completed: {len(valid_qa)} QA evaluated")
 
@@ -285,7 +290,7 @@ def run_full_evaluation_pipeline(
     if "quality" in layers and valid_qa:
         logger.info(f"[{job_id}] ⭐ Layer 3: Quality Evaluation starting (workers={max_api_workers})...")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"4️⃣ LLM 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
+            eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
             eval_manager.update_layer_status(job_id, "quality", "running", 5, f"사실성, 완전성, 근거성 CoT 평가 중... (0/{len(valid_qa)})")
 
         quality_evaluator = QAQualityEvaluator(evaluator_model)
@@ -337,7 +342,7 @@ def run_full_evaluation_pipeline(
 
         if eval_manager and job_id:
             quality_avg = results["layers"]["quality"]["summary"]["avg_quality"]
-            eval_manager.update_job(job_id, message=f"4️⃣ LLM 품질 평가 완료: {quality_avg:.3f} (통과: {pass_rate}%)", progress=85)
+            eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 완료: {quality_avg:.3f} (통과: {pass_rate}%)", progress=85)
             eval_manager.update_layer_status(job_id, "quality", "completed", 100, f"✓ 점수: {quality_avg:.3f}, 통과율: {pass_rate}%")
         logger.info(f"[{job_id}] ✓ Layer 3 completed: {passed}/{len(valid_qa)} passed ({pass_rate}%)")
 
@@ -366,30 +371,64 @@ def run_evaluation(
     try:
         eval_manager.update_job(job_id, status=EvalJobStatus.RUNNING, message="평가 파이프라인 준비 중...")
 
-        result_filepath = OUTPUT_DIR / result_filename
-        if not result_filepath.exists():
-            raise FileNotFoundError(f"Result file not found: {result_filename}")
+        qa_list        = []
+        gen_lang       = "ko"
+        gen_model      = ""
+        gen_prompt_ver = "v1"
 
-        with open(result_filepath, "r", encoding="utf-8") as f:
-            result_data = json.load(f)
+        # generation_id 있으면 Supabase에서 직접 읽기 (파일 불필요)
+        if generation_id:
+            from config.supabase_client import get_qa_generation_from_supabase
+            gen_data = asyncio.run(get_qa_generation_from_supabase(generation_id))
+            if gen_data:
+                gen_meta       = gen_data.get("metadata", {})
+                gen_lang       = gen_meta.get("lang", "ko")
+                gen_model      = gen_meta.get("generation_model", "")
+                gen_prompt_ver = gen_meta.get("prompt_version", "v1")
 
-        # 결과 파일에서 실제 생성 설정 읽기
-        gen_config = result_data.get("config", {})
-        gen_lang  = gen_config.get("lang", "ko")
-        gen_model = gen_config.get("model", "")
+                # qa_list 컬럼 = [{docId, text, qa_list: [{q,a,intent}]}, ...]
+                # 로컬 파일 fallback과 동일하게 flatten + context 주입
+                raw_results = gen_data.get("qa_list", [])
+                for result_idx, result in enumerate(raw_results):
+                    context = result.get("text", "")
+                    for qa_idx, qa in enumerate(result.get("qa_list", [])):
+                        qa_list.append({
+                            "q":       qa.get("q", ""),
+                            "a":       qa.get("a", ""),
+                            "context": context[:10000],
+                            "qa_id":   qa.get("qa_id", f"qa_{result_idx}_{qa_idx}"),
+                            "intent":  qa.get("intent", ""),
+                            "docId":   result.get("docId", ""),
+                        })
 
-        qa_list = []
-        for result_idx, result in enumerate(result_data.get("results", [])):
-            context = result.get("text", "")
-            for qa_idx, qa in enumerate(result.get("qa_list", [])):
-                qa_list.append({
-                    "q":       qa.get("q", ""),
-                    "a":       qa.get("a", ""),
-                    "context": context[:10000],
-                    "qa_id":   qa.get("qa_id", f"qa_{result_idx}_{qa_idx}"),
-                    "intent":  qa.get("intent", ""),
-                    "docId":   qa.get("docId", ""),
-                })
+                logger.info(f"[{job_id}] Supabase에서 QA 로드: {len(qa_list)}개 (generation_id={generation_id})")
+            else:
+                raise ValueError(f"generation_id {generation_id} 를 Supabase에서 찾을 수 없습니다.")
+        else:
+            # fallback: 로컬 파일에서 읽기
+            result_filepath = OUTPUT_DIR / result_filename
+            if not result_filepath.exists():
+                raise FileNotFoundError(f"Result file not found: {result_filename}")
+
+            with open(result_filepath, "r", encoding="utf-8") as f:
+                result_data = json.load(f)
+
+            gen_config     = result_data.get("config", {})
+            gen_lang       = gen_config.get("lang", "ko")
+            gen_model      = gen_config.get("model", "")
+            gen_prompt_ver = gen_config.get("prompt_version", "v1")
+
+            for result_idx, result in enumerate(result_data.get("results", [])):
+                context = result.get("text", "")
+                for qa_idx, qa in enumerate(result.get("qa_list", [])):
+                    qa_list.append({
+                        "q":       qa.get("q", ""),
+                        "a":       qa.get("a", ""),
+                        "context": context[:10000],
+                        "qa_id":   qa.get("qa_id", f"qa_{result_idx}_{qa_idx}"),
+                        "intent":  qa.get("intent", ""),
+                        "docId":   qa.get("docId", ""),
+                    })
 
         if limit:
             qa_list = qa_list[:limit]
@@ -497,7 +536,7 @@ def run_evaluation(
                         "generation_model": gen_model,
                         "evaluator_model":  evaluator_model,
                         "lang":             gen_lang,
-                        "prompt_version":   gen_config.get("prompt_version", "v1"),
+                        "prompt_version":   gen_prompt_ver,
                     },
                     total_qa=len(qa_list),
                     valid_qa=valid_qa_count,

@@ -83,6 +83,29 @@ async def save_qa_generation_to_supabase(
         return None
 
 
+async def get_qa_generation_from_supabase(generation_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Supabase qa_gen_results에서 생성 결과 조회
+
+    Returns:
+        { "metadata": {...}, "qa_list": [...] } 또는 None
+    """
+    if not supabase_client:
+        return None
+    try:
+        response = (
+            supabase_client.table("qa_gen_results")
+            .select("metadata, qa_list")
+            .eq("id", generation_id)
+            .single()
+            .execute()
+        )
+        return response.data if response.data else None
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch QA generation from Supabase: {e}")
+        return None
+
+
 # ============================================================================
 # 평가 결과 저장
 # ============================================================================
@@ -384,18 +407,22 @@ async def get_doc_chunks_by_filter(
     hierarchy_l1: Optional[str] = None,
     hierarchy_l2: Optional[str] = None,
     hierarchy_l3: Optional[str] = None,
+    filename: Optional[str] = None,
     limit: int = 20,
 ) -> list:
     """
     metadata 필터 기반 doc_chunks 직접 조회 (vector similarity 없음)
     hierarchy 필터만 필요한 경우 match_doc_chunks RPC 대신 사용.
     지정된 필드만 AND 조건으로 필터링.
+    filename 지정 시 해당 문서 청크만 조회.
     """
     if not supabase_client:
         return []
 
     try:
         query = supabase_client.table("doc_chunks").select("id, content, metadata")
+        if filename:
+            query = query.eq("metadata->>filename", filename)
         if hierarchy_l1:
             query = query.eq("metadata->>hierarchy_l1", hierarchy_l1)
         if hierarchy_l2:
@@ -424,44 +451,54 @@ async def get_document_chunks(source_name: str, limit: int = 10) -> list:
         return []
 
 
-async def get_hierarchy_list() -> Dict[str, Any]:
+async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
     """
-    doc_chunks에서 hierarchy_l1, hierarchy_l2 고유값 목록 반환
+    doc_chunks에서 hierarchy_l1, l2, l3 고유값 목록 반환
+    filename 지정 시 해당 문서 청크만 대상으로 조회.
 
     Returns:
         {
-            "l1_list": ["가이드 개요", "데이터 구축 공정", ...],
-            "l2_by_l1": {
-                "가이드 개요": ["문서 이력 관리", "데이터 품질 전략", ...],
-                ...
-            }
+            "l1_list": [...],
+            "l2_by_l1": { "l1": ["l2", ...], ... },
+            "l3_by_l1_l2": { "l1__l2": ["l3", ...], ... }
         }
     """
     if not supabase_client:
-        return {"l1_list": [], "l2_by_l1": {}}
+        return {"l1_list": [], "l2_by_l1": {}, "l3_by_l1_l2": {}}
 
     try:
-        response = supabase_client.table("doc_chunks").select("metadata").execute()
+        query = supabase_client.table("doc_chunks").select("metadata")
+        if filename:
+            query = query.eq("metadata->>filename", filename)
+        response = query.execute()
         chunks = response.data or []
 
         l2_by_l1: Dict[str, set] = {}
+        l3_by_l1_l2: Dict[str, set] = {}
         for chunk in chunks:
             meta = chunk.get("metadata", {})
             l1 = meta.get("hierarchy_l1")
             l2 = meta.get("hierarchy_l2")
+            l3 = meta.get("hierarchy_l3")
             if l1:
                 if l1 not in l2_by_l1:
                     l2_by_l1[l1] = set()
                 if l2:
                     l2_by_l1[l1].add(l2)
+                    if l3:
+                        key = f"{l1}__{l2}"
+                        if key not in l3_by_l1_l2:
+                            l3_by_l1_l2[key] = set()
+                        l3_by_l1_l2[key].add(l3)
 
         return {
             "l1_list": sorted(l2_by_l1.keys()),
             "l2_by_l1": {k: sorted(v) for k, v in l2_by_l1.items()},
+            "l3_by_l1_l2": {k: sorted(v) for k, v in l3_by_l1_l2.items()},
         }
     except Exception as e:
         logger.error(f"❌ Failed to get hierarchy list: {e}")
-        return {"l1_list": [], "l2_by_l1": {}}
+        return {"l1_list": [], "l2_by_l1": {}, "l3_by_l1_l2": {}}
 
 
 async def update_document_hierarchy(source_name: str, l1: str, l2: str, l3: str) -> bool:

@@ -30,6 +30,7 @@ interface GenerateRequest {
   qa_per_doc?: number;
   prompt_version: string;
   doc_ids?: string[];
+  filename?: string;
   hierarchy_l1?: string;
   hierarchy_l2?: string;
   hierarchy_l3?: string;
@@ -129,14 +130,16 @@ export async function getResultDetail(filename: string): Promise<ApiResponse> {
 
 /**
  * Get available hierarchy L1/L2 list from DB
+ * filename 지정 시 해당 문서 청크만 대상으로 조회
  */
-export async function getHierarchyList(): Promise<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; success: boolean }> {
+export async function getHierarchyList(filename?: string): Promise<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; l3_by_l1_l2: Record<string, string[]>; success: boolean }> {
   try {
-    const response = await fetch(`${API_BASE}/api/ingestion/hierarchy-list`);
+    const params = filename ? `?filename=${encodeURIComponent(filename)}` : "";
+    const response = await fetch(`${API_BASE}/api/ingestion/hierarchy-list${params}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
-    return { success: false, l1_list: [], l2_by_l1: {} };
+    return { success: false, l1_list: [], l2_by_l1: {}, l3_by_l1_l2: {} };
   }
 }
 

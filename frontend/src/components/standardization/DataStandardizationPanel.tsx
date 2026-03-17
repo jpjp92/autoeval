@@ -12,7 +12,10 @@ interface AnalysisResult {
   validation: string;
 }
 
-export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
+export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
+  setActiveTab?: (tab: string) => void;
+  onUploadComplete?: (filename: string) => void;
+}) {
   // --- Upload state ---
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -46,6 +49,7 @@ export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab
       if (res.ok) {
         setUploadMessage({ text: `"${fileName}" 업로드 완료. 백그라운드에서 벡터화 중입니다.`, type: "success" });
         setUploadedFilename(fileName);
+        onUploadComplete?.(fileName);
         setFile(null);
       } else {
         setUploadMessage({ text: data.detail || "업로드 실패", type: "error" });
@@ -193,7 +197,7 @@ export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab
             )}
           >
             {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
-            <span>{isUploading ? "데이터 처리 중..." : "데이터 정규화 시작"}</span>
+            <span>{isUploading ? "데이터 처리 중..." : "데이터 규격화 시작"}</span>
           </button>
         </div>
       </div>
@@ -203,10 +207,10 @@ export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50">
             <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-violet-500" /> 계층 구조 분석 (Hierarchy)
+              <Sparkles className="w-5 h-5 text-violet-500" /> 컨텍스트 분석 (Hierarchy)
             </h3>
             <p className="text-sm text-slate-500 mt-1">
-              AI가 문서를 분석하여 L1/L2/L3 계층 태깅을 자동으로 적용합니다.
+              LLM이 문서 도메인을 분석하고 L1/L2/L3 계층 구조를 자동으로 태깅합니다.
             </p>
           </div>
 
@@ -228,7 +232,7 @@ export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab
                 )}
               >
                 {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                <span>{isAnalyzing ? "분석 중..." : "AI 분석 실행"}</span>
+                <span>{isAnalyzing ? "분석 중..." : "컨텍스트 분석"}</span>
               </button>
             </div>
 

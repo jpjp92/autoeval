@@ -78,7 +78,7 @@ const IntentTooltip = ({ active, payload }: any) => {
 
 // --- Components ---
 
-export function QAEvaluationDashboard() {
+export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null } = {}) {
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   const evaluationData = {

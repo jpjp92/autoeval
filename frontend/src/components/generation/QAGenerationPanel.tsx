@@ -6,7 +6,8 @@
  * - Form state 관리
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Settings, Play, Loader2, ListTree, CheckCircle2, ChevronRight, AlertCircle, X, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { generateQA, getHierarchyList } from "@/src/lib/api";
@@ -32,7 +33,13 @@ interface FormValues {
   evaluatorModel: string;
 }
 
-export function QAGenerationPanel() {
+interface QAGenerationPanelProps {
+  currentFilename?: string | null;
+  onEvalComplete?: (evalJobId: string) => void;
+  onGoToEvaluation?: () => void;
+}
+
+export function QAGenerationPanel({ currentFilename, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
   // Form State
   const [formValues, setFormValues] = useState<FormValues>({
     model: "gemini-3.1-flash",
@@ -56,6 +63,7 @@ export function QAGenerationPanel() {
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [evalReport, setEvalReport] = useState<string | null>(null);
   // 4단계 평가 상태 추적
+  const prevLayerStatuses = useRef<Record<string, string>>({});
   const [evalLayers, setEvalLayers] = useState<any>({
     syntax: { status: "pending", progress: 0, message: "" },
     stats: { status: "pending", progress: 0, message: "" },
@@ -69,31 +77,51 @@ export function QAGenerationPanel() {
   // Hierarchy (DB 기반)
   const [hierarchyL1List, setHierarchyL1List] = useState<string[]>([]);
   const [hierarchyL2Map, setHierarchyL2Map] = useState<Record<string, string[]>>({});
+  const [hierarchyL3Map, setHierarchyL3Map] = useState<Record<string, string[]>>({});
   const [selectedL1, setSelectedL1] = useState<string>("");
   const [selectedL2, setSelectedL2] = useState<string>("");
+  const [selectedL3, setSelectedL3] = useState<string>("");
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
 
-  // 컴포넌트 마운트 시 hierarchy 목록 로드
+  // currentFilename 변경 시 hierarchy 목록 재로드
   useEffect(() => {
     loadHierarchyList();
-  }, []);
+  }, [currentFilename]);
 
   const loadHierarchyList = async () => {
+    setSelectedL1("");
+    setSelectedL2("");
+    setSelectedL3("");
+    if (!currentFilename) {
+      setHierarchyL1List([]);
+      setHierarchyL2Map({});
+      setHierarchyL3Map({});
+      setHierarchyLoaded(false);
+      return;
+    }
     setIsLoadingHierarchy(true);
-    const result = await getHierarchyList();
+    const result = await getHierarchyList(currentFilename);
     if (result.success) {
       setHierarchyL1List(result.l1_list);
       setHierarchyL2Map(result.l2_by_l1);
+      setHierarchyL3Map(result.l3_by_l1_l2 ?? {});
       setHierarchyLoaded(true);
     }
     setIsLoadingHierarchy(false);
   };
 
-  // L1 변경 시 L2 초기화
+  // L1 변경 시 L2, L3 초기화
   const handleL1Change = (l1: string) => {
     setSelectedL1(l1);
     setSelectedL2("");
+    setSelectedL3("");
+  };
+
+  // L2 변경 시 L3 초기화
+  const handleL2Change = (l2: string) => {
+    setSelectedL2(l2);
+    setSelectedL3("");
   };
 
   // 진행상황 폴링
@@ -186,35 +214,30 @@ export function QAGenerationPanel() {
           setEvalLayers(data.layers);
           
           // 각 단계의 상태 변화를 로그에 기록
+          const LAYER_NAMES: Record<string, string> = {
+            syntax:  "Layer 1-A  구문 검증",
+            stats:   "Layer 1-B  데이터셋 통계",
+            rag:     "Layer 2    RAG Triad",
+            quality: "Layer 3    품질 평가",
+          };
           Object.entries(data.layers).forEach(([layer, info]: [string, any]) => {
-            if (info.status === 'completed' && evalLayers[layer]?.status !== 'completed') {
-              // 단계가 새로 완료되었음
-              const layerName = {
-                syntax: "1️⃣ 구문 검증",
-                stats: "2️⃣ 데이터셋 통계",
-                rag: "3️⃣ RAG Triad 평가",
-                quality: "4️⃣ 품질 평가"
-              }[layer];
-              addLog(`✓ ${layerName} 완료: ${info.message}`, 'success');
-            } else if (info.status === 'running' && evalLayers[layer]?.status !== 'running') {
-              // 단계가 새로 시작됨
-              const layerName = {
-                syntax: "1️⃣ 구문 검증",
-                stats: "2️⃣ 데이터셋 통계",
-                rag: "3️⃣ RAG Triad 평가",
-                quality: "4️⃣ 품질 평가"
-              }[layer];
-              addLog(`▶ ${layerName} 시작중...`, 'info');
+            const prev = prevLayerStatuses.current[layer];
+            if (info.status === 'completed' && prev !== 'completed') {
+              addLog(`${LAYER_NAMES[layer] ?? layer} 완료: ${info.message}`, 'success');
+            } else if (info.status === 'running' && prev !== 'running') {
+              addLog(`${LAYER_NAMES[layer] ?? layer} 시작중...`, 'info');
             }
+            prevLayerStatuses.current[layer] = info.status;
           });
         }
 
         if (data.status === 'completed') {
           console.log(`[Evaluation Complete]`, { report: data.eval_report });
           setEvalReport(data.eval_report);
-          addLog(`✓ 전체 평가 완료: ${data.eval_report}`, 'success');
+          addLog('전체 평가 파이프라인 완료', 'success');
           setPhase('complete');
           clearInterval(pollInterval);
+          onEvalComplete?.(evalJobId);
           setEvalJobId(null); // 폴링 중지
         } else if (data.status === 'failed') {
           console.error(`[Evaluation Failed]`, data.error);
@@ -304,8 +327,10 @@ export function QAGenerationPanel() {
         lang: formValues.lang,
         samples: formValues.samples,
         prompt_version: formValues.promptVersion,
+        ...(currentFilename && { filename: currentFilename }),
         ...(selectedL1 && { hierarchy_l1: selectedL1 }),
         ...(selectedL2 && { hierarchy_l2: selectedL2 }),
+        ...(selectedL3 && { hierarchy_l3: selectedL3 }),
       });
 
       console.log("[Generate QA API Response]", response);
@@ -338,378 +363,282 @@ export function QAGenerationPanel() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto animate-in fade-in duration-500 space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
-          {/* Error Display */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-red-900">Generation Error</h4>
-                <p className="text-sm text-red-800 mt-1">{error}</p>
-              </div>
-              <button
-                onClick={() => setError(null)}
-                className="text-red-600 hover:text-red-800"
+    <div className="max-w-5xl mx-auto animate-in fade-in duration-500 space-y-5">
+
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="font-semibold text-red-900">Generation Error</h4>
+            <p className="text-sm text-red-800 mt-1">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Top row: Settings (2/3) + Hierarchy (1/3) — equal height */}
+      <div className="grid grid-cols-3 gap-5 items-stretch">
+
+        {/* Settings */}
+        <div className="col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+          <h3 className="font-semibold flex items-center gap-2 text-slate-800">
+            <Settings className="w-4 h-4 text-indigo-500" /> 설정
+          </h3>
+
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="space-y-1.5">
+              <label className="text-slate-500 font-medium">생성 모델</label>
+              <select
+                value={formValues.model}
+                onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
+                disabled={isGenerating}
+                className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
               >
-                <X className="w-4 h-4" />
+                <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
+                <option value="claude-sonnet">Claude Sonnet 4.6</option>
+                <option value="gpt-5.2">GPT-5.2</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-500 font-medium">언어</label>
+              <select
+                value={formValues.lang}
+                onChange={(e) => setFormValues({ ...formValues, lang: e.target.value })}
+                disabled={isGenerating}
+                className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
+              >
+                <option value="ko">한국어 (ko)</option>
+                <option value="en">영어 (en)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-500 font-medium">문서당 샘플 수</label>
+              <input
+                type="number" min="1" max="50"
+                value={sampleInputValue}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSampleInputValue(val);
+                  const num = parseInt(val);
+                  if (!isNaN(num) && num >= 1 && num <= 50) setFormValues({ ...formValues, samples: num });
+                }}
+                onBlur={(e) => { if (e.target.value === "") setFormValues({ ...formValues, samples: 1 }); }}
+                disabled={isGenerating}
+                className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
+                placeholder="1 – 50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-500 font-medium">프롬프트 버전</label>
+              <select
+                value={formValues.promptVersion}
+                onChange={(e) => setFormValues({ ...formValues, promptVersion: e.target.value })}
+                disabled={isGenerating}
+                className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
+              >
+                <option value="v1">v1 (베타)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-500 font-medium">평가 모델</label>
+              <select
+                value={formValues.evaluatorModel}
+                onChange={(e) => setFormValues({ ...formValues, evaluatorModel: e.target.value })}
+                disabled={isGenerating}
+                className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
+              >
+                <option value="gemini-flash">Gemini 2.5 Flash</option>
+                <option value="claude-haiku">Claude Haiku 4.5</option>
+                <option value="gpt-5.1">GPT-5.1</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Auto Evaluate Toggle */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-800">자동 평가 파이프라인</p>
+              <p className="text-xs text-slate-400">생성 후 4-Layer 평가 자동 실행</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer"
+                checked={formValues.autoEvaluate}
+                onChange={(e) => setFormValues({ ...formValues, autoEvaluate: e.target.checked })}
+                disabled={isGenerating}
+              />
+              <div className={cn("w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600", isGenerating && "opacity-50 cursor-not-allowed")} />
+            </label>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-3 border-t border-slate-100">
+            <button
+              onClick={handleStart}
+              disabled={isGenerating}
+              className={cn("flex-1 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all", isGenerating ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm")}
+            >
+              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              <span>
+                {phase === "generating" ? "생성 중..." : phase === "evaluating" ? "평가 중..." : formValues.autoEvaluate ? "생성 및 평가 시작" : "QA 생성 시작"}
+              </span>
+            </button>
+            {isGenerating && (
+              <button onClick={handleCancel} className="px-4 py-3 rounded-lg font-semibold bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all">
+                취소
               </button>
+            )}
+          </div>
+
+          {/* Progress Bar */}
+          {isGenerating && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>{phase === "generating" ? "생성 중" : "평가 중"}</span>
+                <span className="text-indigo-600 font-semibold">{progress}%</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div className="bg-indigo-500 h-full rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
             </div>
           )}
 
-          {/* Configuration Card */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="font-semibold flex items-center gap-2 text-slate-800">
-              <Settings className="w-5 h-5 text-indigo-500" /> 설정
-            </h3>
-
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              {/* Model Selection */}
-              <div className="space-y-1.5">
-                <label className="text-slate-500 font-medium">생성 모델</label>
-                <select
-                  value={formValues.model}
-                  onChange={(e) => setFormValues({ ...formValues, model: e.target.value })}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <option value="gemini-3.1-flash">Gemini 3.1 Flash</option>
-                  <option value="claude-sonnet">Claude Sonnet 4.6</option>
-                  <option value="gpt-5.2">GPT-5.2</option>
-                </select>
-              </div>
-
-              {/* Language Selection */}
-              <div className="space-y-1.5">
-                <label className="text-slate-500 font-medium">언어</label>
-                <select
-                  value={formValues.lang}
-                  onChange={(e) => setFormValues({ ...formValues, lang: e.target.value })}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <option value="ko">한국어 (ko)</option>
-                  <option value="en">영어 (en)</option>
-                </select>
-              </div>
-
-              {/* Samples Count */}
-              <div className="space-y-1.5">
-                <label className="text-slate-500 font-medium">문서당 샘플 수 (기본값: 1)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={sampleInputValue}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSampleInputValue(val); // 입력칸 표시
-                    const num = parseInt(val);
-                    if (!isNaN(num) && num >= 1 && num <= 50) {
-                      setFormValues({ ...formValues, samples: num });
-                    }
-                  }}
-                  onBlur={(e) => {
-                    // 포커스 잃을 때 값이 빈 경우 기본값 1 설정
-                    if (e.target.value === "") {
-                      setFormValues({ ...formValues, samples: 1 });
-                    }
-                  }}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
-                  placeholder="숫자 입력 (1-50)"
-                />
-              </div>
-
-              {/* Prompt Version */}
-              <div className="space-y-1.5">
-                <label className="text-slate-500 font-medium">프롬프트 버전</label>
-                <select
-                  value={formValues.promptVersion}
-                  onChange={(e) => setFormValues({ ...formValues, promptVersion: e.target.value })}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <option value="v1">v1 (베타)</option>
-                </select>
-              </div>
-
-              {/* Evaluator Model Selection */}
-              <div className="space-y-1.5">
-                <label className="text-slate-500 font-medium">평가 모델</label>
-                <select
-                  value={formValues.evaluatorModel}
-                  onChange={(e) => setFormValues({ ...formValues, evaluatorModel: e.target.value })}
-                  disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <option value="gemini-flash">Gemini 2.5 Flash</option>
-                  <option value="claude-haiku">Claude Haiku 4.5</option>
-                  <option value="gpt-5.1">GPT-5.1</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Auto Evaluate Toggle */}
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-medium text-slate-800">자동 평가 파이프라인</h4>
-                <p className="text-xs text-slate-500">생성 후 RAG Triad 평가 자동 실행</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={formValues.autoEvaluate}
-                  onChange={(e) => setFormValues({ ...formValues, autoEvaluate: e.target.checked })}
-                  disabled={isGenerating}
-                />
-                <div className={cn(
-                  "w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600",
-                  isGenerating && "opacity-50 cursor-not-allowed"
-                )}></div>
-              </label>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t border-slate-100">
-              <button
-                onClick={handleStart}
-                disabled={isGenerating}
-                className={cn(
-                  "flex-1 py-3.5 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all",
-                  isGenerating
-                    ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                    : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
-                )}
-              >
-                {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5" />}
-                <span>
-                  {phase === "generating" ? 'QA 데이터셋 생성 중...' :
-                    phase === "evaluating" ? '평가 실행 중...' :
-                    formValues.autoEvaluate ? '생성 및 평가 시작' : 'QA 생성 시작'}
-                </span>
-              </button>
-
-              {isGenerating && (
-                <button
-                  onClick={handleCancel}
-                  className="px-4 py-3.5 rounded-lg font-semibold bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all"
-                >
-                  취소
-                </button>
-              )}
-            </div>
-
-            {/* Progress Bar */}
-            {isGenerating && (
-              <div className="pt-4 border-t border-slate-100 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">{phase === "generating" ? "생성 중" : "평가 중"}</span>
-                  <span className="text-indigo-600 font-semibold">{progress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-indigo-600 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 4-Layer Evaluation Progress */}
-            {phase === "evaluating" && (
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <h4 className="font-semibold text-sm text-slate-700">📊 평가 파이프라인 진행 상황</h4>
-                <div className="space-y-2.5">
-                  {["syntax", "stats", "rag", "quality"].map((layer) => {
-                    const layerInfo = evalLayers[layer];
-                    const layerLabel = {
-                      syntax: "1️⃣ 구문 검증 (Syntax)",
-                      stats: "2️⃣ 데이터셋 통계 (Stats)",
-                      rag: "3️⃣ RAG Triad 평가",
-                      quality: "4️⃣ LLM 품질 평가"
-                    }[layer];
-
-                    return (
-                      <div key={layer} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-slate-700">{layerLabel}</span>
-                          <span className={cn(
-                            "text-xs font-semibold px-2.5 py-1 rounded-full",
-                            layerInfo.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                              layerInfo.status === "running" ? "bg-amber-100 text-amber-700" :
-                                "bg-slate-100 text-slate-600"
-                          )}>
-                            {layerInfo.status === "completed" ? "✓ 완료" :
-                              layerInfo.status === "running" ? "▶ 진행 중" :
-                                "대기"}
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all duration-300",
-                              layerInfo.status === "completed" ? "bg-emerald-500" :
-                                layerInfo.status === "running" ? "bg-amber-500" :
-                                  "bg-slate-300"
-                            )}
-                            style={{ width: `${layerInfo.progress || 0}%` }}
-                          />
-                        </div>
-                        {layerInfo.message && (
-                          <p className="text-xs text-slate-500">{layerInfo.message}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Terminal Output */}
-          <div className="bg-slate-900 text-slate-300 p-6 rounded-xl font-mono text-xs h-64 overflow-y-auto shadow-inner border border-slate-800 space-y-1">
-            {logs.length === 0 ? (
-              <p className="text-slate-500">Terminal output will appear here...</p>
-            ) : (
-              logs.map((log, i) => (
-                <p key={i} className={cn(
-                  log.includes('[ERROR]') && "text-red-400",
-                  log.includes('[OK]') && "text-emerald-400",
-                  log.includes('[WARN]') && "text-amber-400",
-                  log.includes('[INFO]') && "text-slate-400"
-                )}>
-                  {log}
-                </p>
-              ))
-            )}
-
-            {phase === "complete" && resultFile && (
-              <div className="mt-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-300 space-y-2">
-                <p className="font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  {formValues.autoEvaluate && evalReport ? "파이프라인 완료! 📊" : "생성 완료!"}
-                </p>
-                {formValues.autoEvaluate && evalReport && typeof evalReport === 'object' && 'summary' in evalReport ? (
-                  <div className="text-sm space-y-1">
-                    <p>👥 총 QA: <span className="font-semibold">{evalReport.metadata?.total_qa}개</span> | 📋 구문검증: <span className="font-semibold">{evalReport.summary?.syntax_pass_rate}%</span> ✅</p>
-                    <p>📊 데이터셋: <span className="font-semibold">{evalReport.summary?.dataset_quality_score}/10</span> | 🔍 RAG: <span className="font-semibold">{evalReport.summary?.rag_average_score}</span> | 🎯 품질: <span className="font-semibold">{evalReport.summary?.quality_average_score}</span></p>
-                    <p>🏆 최종 등급: <span className="font-semibold">{evalReport.summary?.grade}</span> ({(evalReport.summary?.final_score * 100).toFixed(1)}%)</p>
+          {/* 4-Layer Evaluation Progress */}
+          {phase === "evaluating" && (
+            <div className="pt-3 border-t border-slate-100 space-y-2.5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">평가 파이프라인</p>
+              {(["syntax", "stats", "rag", "quality"] as const).map((layer) => {
+                const layerInfo = evalLayers[layer];
+                const layerLabel = {
+                  syntax:  "Layer 1-A  Syntax Validation",
+                  stats:   "Layer 1-B  Dataset Statistics",
+                  rag:     "Layer 2    RAG Triad",
+                  quality: "Layer 3    Quality Score",
+                }[layer];
+                return (
+                  <div key={layer} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono text-slate-600">{layerLabel}</span>
+                      <span className={cn("font-semibold px-2 py-0.5 rounded",
+                        layerInfo.status === "completed" ? "bg-emerald-50 text-emerald-700" :
+                        layerInfo.status === "running"   ? "bg-amber-50 text-amber-700" :
+                                                           "bg-slate-100 text-slate-400"
+                      )}>
+                        {layerInfo.status === "completed" ? "완료" : layerInfo.status === "running" ? "실행 중" : "대기"}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                      <div className={cn("h-full rounded-full transition-all duration-300",
+                        layerInfo.status === "completed" ? "bg-emerald-400" :
+                        layerInfo.status === "running"   ? "bg-amber-400" : "bg-slate-200"
+                      )} style={{ width: `${layerInfo.progress || 0}%` }} />
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-sm">📄 QA 생성: {resultFile}</p>
-                )}
-              </div>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Target Hierarchy */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
-          <div className="flex items-center justify-between mb-4">
+        {/* Hierarchy */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div className="flex items-center justify-between">
             <h3 className="font-semibold flex items-center gap-2 text-slate-800">
-              <ListTree className="w-5 h-5 text-indigo-500" /> Target Hierarchy
+              <ListTree className="w-4 h-4 text-indigo-500" /> Target Hierarchy
             </h3>
             <button
               onClick={loadHierarchyList}
               disabled={isLoadingHierarchy || isGenerating}
               className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
-              title="목록 새로고침"
+              title="새로고침"
             >
-              <RefreshCw className={cn("w-4 h-4", isLoadingHierarchy && "animate-spin")} />
+              <RefreshCw className={cn("w-3.5 h-3.5", isLoadingHierarchy && "animate-spin")} />
             </button>
           </div>
 
           {!hierarchyLoaded && !isLoadingHierarchy && (
-            <p className="text-xs text-slate-400 text-center py-4">
-              DB에 업로드된 문서가 없습니다.
+            <p className="text-xs text-slate-400 text-center py-6 leading-relaxed">
+              {currentFilename
+                ? "Hierarchy 정보가 없습니다.\n태깅이 완료된 문서인지 확인해주세요."
+                : "Standardization 탭에서 문서를 업로드하면\n해당 문서의 계층이 표시됩니다."}
             </p>
           )}
 
           {isLoadingHierarchy && (
-            <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-6 justify-center">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>계층 목록 불러오는 중...</span>
+              <span>불러오는 중...</span>
             </div>
           )}
 
           {hierarchyLoaded && (
-            <div className="space-y-4">
-              {/* L1 선택 */}
+            <div className="flex flex-col gap-3 flex-1">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">L1 카테고리</label>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L1 카테고리</label>
                 <select
                   value={selectedL1}
                   onChange={(e) => handleL1Change(e.target.value)}
                   disabled={isGenerating}
-                  className={cn(
-                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                    isGenerating && "opacity-50 cursor-not-allowed"
-                  )}
+                  className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
                 >
                   <option value="">전체 (필터 없음)</option>
-                  {hierarchyL1List.map((l1) => (
-                    <option key={l1} value={l1}>{l1}</option>
-                  ))}
+                  {hierarchyL1List.map((l1: string) => <option key={l1} value={l1}>{l1}</option>)}
                 </select>
               </div>
 
-              {/* L2 선택 (L1 선택 시에만 표시) */}
               {selectedL1 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">L2 섹션</label>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L2 섹션</label>
                   <select
                     value={selectedL2}
-                    onChange={(e) => setSelectedL2(e.target.value)}
+                    onChange={(e) => handleL2Change(e.target.value)}
                     disabled={isGenerating}
-                    className={cn(
-                      "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                      isGenerating && "opacity-50 cursor-not-allowed"
-                    )}
+                    className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
                   >
                     <option value="">전체 (L1 내 모든 섹션)</option>
-                    {(hierarchyL2Map[selectedL1] || []).map((l2) => (
-                      <option key={l2} value={l2}>{l2}</option>
-                    ))}
+                    {(hierarchyL2Map[selectedL1] || []).map((l2: string) => <option key={l2} value={l2}>{l2}</option>)}
                   </select>
                 </div>
               )}
 
-              {/* 현재 선택 요약 */}
-              <div className="pt-3 border-t border-slate-100 space-y-1">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">선택된 범위</p>
+              {selectedL1 && selectedL2 && (hierarchyL3Map[`${selectedL1}__${selectedL2}`] || []).length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L3 항목</label>
+                  <select
+                    value={selectedL3}
+                    onChange={(e) => setSelectedL3(e.target.value)}
+                    disabled={isGenerating}
+                    className={cn("w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all", isGenerating && "opacity-50 cursor-not-allowed")}
+                  >
+                    <option value="">전체 (L2 내 모든 항목)</option>
+                    {(hierarchyL3Map[`${selectedL1}__${selectedL2}`] || []).map((l3: string) => <option key={l3} value={l3}>{l3}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="mt-4 pt-3 border-t border-slate-100 space-y-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">선택 범위</p>
                 {!selectedL1 ? (
-                  <div className="flex items-center gap-1.5 text-sm text-slate-500">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block" />
-                    전체 문서에서 샘플링
-                  </div>
+                  <p className="text-xs text-slate-500">전체 문서에서 샘플링</p>
                 ) : (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-sm text-indigo-700 font-medium">
-                      <ChevronRight className="w-3.5 h-3.5" />
-                      {selectedL1}
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-xs text-indigo-700 font-medium">
+                      <ChevronRight className="w-3 h-3" />{selectedL1}
                     </div>
                     {selectedL2 && (
-                      <div className="flex items-center gap-1.5 text-sm text-indigo-500 pl-4">
-                        <ChevronRight className="w-3 h-3" />
-                        {selectedL2}
+                      <div className="flex items-center gap-1.5 text-xs text-indigo-400 pl-4">
+                        <ChevronRight className="w-3 h-3" />{selectedL2}
+                      </div>
+                    )}
+                    {selectedL3 && (
+                      <div className="flex items-center gap-1.5 text-xs text-indigo-300 pl-8">
+                        <ChevronRight className="w-3 h-3" />{selectedL3}
                       </div>
                     )}
                   </div>
@@ -719,6 +648,82 @@ export function QAGenerationPanel() {
           )}
         </div>
       </div>
+
+      {/* Terminal Output — full width */}
+      <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-800 bg-slate-900">
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-700" />
+          <span className="ml-2 text-xs text-slate-500 font-mono">output</span>
+        </div>
+        <div className="p-5 font-mono text-xs h-52 overflow-y-auto space-y-0.5">
+          {logs.length === 0 ? (
+            <p className="text-slate-600">Waiting for output...</p>
+          ) : (
+            logs.map((log: string, i: number) => (
+              <p key={i} className={cn(
+                "leading-5",
+                log.includes('[ERROR]') ? "text-red-400" :
+                log.includes('[OK]')    ? "text-emerald-400" :
+                log.includes('[WARN]')  ? "text-amber-400" :
+                                          "text-slate-400"
+              )}>
+                {log}
+              </p>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Completion Card — full width */}
+      <AnimatePresence>
+      {phase === "complete" && resultFile && (
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4"
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+            <h3 className="font-semibold text-slate-800">
+              {formValues.autoEvaluate && evalReport ? "파이프라인 완료" : "생성 완료"}
+            </h3>
+          </div>
+
+          {formValues.autoEvaluate && evalReport && typeof evalReport === 'object' && 'summary' in evalReport ? (
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: "총 QA", value: `${evalReport.metadata?.total_qa}개` },
+                { label: "구문 검증", value: `${evalReport.summary?.syntax_pass_rate}%` },
+                { label: "Dataset Score", value: `${evalReport.summary?.dataset_quality_score}/10` },
+                { label: "최종 등급", value: `${evalReport.summary?.grade} (${(evalReport.summary?.final_score * 100).toFixed(1)}%)` },
+              ].map(({ label, value }) => (
+                <div key={label} className="bg-slate-50 rounded-lg p-3 space-y-1">
+                  <p className="text-xs text-slate-400">{label}</p>
+                  <p className="text-sm font-semibold text-slate-800">{value}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{resultFile}</p>
+          )}
+
+          {formValues.autoEvaluate && evalReport && onGoToEvaluation && (
+            <button
+              onClick={onGoToEvaluation}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              평가 결과 보기
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </motion.div>
+      )}
+      </AnimatePresence>
+
     </div>
   );
 }
