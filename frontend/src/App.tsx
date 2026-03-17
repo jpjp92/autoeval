@@ -41,7 +41,7 @@ function App() {
             )}
 
             {activeTab === "standardization" && (
-              <DataStandardizationPanel />
+              <DataStandardizationPanel setActiveTab={setActiveTab} />
             )}
             
             {activeTab === "generation" && (

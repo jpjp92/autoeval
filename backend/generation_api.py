@@ -264,7 +264,7 @@ async def run_qa_generation_real(
     
     items = []
     
-    from config.supabase_client import search_doc_chunks, is_supabase_available
+    from config.supabase_client import search_doc_chunks, get_doc_chunks_by_filter, is_supabase_available
     
     if is_supabase_available() and (h1 or h2 or h3 or r_query):
         logger.info(f"[{job_id}] Using Vector DB retrieval (hierarchy filters present)")
@@ -296,21 +296,42 @@ async def run_qa_generation_real(
             v_norm = np.linalg.norm(v_np)
             query_vector = (v_np / v_norm).tolist() if v_norm > 0 else query_vector_values
         
-        # 만약 query_vector가 없으면 빈 벡터(모두 0)를 보내거나, 
-        # 그냥 전체 리스트를 가져오는 RPC를 사용할 수도 있지만 
-        # 현재 match_doc_chunks는 query_embedding이 필수이므로 더미를 보내거나 random sample
-        if query_vector is None:
-            query_vector = [0.0] * 1536 # Dummy for metadata filter only
-            
-        chunks = await search_doc_chunks(
-            query_embedding=query_vector,
-            match_threshold=0.0, # 필터링 위주
-            match_count=samples,
-            filter=filter_dict
-        )
+        if query_vector is not None:
+            # r_query 있음 → 실제 semantic search
+            chunks = await search_doc_chunks(
+                query_embedding=query_vector,
+                match_threshold=0.3,
+                match_count=samples,
+                filter=filter_dict
+            )
+        else:
+            # r_query 없음 → metadata 필터만 필요, 직접 select (zero vector 불필요)
+            chunks = await get_doc_chunks_by_filter(
+                hierarchy_l1=h1,
+                hierarchy_l2=h2,
+                hierarchy_l3=h3,
+                limit=samples,
+            )
         
-        # Chunk -> Item 형식으로 변환
+        # heading/발행처 청크 skip 판단
+        _COLOPHON_KEYWORDS = ["발행처:", "발행인:", "저작권", "©", "무단전재", "재배포를 금"]
+
+        def _should_skip(chunk: dict) -> bool:
+            meta    = chunk.get("metadata", {})
+            content = chunk.get("content", "")
+            if meta.get("chunk_type") == "heading":
+                return True
+            if sum(1 for kw in _COLOPHON_KEYWORDS if kw in content) >= 2:
+                return True
+            return False
+
+        # Chunk -> Item 형식으로 변환 (skip 제외)
+        skipped = 0
         for c in chunks:
+            if _should_skip(c):
+                skipped += 1
+                logger.debug(f"[{job_id}] Skipped chunk ({c.get('metadata', {}).get('chunk_type', '?')}): {c.get('content', '')[:40]!r}")
+                continue
             meta = c.get("metadata", {})
             items.append({
                 "docId": c.get("id"),
@@ -318,11 +339,17 @@ async def run_qa_generation_real(
                 "text": c.get("content"),
                 "metadata": meta
             })
-            
-        logger.info(f"[{job_id}] Vector DB found {len(items)} chunks")
+
+        logger.info(f"[{job_id}] Vector DB found {len(items)} chunks (skipped {skipped} heading/colophon)")
     
     # 2. Vector DB에서 결과가 없거나 필터가 없는 경우 로컬 JSON 폴백
     if not items:
+        if is_supabase_available():
+            logger.warning(
+                f"[{job_id}] ⚠️ [FALLBACK] DB 청크 없음 또는 hierarchy 필터 미지정 → "
+                f"KT 통신사 JSON 데이터로 대체 (ref/data/data_2026-03-06_normalized.json). "
+                f"QA 생성 전 L1/L2 계층을 선택하거나 문서를 먼저 인제스션하세요."
+            )
         logger.info(f"[{job_id}] Using local JSON data file")
         data_file = Path(__file__).parent.parent / "ref/data/data_2026-03-06_normalized.json"
         

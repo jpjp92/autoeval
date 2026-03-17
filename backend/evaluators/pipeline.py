@@ -373,6 +373,11 @@ def run_evaluation(
         with open(result_filepath, "r", encoding="utf-8") as f:
             result_data = json.load(f)
 
+        # 결과 파일에서 실제 생성 설정 읽기
+        gen_config = result_data.get("config", {})
+        gen_lang  = gen_config.get("lang", "ko")
+        gen_model = gen_config.get("model", "")
+
         qa_list = []
         for result_idx, result in enumerate(result_data.get("results", [])):
             context = result.get("text", "")
@@ -488,7 +493,12 @@ def run_evaluation(
                 }
                 supabase_eval_id = asyncio.run(save_evaluation_to_supabase(
                     job_id=job_id,
-                    metadata={"evaluator_model": evaluator_model, "lang": "ko", "prompt_version": "v1"},
+                    metadata={
+                        "generation_model": gen_model,
+                        "evaluator_model":  evaluator_model,
+                        "lang":             gen_lang,
+                        "prompt_version":   gen_config.get("prompt_version", "v1"),
+                    },
                     total_qa=len(qa_list),
                     valid_qa=valid_qa_count,
                     scores=scores,

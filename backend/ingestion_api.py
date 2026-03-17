@@ -23,7 +23,8 @@ from config.supabase_client import (
     save_doc_chunk, 
     is_supabase_available,
     get_document_chunks,
-    update_document_hierarchy
+    update_document_hierarchy,
+    get_hierarchy_list
 )
 
 logger = logging.getLogger("autoeval.ingestion")
@@ -1004,6 +1005,19 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     except Exception as e:
         logger.error(f"❌ Master Schema Discovery failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/hierarchy-list")
+async def get_hierarchy_list_endpoint():
+    """
+    doc_chunks에 저장된 hierarchy_l1, hierarchy_l2 고유 목록 반환
+    프론트엔드 QA 생성 UI의 계층 선택 드롭다운에서 사용
+    """
+    if not is_supabase_available():
+        return {"success": False, "l1_list": [], "l2_by_l1": {}, "message": "Supabase not available"}
+
+    result = await get_hierarchy_list()
+    return {"success": True, **result}
 
 
 @router.get("/test")

@@ -7,9 +7,9 @@
  */
 
 import { useState, useEffect } from "react";
-import { Settings, Play, Loader2, ListTree, CheckCircle2, Folder, ChevronRight, Plus, AlertCircle, X } from "lucide-react";
+import { Settings, Play, Loader2, ListTree, CheckCircle2, ChevronRight, AlertCircle, X, RefreshCw } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { generateQA } from "@/src/lib/api";
+import { generateQA, getHierarchyList } from "@/src/lib/api";
 import { API_BASE } from "@/src/lib/api";
 
 interface GenerationStatus {
@@ -66,9 +66,35 @@ export function QAGenerationPanel() {
   // Terminal Output
   const [logs, setLogs] = useState<string[]>([]);
 
-  // Custom Hierarchy
-  const [customHierarchy, setCustomHierarchy] = useState("");
-  const hierarchy = ["Shop", "USIM/eSIM 가입", "선불 USIM 구매/충전"];
+  // Hierarchy (DB 기반)
+  const [hierarchyL1List, setHierarchyL1List] = useState<string[]>([]);
+  const [hierarchyL2Map, setHierarchyL2Map] = useState<Record<string, string[]>>({});
+  const [selectedL1, setSelectedL1] = useState<string>("");
+  const [selectedL2, setSelectedL2] = useState<string>("");
+  const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false);
+  const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
+
+  // 컴포넌트 마운트 시 hierarchy 목록 로드
+  useEffect(() => {
+    loadHierarchyList();
+  }, []);
+
+  const loadHierarchyList = async () => {
+    setIsLoadingHierarchy(true);
+    const result = await getHierarchyList();
+    if (result.success) {
+      setHierarchyL1List(result.l1_list);
+      setHierarchyL2Map(result.l2_by_l1);
+      setHierarchyLoaded(true);
+    }
+    setIsLoadingHierarchy(false);
+  };
+
+  // L1 변경 시 L2 초기화
+  const handleL1Change = (l1: string) => {
+    setSelectedL1(l1);
+    setSelectedL2("");
+  };
 
   // 진행상황 폴링
   useEffect(() => {
@@ -278,6 +304,8 @@ export function QAGenerationPanel() {
         lang: formValues.lang,
         samples: formValues.samples,
         prompt_version: formValues.promptVersion,
+        ...(selectedL1 && { hierarchy_l1: selectedL1 }),
+        ...(selectedL2 && { hierarchy_l2: selectedL2 }),
       });
 
       console.log("[Generate QA API Response]", response);
@@ -595,39 +623,100 @@ export function QAGenerationPanel() {
 
         {/* Target Hierarchy */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
-          <h3 className="font-semibold flex items-center gap-2 mb-4 text-slate-800">
-            <ListTree className="w-5 h-5 text-indigo-500" /> Target Hierarchy
-          </h3>
-          <div className="space-y-2 text-sm flex-1">
-            {hierarchy.map((item, i) => (
-              <div key={i} className="flex items-center space-x-2 p-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors group">
-                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                <Folder className="w-4 h-4 text-blue-400" />
-                <span className="text-slate-700 group-hover:text-indigo-600 font-medium transition-colors">{item}</span>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold flex items-center gap-2 text-slate-800">
+              <ListTree className="w-5 h-5 text-indigo-500" /> Target Hierarchy
+            </h3>
+            <button
+              onClick={loadHierarchyList}
+              disabled={isLoadingHierarchy || isGenerating}
+              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
+              title="목록 새로고침"
+            >
+              <RefreshCw className={cn("w-4 h-4", isLoadingHierarchy && "animate-spin")} />
+            </button>
           </div>
 
-          {/* Custom Hierarchy Box */}
-          <div className="mt-6 pt-4 border-t border-slate-100">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Custom Target</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="e.g. Shop > USIM"
-                value={customHierarchy}
-                onChange={(e) => setCustomHierarchy(e.target.value)}
-                disabled={isGenerating}
-                className={cn(
-                  "flex-1 p-2 text-sm bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
-                  isGenerating && "opacity-50 cursor-not-allowed"
-                )}
-              />
-              <button disabled={isGenerating} className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors border border-slate-200 disabled:opacity-50">
-                <Plus className="w-4 h-4" />
-              </button>
+          {!hierarchyLoaded && !isLoadingHierarchy && (
+            <p className="text-xs text-slate-400 text-center py-4">
+              DB에 업로드된 문서가 없습니다.
+            </p>
+          )}
+
+          {isLoadingHierarchy && (
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>계층 목록 불러오는 중...</span>
             </div>
-          </div>
+          )}
+
+          {hierarchyLoaded && (
+            <div className="space-y-4">
+              {/* L1 선택 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">L1 카테고리</label>
+                <select
+                  value={selectedL1}
+                  onChange={(e) => handleL1Change(e.target.value)}
+                  disabled={isGenerating}
+                  className={cn(
+                    "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
+                    isGenerating && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <option value="">전체 (필터 없음)</option>
+                  {hierarchyL1List.map((l1) => (
+                    <option key={l1} value={l1}>{l1}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* L2 선택 (L1 선택 시에만 표시) */}
+              {selectedL1 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">L2 섹션</label>
+                  <select
+                    value={selectedL2}
+                    onChange={(e) => setSelectedL2(e.target.value)}
+                    disabled={isGenerating}
+                    className={cn(
+                      "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
+                      isGenerating && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <option value="">전체 (L1 내 모든 섹션)</option>
+                    {(hierarchyL2Map[selectedL1] || []).map((l2) => (
+                      <option key={l2} value={l2}>{l2}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 현재 선택 요약 */}
+              <div className="pt-3 border-t border-slate-100 space-y-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">선택된 범위</p>
+                {!selectedL1 ? (
+                  <div className="flex items-center gap-1.5 text-sm text-slate-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block" />
+                    전체 문서에서 샘플링
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-sm text-indigo-700 font-medium">
+                      <ChevronRight className="w-3.5 h-3.5" />
+                      {selectedL1}
+                    </div>
+                    {selectedL2 && (
+                      <div className="flex items-center gap-1.5 text-sm text-indigo-500 pl-4">
+                        <ChevronRight className="w-3 h-3" />
+                        {selectedL2}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

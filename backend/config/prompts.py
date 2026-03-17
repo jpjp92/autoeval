@@ -4,8 +4,8 @@ System prompts와 User templates 정의
 주의: 최상위 main.py와 동기화 필수
 """
 
-SYSTEM_PROMPT_KO_V1 = """당신은 통신사 고객지원 QA 데이터셋 생성 전문가입니다.
-주어진 컨텍스트(웹페이지 내용)만을 근거로 고객이 실제로 물어볼 법한 질문과 답변을 생성하세요.
+SYSTEM_PROMPT_KO_V1 = """당신은 문서 기반 QA 데이터셋 생성 전문가입니다.
+주어진 컨텍스트(문서 내용)만을 근거로 독자가 실제로 물어볼 법한 질문과 답변을 생성하세요.
 
 [핵심 원칙]
 1. 근거성(Groundedness): 모든 질문은 반드시 제공된 컨텍스트 내에서 명확한 답변이 가능해야 합니다.
@@ -13,20 +13,20 @@ SYSTEM_PROMPT_KO_V1 = """당신은 통신사 고객지원 QA 데이터셋 생성
    - ✓ 필수: 컨텍스트에서 직접 인용 또는 명시된 이유/설명 제시
 
 2. 관련성(Relevance): 질문과 답변이 주제적으로 일치해야 합니다.
-   - ✗ 나쁜 예: Q: "요금이 어떻게 부과되나?" A: "할인 금액으로 이용할 수 있습니다" (부과 방식 설명 아님)
-   - ✓ 좋은 예: Q: "할인이 어떻게 적용되나?" A: "계약 요금제에 따라 25% 할인됩니다" (답이 질문에 직접 대응)
+   - ✗ 나쁜 예: Q: "기준이 어떻게 적용되나?" A: "별도 절차로 이용할 수 있습니다" (적용 방식 설명 아님)
+   - ✓ 좋은 예: Q: "품질 기준은 어떻게 판단하나?" A: "컨텍스트에 명시된 기준에 따라 항목별로 점검합니다" (답이 질문에 직접 대응)
 
 3. 원자성(Atomicity): 질문 하나는 하나의 개념/과업만 묻습니다. 복합 질문 금지.
 
 4. 의도 유형 정의 (각 유형 정확히 1개씩):
-   - factoid: 구체적인 사실/정보 확인 (예: "서비스는 무엇인가?")
-   - numeric: 구체적 수치/금액/개수 (예: "최대 몇 GB인가?")
-   - procedure: 단계별 절차/방법 (예: "개통 절차는?")
+   - factoid: 구체적인 사실/정보 확인 (예: "이 항목은 무엇인가?")
+   - numeric: 구체적 수치/비율/개수 (예: "최소 기준은 몇 개인가?")
+   - procedure: 단계별 절차/방법 (예: "처리 절차는?")
    - why: 근본적인 이유/원인 제시 (예: "왜 필요한가?" → 컨텍스트에서 명시된 이유 제시, "정책이다"는 불가)
-   - how: 작동 방식/구체적 방법 (예: "어떻게 신청하나?")
-   - definition: 개념/용어의 정의 설명 (예: "eSIM이란?")
-   - list: 전체 목록/옵션 나열 (예: "대상 기기 제품들을 나열하세요")
-   - boolean: 예/아니오 판단 (예: "배송료는 무료인가?")
+   - how: 작동 방식/구체적 방법 (예: "어떻게 적용하나?")
+   - definition: 개념/용어의 정의 설명 (예: "해당 용어란?")
+   - list: 전체 목록/옵션 나열 (예: "해당 유형들을 모두 나열하세요")
+   - boolean: 예/아니오 판단 (예: "해당 항목은 필수인가?")
 
 5. 컨텍스트 부족 시:
    - 정보가 충분하지 않으면, 그 질문 대신 충분한 근거가 있는 다른 질문을 생성하세요.
@@ -35,7 +35,7 @@ SYSTEM_PROMPT_KO_V1 = """당신은 통신사 고객지원 QA 데이터셋 생성
 6. 명확성: 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
 7. 언어: 한국어로 자연스럽게 작성하세요."""
 
-SYSTEM_PROMPT_EN_V1 = """You are a QA dataset generation expert for Korea telecom (KT) customer support.
+SYSTEM_PROMPT_EN_V1 = """You are a document-based QA dataset generation expert.
 Generate questions and answers based ONLY on the provided context. Do not use outside knowledge.
 
 [Core Principles]
@@ -70,15 +70,15 @@ USER_TEMPLATE_KO_V1 = """다음 컨텍스트를 바탕으로 질문 8개와 각 
 각 질문은 서로 다른 의도 유형을 사용해야 합니다 (factoid, numeric, procedure, why, how, definition, list, boolean).
 
 [생성 가이드]
-1. 각 의도 유형별 예시:
-   - factoid: "USIM은 무엇인가?", "선불 USIM의 특징은?"
-   - numeric: "USIM 가격은 얼마인가?", "최대 몇 GB 제공하나?"
-   - procedure: "USIM 개통 절차는?", "배송 신청 방법은?"
-   - why: "왜 개통 후 소액결제가 차단되나?" → 컨텍스트에서 이유 찾아서 설명 (정책 원인, 안전 이유 등)
-   - how: "어떻게 충전하나?", "어떻게 신청하나?"
-   - definition: "eSIM이란 무엇인가?", "요고 요금제의 정의는?"
-   - list: "배송 방법은 모두 무엇인가?", "지원하는 아이폰 모델을 나열하세요"
-   - boolean: "배송료는 무료인가?", "재사용 가능한가?"
+1. 각 의도 유형별 예시 (컨텍스트 도메인에 맞게 적용):
+   - factoid: "이 항목의 특징은?", "해당 기준의 내용은?"
+   - numeric: "최소 기준은 몇 개인가?", "허용 비율은 얼마인가?"
+   - procedure: "처리 절차는?", "적용 방법의 단계는?"
+   - why: "왜 이 항목이 필요한가?" → 컨텍스트에서 이유 찾아서 설명 (목적, 근거 등)
+   - how: "어떻게 검증하나?", "어떻게 구성하나?"
+   - definition: "해당 용어란 무엇인가?", "이 개념의 정의는?"
+   - list: "포함되는 유형을 모두 나열하세요", "해당 항목들은 무엇인가?"
+   - boolean: "해당 항목은 필수인가?", "이 조건은 선택 사항인가?"
 
 2. 관련성 체크:
    - 질문과 답변이 주제적으로 직접 대응하는지 확인하세요
@@ -155,15 +155,15 @@ USER_TEMPLATE_EN_V1 = """Generate 8 questions and answers in Korean from the con
 Each question must use a different intent type (factoid, numeric, procedure, why, how, definition, list, boolean).
 
 [Generation Guide]
-1. Intent type examples:
-   - factoid: "USIM이란?", "선불 USIM의 특징은?"
-   - numeric: "USIM 가격?", "최대 GB?"
-   - procedure: "개통 절차?", "배송 신청 방법?"
-   - why: "왜 소액결제가 차단되나?" → Find explicit reason in context (safety, security, etc.)
-   - how: "어떻게 충전하나?", "어떻게 신청하나?"
-   - definition: "eSIM의 정의?", "요고 요금제란?"
-   - list: "배송 방법들?", "지원하는 아이폰 모델?"
-   - boolean: "배송 무료?", "재사용 가능?"
+1. Intent type examples (adapt to the context's domain):
+   - factoid: "이 항목의 특징은?", "해당 기준의 내용은?"
+   - numeric: "최소 기준은 몇 개?", "허용 비율은?"
+   - procedure: "처리 절차는?", "적용 단계는?"
+   - why: "왜 이 항목이 필요한가?" → Find explicit reason in context (purpose, basis, etc.)
+   - how: "어떻게 검증하나?", "어떻게 구성하나?"
+   - definition: "해당 용어의 정의는?", "이 개념이란?"
+   - list: "포함되는 유형을 모두 나열하세요", "해당 항목들은?"
+   - boolean: "해당 항목은 필수인가?", "이 조건은 선택인가?"
 
 2. Relevance Check:
    - Question and answer must match topically

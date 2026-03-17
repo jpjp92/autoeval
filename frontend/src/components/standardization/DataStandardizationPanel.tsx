@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight } from "lucide-react";
+import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { API_BASE } from "@/src/lib/api";
 
@@ -12,7 +12,7 @@ interface AnalysisResult {
   validation: string;
 }
 
-export function DataStandardizationPanel() {
+export function DataStandardizationPanel({ setActiveTab }: { setActiveTab?: (tab: string) => void }) {
   // --- Upload state ---
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -293,6 +293,20 @@ export function DataStandardizationPanel() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* 태깅 완료 → QA 생성 이동 버튼 */}
+            {!isTagging && !isAnalyzingSamples && taggingSamples.length > 0 && setActiveTab && (
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-xs text-slate-400">계층 태깅이 완료되었습니다. QA 데이터를 생성할 수 있습니다.</p>
+                <button
+                  onClick={() => setActiveTab("generation")}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-sm"
+                >
+                  QA 생성으로 이동
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>

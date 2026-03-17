@@ -30,6 +30,9 @@ interface GenerateRequest {
   qa_per_doc?: number;
   prompt_version: string;
   doc_ids?: string[];
+  hierarchy_l1?: string;
+  hierarchy_l2?: string;
+  hierarchy_l3?: string;
 }
 
 interface EvaluateRequest {
@@ -121,6 +124,19 @@ export async function getResultDetail(filename: string): Promise<ApiResponse> {
       success: false,
       error: `Failed to get result detail: ${(error as Error).message}`,
     };
+  }
+}
+
+/**
+ * Get available hierarchy L1/L2 list from DB
+ */
+export async function getHierarchyList(): Promise<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; success: boolean }> {
+  try {
+    const response = await fetch(`${API_BASE}/api/ingestion/hierarchy-list`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, l1_list: [], l2_by_l1: {} };
   }
 }
 

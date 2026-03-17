@@ -67,7 +67,7 @@ async def save_qa_generation_to_supabase(
             "created_at": datetime.utcnow().isoformat(),
         }
         
-        response = supabase_client.table("qa_generation_results").insert(data).execute()
+        response = supabase_client.table("qa_gen_results").insert(data).execute()
         
         # 저장된 레코드에서 ID 추출
         if response.data and len(response.data) > 0:
@@ -133,7 +133,7 @@ async def save_evaluation_to_supabase(
             "created_at": datetime.utcnow().isoformat(),
         }
         
-        response = supabase_client.table("evaluation_results").insert(data).execute()
+        response = supabase_client.table("qa_eval_results").insert(data).execute()
         
         if response.data and len(response.data) > 0:
             evaluation_id = response.data[0]["id"]
@@ -160,8 +160,8 @@ async def link_generation_to_evaluation(
     QA 생성 결과와 평가 결과를 링크
     
     Args:
-        generation_id: qa_generation_results ID
-        evaluation_id: evaluation_results ID
+        generation_id: qa_gen_results ID
+        evaluation_id: qa_eval_results ID
         
     Returns:
         성공 여부
@@ -171,8 +171,8 @@ async def link_generation_to_evaluation(
         return False
     
     try:
-        # qa_generation_results.linked_evaluation_id 업데이트
-        response = supabase_client.table("qa_generation_results").update(
+        # qa_gen_results.linked_evaluation_id 업데이트
+        response = supabase_client.table("qa_gen_results").update(
             {"linked_evaluation_id": evaluation_id}
         ).eq("id", generation_id).execute()
         
@@ -206,7 +206,7 @@ async def get_generation_result(generation_id: str) -> Optional[Dict[str, Any]]:
         return None
     
     try:
-        response = supabase_client.table("qa_generation_results").select("*").eq(
+        response = supabase_client.table("qa_gen_results").select("*").eq(
             "id", generation_id
         ).execute()
         
@@ -231,7 +231,7 @@ async def get_evaluation_result(evaluation_id: str) -> Optional[Dict[str, Any]]:
         return None
     
     try:
-        response = supabase_client.table("evaluation_results").select("*").eq(
+        response = supabase_client.table("qa_eval_results").select("*").eq(
             "id", evaluation_id
         ).execute()
         
@@ -247,8 +247,8 @@ async def get_evaluation_qa_joined(evaluation_id: str) -> Optional[Dict[str, Any
     평가 결과와 생성 결과를 함께 조회 (evaluation_qa_joined 뷰 사용)
     
     Args:
-        evaluation_id: evaluation_results ID
-        
+        evaluation_id: qa_eval_results ID
+
     Returns:
         조인된 결과 (또는 None if not found)
     """
@@ -286,29 +286,39 @@ async def save_doc_chunk(
     metadata: Dict[str, Any] = None
 ) -> Optional[str]:
     """
-    문서 청크와 임베딩을 Supabase에 저장
-    
-    Args:
-        content: 청크 텍스트
-        embedding: 벡터 리스트
-        metadata: 메타데이터 (파일명, 계층 등)
-        
+    문서 청크와 임베딩을 Supabase에 저장.
+    content_hash가 이미 존재하면 skip (재업로드 중복 방지).
+
     Returns:
-        생성된 UUID
+        저장된 UUID, 이미 존재하면 None
     """
     if not supabase_client:
         return None
-    
+
     try:
+        # content_hash 기반 중복 체크
+        content_hash = (metadata or {}).get("content_hash")
+        if content_hash:
+            existing = (
+                supabase_client.table("doc_chunks")
+                .select("id")
+                .eq("metadata->>content_hash", content_hash)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]})")
+                return None
+
         data = {
             "content": content,
             "embedding": embedding,
             "metadata": metadata or {},
             "created_at": datetime.utcnow().isoformat(),
         }
-        
+
         response = supabase_client.table("doc_chunks").insert(data).execute()
-        
+
         if response.data and len(response.data) > 0:
             return response.data[0]["id"]
         return None
@@ -370,6 +380,35 @@ async def search_doc_chunks(
         return []
 
 
+async def get_doc_chunks_by_filter(
+    hierarchy_l1: Optional[str] = None,
+    hierarchy_l2: Optional[str] = None,
+    hierarchy_l3: Optional[str] = None,
+    limit: int = 20,
+) -> list:
+    """
+    metadata 필터 기반 doc_chunks 직접 조회 (vector similarity 없음)
+    hierarchy 필터만 필요한 경우 match_doc_chunks RPC 대신 사용.
+    지정된 필드만 AND 조건으로 필터링.
+    """
+    if not supabase_client:
+        return []
+
+    try:
+        query = supabase_client.table("doc_chunks").select("id, content, metadata")
+        if hierarchy_l1:
+            query = query.eq("metadata->>hierarchy_l1", hierarchy_l1)
+        if hierarchy_l2:
+            query = query.eq("metadata->>hierarchy_l2", hierarchy_l2)
+        if hierarchy_l3:
+            query = query.eq("metadata->>hierarchy_l3", hierarchy_l3)
+        response = query.limit(limit).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ Failed to get doc chunks by filter: {e}")
+        return []
+
+
 async def get_document_chunks(source_name: str, limit: int = 10) -> list:
     """
     특정 문서의 청크들을 조회 (주로 계층 구조 분석용)
@@ -383,6 +422,46 @@ async def get_document_chunks(source_name: str, limit: int = 10) -> list:
     except Exception as e:
         logger.error(f"❌ Failed to get document chunks: {e}")
         return []
+
+
+async def get_hierarchy_list() -> Dict[str, Any]:
+    """
+    doc_chunks에서 hierarchy_l1, hierarchy_l2 고유값 목록 반환
+
+    Returns:
+        {
+            "l1_list": ["가이드 개요", "데이터 구축 공정", ...],
+            "l2_by_l1": {
+                "가이드 개요": ["문서 이력 관리", "데이터 품질 전략", ...],
+                ...
+            }
+        }
+    """
+    if not supabase_client:
+        return {"l1_list": [], "l2_by_l1": {}}
+
+    try:
+        response = supabase_client.table("doc_chunks").select("metadata").execute()
+        chunks = response.data or []
+
+        l2_by_l1: Dict[str, set] = {}
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            l1 = meta.get("hierarchy_l1")
+            l2 = meta.get("hierarchy_l2")
+            if l1:
+                if l1 not in l2_by_l1:
+                    l2_by_l1[l1] = set()
+                if l2:
+                    l2_by_l1[l1].add(l2)
+
+        return {
+            "l1_list": sorted(l2_by_l1.keys()),
+            "l2_by_l1": {k: sorted(v) for k, v in l2_by_l1.items()},
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to get hierarchy list: {e}")
+        return {"l1_list": [], "l2_by_l1": {}}
 
 
 async def update_document_hierarchy(source_name: str, l1: str, l2: str, l3: str) -> bool:
@@ -427,7 +506,7 @@ async def health_check() -> Dict[str, Any]:
     
     try:
         # 간단한 쿼리로 연결 확인
-        response = supabase_client.table("qa_generation_results").select("count", count='exact').limit(1).execute()
+        response = supabase_client.table("qa_gen_results").select("count", count='exact').limit(1).execute()
         return {"status": "healthy", "message": "Connected to Supabase"}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
