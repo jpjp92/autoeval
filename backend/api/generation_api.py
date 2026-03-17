@@ -23,14 +23,14 @@ import numpy as np
 
 # Main.py 모듈 import (지연 import로 순환 참조 방지)
 # Import backend/main.py for generate_qa function
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 MAIN_PY_AVAILABLE = True  # 함수 실행 시 import 시도
 
 def _get_main_generate_qa():
-    """지연 import: 함수 실행 시점에 backend/main.py에서 generate_qa import"""
+    """지연 import: generators/qa_generator.py에서 generate_qa import"""
     global MAIN_PY_AVAILABLE
     try:
-        from main import generate_qa as main_generate_qa
+        from generators.qa_generator import generate_qa as main_generate_qa
         return main_generate_qa
     except ImportError as e:
         logging.warning(f"main.py import failed: {e}. Using simulation mode.")
@@ -365,8 +365,21 @@ async def run_qa_generation_real(
     
     logger.info(f"[{job_id}] Loaded {len(items)} items for generation")
     job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} items")
-    
-    # Generate QA for each document (병렬 처리)
+
+    # [1단계] 도메인 분석 (job당 1회, 결과 캐시)
+    from generators.domain_profiler import analyze_domain
+    from config.prompts import build_system_prompt, build_user_template
+
+    job_manager.update_job(job_id, progress=12, message="Analyzing document domain...")
+    domain_profile = await analyze_domain(
+        hierarchy_l1=h1, hierarchy_l2=h2, hierarchy_l3=h3, model=model
+    )
+    logger.info(
+        f"[{job_id}] Domain profile: '{domain_profile.get('domain', '?')}' | "
+        f"key_terms={domain_profile.get('key_terms', [])[:3]}"
+    )
+
+    # [2단계] 청크별 QA 생성 (domain_profile 기반 프롬프트 적용)
     max_workers = _get_generation_workers(model)
     logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 문서 × workers={max_workers} ({model})")
 
@@ -381,7 +394,14 @@ async def run_qa_generation_real(
         idx, item = args
         try:
             logger.info(f"[{job_id}] Generating QA for document {idx+1}/{len(items)}: {item.get('docId', 'unknown')}")
-            result = main_generate_qa(item, model, lang, prompt_version)
+            chunk_type = item.get("metadata", {}).get("chunk_type", "body")
+            sys_prompt = build_system_prompt(domain_profile, lang)
+            usr_template = build_user_template(domain_profile, chunk_type)
+            result = main_generate_qa(
+                item, model, lang, prompt_version,
+                system_prompt=sys_prompt,
+                user_template=usr_template,
+            )
             if qa_per_doc and result.get("qa_list"):
                 result["qa_list"] = result["qa_list"][:qa_per_doc]
             return idx, result, None

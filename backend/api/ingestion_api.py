@@ -1,3 +1,47 @@
+"""
+Ingestion API  —  POST /api/ingestion/*
+
+문서(PDF/DOCX) 업로드 → 청킹 → Gemini Embedding 2 벡터화 → Supabase doc_chunks 저장
+및 hierarchy(L1/L2/L3) 분석·태깅 엔드포인트를 제공한다.
+
+---
+
+엔드포인트
+  POST /api/ingestion/upload
+      PDF/DOCX 파일 수신 → extract_text_by_page() 파싱 → process_and_ingest() 청킹 + 임베딩 + 저장
+      content_hash 기반 중복 청크 INSERT skip
+
+  POST /api/ingestion/analyze-hierarchy
+      업로드된 문서의 chunk content 샘플 → LLM(Gemini) → L1 후보 + 계층 제안 반환
+
+  POST /api/ingestion/analyze-tagging-samples
+      selected_l1_list 기반으로 L2/L3 AI 태깅 샘플 미리보기 생성
+
+  POST /api/ingestion/apply-granular-tagging
+      AI 태깅 결과를 doc_chunks.metadata(hierarchy_l1/l2/l3)에 일괄 적용 (BackgroundTask)
+
+  POST /api/ingestion/update-hierarchy
+      단일 청크 계층 수동 업데이트
+
+  GET  /api/ingestion/hierarchy-list
+      doc_chunks에 저장된 L1/L2 고유 목록 반환 (프론트엔드 드롭다운용)
+
+  GET  /api/ingestion/test
+      라우터 헬스체크
+
+---
+
+핵심 파싱 파이프라인 (extract_text_by_page → process_and_ingest)
+  PyMuPDF(fitz) 기반 블록 추출
+  → detect_heading / detect_section_level 로 섹션 구조 파악
+  → build_sections 로 section-first 청크 후보 구성
+  → RecursiveCharacterTextSplitter 적용
+  → _merge_short_chunks (min 200자) / _is_colophon_chunk skip
+  → normalize_text (Ÿ 정규화, _smart_join_lines 줄바꿈 결합)
+  → Gemini Embedding 2 (1536dim, L2 정규화) 벡터화
+  → Supabase doc_chunks upsert (content_hash 중복 방지)
+"""
+
 import os
 import json
 import logging
@@ -372,22 +416,86 @@ def merge_adjacent_short_blocks(blocks_data: List[Dict[str, Any]], text_parts: L
     return merged_blocks, merged_texts
 
 
+def _smart_join_lines(text: str) -> str:
+    """
+    문장 중간의 PDF 시각적 줄바꿈을 공백으로 결합.
+    단락 경계(빈 줄), 불릿/표/제목 시작 줄은 보존.
+    """
+    lines = text.split('\n')
+    result = []
+    buffer = ""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if buffer:
+                result.append(buffer)
+                buffer = ""
+            result.append("")
+            continue
+        if not buffer:
+            buffer = stripped
+        elif (
+            not re.search(r'[.!?。]$', buffer)
+            and not re.match(r'^[-•|\[#\d]', stripped)
+        ):
+            buffer += ' ' + stripped
+        else:
+            result.append(buffer)
+            buffer = stripped
+    if buffer:
+        result.append(buffer)
+    return '\n'.join(result)
+
+
+def _merge_short_chunks(chunks: list, min_chars: int = 200, max_chars: int = 1200) -> list:
+    """
+    같은 섹션 내 min_chars 미만 청크를 인접 청크와 병합 (최대 max_chars까지).
+    splitter.split_text() 직후 후처리로 사용.
+    """
+    if not chunks:
+        return chunks
+    merged = []
+    buf = chunks[0]
+    for chunk in chunks[1:]:
+        if len(buf) < min_chars and len(buf) + len(chunk) <= max_chars:
+            buf = buf + "\n" + chunk
+        else:
+            merged.append(buf)
+            buf = chunk
+    merged.append(buf)
+    return merged
+
+
+_COLOPHON_KEYWORDS = ["발행처:", "발행인:", "저작권", "©", "무단전재", "재배포를 금"]
+
+def _is_colophon_chunk(text: str) -> bool:
+    """발행처/저작권 페이지 청크 판별 — 2개 이상 키워드 포함 시 True."""
+    return sum(1 for kw in _COLOPHON_KEYWORDS if kw in text) >= 2
+
+
 def normalize_text(text: str) -> str:
     """
     RAG 품질을 위한 텍스트 정규화 (Phase 2.1: 구조 보존형)
-    - 다중 공백 제거
+    - Ÿ/특수문자 불릿 아티팩트 제거 (PDF 폰트 인코딩 오류)
     - 불렛 기호 표준화 (•, *, l -> -)
-    - 줄바꿈은 보존하여 표/리스트 구조 유지
+    - 다중 공백 제거
+    - 문장 중간 줄바꿈 → 공백 결합 (단락/불릿/표 경계 보존)
     """
     if not text:
         return ""
-    
+
+    # 0. PDF 불릿 폰트 아티팩트 정규화 (Ÿ, ÿ 등 → -)
+    text = re.sub(r'[\u0178\u00ff\ufffd]', '-', text)
+
     # 1. 불렛 기호 표준화 (•, *, l -> -)
     text = re.sub(r'^[ \t]*[•*l][ \t]+', '- ', text, flags=re.MULTILINE)
-    
+
     # 2. 다중 공백 하나로 통합 (줄바꿈 제외)
     text = re.sub(r'[ \t]+', ' ', text)
-    
+
+    # 3. 문장 중간 줄바꿈 결합 (단락/불릿/표 경계는 보존)
+    text = _smart_join_lines(text)
+
     return text.strip()
 
 def is_inside_table(block_bbox, table_bboxes: list) -> bool:
@@ -716,7 +824,10 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
             # 의미 단위 분할 (Semantic Chunking)
             raw_chunks = splitter.split_text(section_text)
-            
+
+            # P2-2: 짧은 청크 병합 (200자 미만 → 인접 청크와 합침, 최대 1200자)
+            raw_chunks = _merge_short_chunks(raw_chunks, min_chars=200, max_chars=1200)
+
             for chunk_text in raw_chunks:
                 # 표 중간 split 복원: [표] 마커 없이 파이프로 시작하는 표 연속 청크에 마커 추가
                 stripped = chunk_text.lstrip()
@@ -726,6 +837,11 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 # 첩크 레벨 TOC 필터 (Phase 2.13: · 밀도 기반으로 교정 후 재활성화)
                 if is_toc_chunk(chunk_text):
                     logger.info(f"[{filename}] TOC chunk filtered (p{sec['page']}): {chunk_text[:50]!r}")
+                    continue
+
+                # P2-3: 발행처/저작권 청크 필터 (인제스션 레벨에서 제거)
+                if _is_colophon_chunk(chunk_text):
+                    logger.info(f"[{filename}] Colophon chunk filtered (p{sec['page']}): {chunk_text[:50]!r}")
                     continue
 
                 # 🔴 Layer 3: footer/header bleed-through 노이즈 제거 (Phase 2.5)

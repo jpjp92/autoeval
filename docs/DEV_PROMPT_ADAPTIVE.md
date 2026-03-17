@@ -22,14 +22,14 @@ SYSTEM_PROMPT_KO_V1 = """당신은 통신사 고객지원 QA 데이터셋 생성
 
 아래 원칙들은 도메인에 무관하게 QA 품질의 핵심이므로 **반드시 유지**:
 
-| 원칙 | 설명 |
-|------|------|
-| 근거성(Groundedness) | 모든 답변은 제공된 컨텍스트 내 명시적 근거 필요 |
-| 관련성(Relevance) | Q와 A가 주제적으로 직접 대응 |
-| 원자성(Atomicity) | 질문 하나 = 개념 하나 |
-| 의도 유형 8종 | factoid / numeric / procedure / why / how / definition / list / boolean |
-| 컨텍스트 부족 처리 | 근거 없으면 대체 질문 생성, N/A 금지 |
-| 한국어 출력 | 질문·답변 모두 한국어 |
+| 원칙                 | 설명                                                                    |
+| -------------------- | ----------------------------------------------------------------------- |
+| 근거성(Groundedness) | 모든 답변은 제공된 컨텍스트 내 명시적 근거 필요                         |
+| 관련성(Relevance)    | Q와 A가 주제적으로 직접 대응                                            |
+| 원자성(Atomicity)    | 질문 하나 = 개념 하나                                                   |
+| 의도 유형 8종        | factoid / numeric / procedure / why / how / definition / list / boolean |
+| 컨텍스트 부족 처리   | 근거 없으면 대체 질문 생성, N/A 금지                                    |
+| 한국어 출력          | 질문·답변 모두 한국어                                                  |
 
 ---
 
@@ -51,16 +51,16 @@ SYSTEM_PROMPT_KO_V1 = """당신은 통신사 고객지원 QA 데이터셋 생성
 
 ### 왜 2단계인가?
 
-| 항목 | 1단계 통합 방식 | 2단계 분리 방식 |
-|------|----------------|----------------|
-| 도메인 적합성 | 단일 프롬프트가 도메인을 추론하면서 동시에 생성 → 품질 저하 | 도메인 파악 후 집중해서 생성 → 품질 향상 |
-| 재사용성 | 청크마다 도메인 재추론 | domain_profile을 **한 번** 생성, 모든 청크에 재사용 |
-| 비용 | 청크 수 × (도메인 추론 + 생성) | 도메인 추론 1회 + 청크 수 × 생성 |
-| 디버깅 | 도메인 오인식과 생성 오류 구분 불가 | 각 단계 독립 검증 가능 |
+| 항목          | 1단계 통합 방식                                              | 2단계 분리 방식                                          |
+| ------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
+| 도메인 적합성 | 단일 프롬프트가 도메인을 추론하면서 동시에 생성 → 품질 저하 | 도메인 파악 후 집중해서 생성 → 품질 향상                |
+| 재사용성      | 청크마다 도메인 재추론                                       | domain_profile을**한 번** 생성, 모든 청크에 재사용 |
+| 비용          | 청크 수 × (도메인 추론 + 생성)                              | 도메인 추론 1회 + 청크 수 × 생성                        |
+| 디버깅        | 도메인 오인식과 생성 오류 구분 불가                          | 각 단계 독립 검증 가능                                   |
 
 ---
 
-## 1단계: 도메인 분석 (Domain Profiling)
+# 1단계: 도메인 분석 (Domain Profiling)
 
 ### 입력
 
@@ -153,12 +153,12 @@ def build_user_template(domain_profile: dict, chunk_type: str, n_qa: int) -> str
 
 ### chunk_type별 QA 전략 (intent 가중치)
 
-| chunk_type | 권장 intent 유형 | 스킵 |
-|------------|----------------|------|
-| `table` | numeric, list, boolean | — |
-| `list` | procedure, how, list | — |
-| `body` | factoid, why, definition, how | — |
-| `heading` | — | **전량 skip** |
+| chunk_type  | 권장 intent 유형              | 스킵                |
+| ----------- | ----------------------------- | ------------------- |
+| `table`   | numeric, list, boolean        | —                  |
+| `list`    | procedure, how, list          | —                  |
+| `body`    | factoid, why, definition, how | —                  |
+| `heading` | —                            | **전량 skip** |
 
 > 8종 의도 유형 정의는 변경하지 않음. chunk_type별로 **우선 적용할 유형을 권장**하는 방식.
 
@@ -190,12 +190,12 @@ def generate_intent_examples(domain_profile: dict) -> str:
 
 ### 신규 또는 변경 파일
 
-| 파일 | 변경 유형 | 내용 |
-|------|-----------|------|
-| `backend/config/prompts.py` | **변경** | 하드코딩 제거 → `build_system_prompt()`, `build_user_template()` 함수화 |
-| `backend/domain_profiler.py` | **신규** | `analyze_domain()`: 1단계 도메인 분석 |
-| `backend/generation_api.py` | **변경** | 2단계 흐름 통합, domain_profile 캐시 및 재사용 |
-| `backend/main.py` | **변경** | `generate_qa()` — system prompt를 동적으로 수신 |
+| 파일                           | 변경 유형      | 내용                                                                        |
+| ------------------------------ | -------------- | --------------------------------------------------------------------------- |
+| `backend/config/prompts.py`  | **변경** | 하드코딩 제거 →`build_system_prompt()`, `build_user_template()` 함수화 |
+| `backend/domain_profiler.py` | **신규** | `analyze_domain()`: 1단계 도메인 분석                                     |
+| `backend/generation_api.py`  | **변경** | 2단계 흐름 통합, domain_profile 캐시 및 재사용                              |
+| `backend/main.py`            | **변경** | `generate_qa()` — system prompt를 동적으로 수신                          |
 
 ### 변경하지 않는 것
 
@@ -278,12 +278,12 @@ class GenerationJob:
 
 ## 리스크 및 대응
 
-| 리스크 | 가능성 | 대응 |
-|--------|--------|------|
-| 1단계 LLM이 도메인 파악 실패 | 낮음 | fallback으로 범용 generic domain_profile 사용 |
-| domain_profile JSON 파싱 오류 | 보통 | try/except → generic fallback |
-| 1단계 API 비용 추가 | 낮음 | 샘플 10개 × ~1K tok = 미미한 비용, 캐시로 1회 |
-| chunk_type 없는 청크 | 낮음 | None → `body` fallback |
+| 리스크                        | 가능성 | 대응                                           |
+| ----------------------------- | ------ | ---------------------------------------------- |
+| 1단계 LLM이 도메인 파악 실패  | 낮음   | fallback으로 범용 generic domain_profile 사용  |
+| domain_profile JSON 파싱 오류 | 보통   | try/except → generic fallback                 |
+| 1단계 API 비용 추가           | 낮음   | 샘플 10개 × ~1K tok = 미미한 비용, 캐시로 1회 |
+| chunk_type 없는 청크          | 낮음   | None →`body` fallback                       |
 
 ### Generic Fallback domain_profile
 

@@ -1,0 +1,181 @@
+"""
+QA Generator
+generate_qa 핵심 함수 및 프로바이더별 API 호출 로직
+(main.py에서 분리, generators/ 패키지로 이동)
+"""
+
+import os
+import json
+import logging
+from typing import Optional, Dict
+
+from config.models import MODEL_CONFIG, PROMPT_VERSION
+from config.prompts import (
+    SYSTEM_PROMPT_KO_V1,
+    SYSTEM_PROMPT_EN_V1,
+    USER_TEMPLATE_KO_V1,
+    USER_TEMPLATE_EN_V1,
+)
+
+logger = logging.getLogger("autoeval.generator")
+
+_clients = {}
+
+
+def get_client(provider: str):
+    """API 클라이언트 반환 (lazy loading)"""
+    if provider not in _clients:
+        if provider == "anthropic":
+            import anthropic
+            _clients[provider] = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        elif provider == "google":
+            from google import genai as google_genai
+            _clients[provider] = google_genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+        elif provider == "openai":
+            import openai
+            openai.api_key = os.environ.get("OPENAI_API_KEY")
+            _clients[provider] = openai
+    return _clients[provider]
+
+
+def generate_qa_anthropic(model_id: str, system_prompt: str, user_prompt: str) -> Dict:
+    """Anthropic (Claude) API를 사용한 QA 생성"""
+    client = get_client("anthropic")
+
+    response = client.messages.create(
+        model=model_id,
+        max_tokens=2048,
+        messages=[
+            {
+                "role": "user",
+                "content": user_prompt,
+            }
+        ],
+        system=system_prompt,
+    )
+
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+    try:
+        qa_list = json.loads(raw).get("qa_list", [])
+    except json.JSONDecodeError:
+        qa_list = []
+
+    return {
+        "raw": raw,
+        "qa_list": qa_list,
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+
+
+def generate_qa_google(model_id: str, system_prompt: str, user_prompt: str) -> Dict:
+    """Google Generative AI (Gemini) API를 사용한 QA 생성"""
+    client = get_client("google")
+
+    prompt = system_prompt + "\n\n" + user_prompt
+    response = client.models.generate_content(
+        model=model_id,
+        contents=prompt,
+    )
+
+    raw = response.text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+    try:
+        qa_list = json.loads(raw).get("qa_list", [])
+    except json.JSONDecodeError:
+        qa_list = []
+
+    return {
+        "raw": raw,
+        "qa_list": qa_list,
+        "input_tokens": response.usage_metadata.prompt_token_count,
+        "output_tokens": response.usage_metadata.candidates_token_count,
+    }
+
+
+def generate_qa_openai(model_id: str, system_prompt: str, user_prompt: str) -> Dict:
+    """OpenAI API를 사용한 QA 생성"""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+    response = client.chat.completions.create(
+        model=model_id,
+        max_completion_tokens=2048,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+    try:
+        qa_list = json.loads(raw).get("qa_list", [])
+    except json.JSONDecodeError:
+        qa_list = []
+
+    return {
+        "raw": raw,
+        "qa_list": qa_list,
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens,
+    }
+
+
+def generate_qa(
+    item: Dict,
+    model: str,
+    lang: str,
+    prompt_version: str,
+    system_prompt: Optional[str] = None,
+    user_template: Optional[str] = None,
+) -> Dict:
+    """QA 생성 메인 함수.
+    system_prompt, user_template이 주어지면 domain_profile 기반 적응형 프롬프트 사용.
+    없으면 기존 정적 상수 사용 (fallback).
+    """
+    model_info = MODEL_CONFIG[model]
+    provider = model_info["provider"]
+    model_id = model_info["model_id"]
+
+    # 프롬프트 선택: 외부 주입 우선, 없으면 기존 상수
+    if system_prompt is None or user_template is None:
+        if lang == "ko":
+            if prompt_version == "v1":
+                system_prompt = SYSTEM_PROMPT_KO_V1
+                user_template = USER_TEMPLATE_KO_V1
+        else:  # en
+            if prompt_version == "v1":
+                system_prompt = SYSTEM_PROMPT_EN_V1
+                user_template = USER_TEMPLATE_EN_V1
+
+    hierarchy = " > ".join(item["hierarchy"]) if item.get("hierarchy") else "Uncategorized"
+    text = item.get("text", "")[:2000]
+    user_prompt = user_template.format(hierarchy=hierarchy, text=text)
+
+    # 프로바이더별 API 호출
+    if provider == "anthropic":
+        result = generate_qa_anthropic(model_id, system_prompt, user_prompt)
+    elif provider == "google":
+        result = generate_qa_google(model_id, system_prompt, user_prompt)
+    elif provider == "openai":
+        result = generate_qa_openai(model_id, system_prompt, user_prompt)
+
+    return {
+        "docId": item.get("docId", ""),
+        "hierarchy": item.get("hierarchy", []),
+        "text": item.get("text", ""),
+        "model": model,
+        "provider": provider,
+        "lang": lang,
+        "prompt_version": prompt_version,
+        **result,
+    }
