@@ -97,6 +97,14 @@ class HierarchyAnalysisResponse(BaseModel):
 class GranularTaggingRequest(BaseModel):
     filename: str
     selected_l1_list: List[str]
+    l2_l3_master: Optional[Dict[str, Dict[str, List[str]]]] = None  # {L1: {L2: [L3, ...]}}
+
+class L2L3AnalysisRequest(BaseModel):
+    filename: str
+    selected_l1_list: List[str]
+
+class L2L3AnalysisResponse(BaseModel):
+    l2_l3_master: Dict[str, Any]  # {L1: {L2: [L3, ...]}}
 
 class TaggingSample(BaseModel):
     id: str
@@ -1236,34 +1244,35 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     concatenated_text = "\n\n".join([c["content"] for c in chunks])
     
     prompt = f"""
-    You are an expert document classifier. Your task is to discover a 'Master Schema' for the provided document snippets.
-    
-    ### Task:
-    1. **Domain Analysis**: Summarize the overall nature of the document.
-    2. **L1 Candidates**: Based on the content, identify 3-5 distinct 'Directives' or 'Domains' (L1) that cover the various parts of this document (e.g., 'Operation Policy', 'Technical Specs', 'Case Studies').
-    3. **Default Sample**: Provide one specific L1-L2-L3 example from the first few paragraphs.
-    4. **Validation**: Explain why this multi-domain approach is better for this document.
-    
-    ### CRITICAL:
-    - Names MUST be in Korean (한국어).
-    - Brevity is absolute: L1/L2/L3 names MUST be under 15 characters.
-    - Result MUST be valid JSON.
-    
-    ### Input:
-    {concatenated_text[:15000]} # Limit input context
-    
-    ### JSON Structure:
-    {{
-      "domain_analysis": "...",
-      "l1_candidates": ["카테고리1", "카테고리2", "카테고리3"],
-      "suggested_hierarchy": {{
-        "l1": "L1명",
-        "l2": "L2명",
-        "l3": "L3명"
-      }},
-      "validation": "..."
-    }}
-    """
+<role>
+You are an expert document classifier. Discover the Master Schema (L1 categories) for the provided document.
+</role>
+
+<constraints>
+- Identify exactly 3~5 distinct L1 domain categories that cover the full document.
+- L1 names must be in Korean (한국어), under 15 characters each.
+- L1 must represent content themes or domains — NOT section titles or headings.
+- Provide one concrete L1/L2/L3 example from the document.
+</constraints>
+
+<context>
+{concatenated_text[:15000]}
+</context>
+
+<task>
+Analyze the document above and return a JSON object with this exact structure:
+{{
+  "domain_analysis": "한 문장으로 문서 전체 성격 요약",
+  "l1_candidates": ["카테고리1", "카테고리2", "카테고리3"],
+  "suggested_hierarchy": {{
+    "l1": "L1명",
+    "l2": "L2명",
+    "l3": "L3명"
+  }},
+  "validation": "이 분류 방식이 적합한 이유 한 문장"
+}}
+</task>
+"""
     
     try:
         response = await gemini_client.aio.models.generate_content(
@@ -1281,6 +1290,74 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     except Exception as e:
         logger.error(f"❌ Master Schema Discovery failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.post("/analyze-l2-l3", response_model=L2L3AnalysisResponse)
+async def analyze_l2_l3(request: L2L3AnalysisRequest):
+    """
+    2단계: L2/L3 Master 생성
+    L1 master list + 전체 청크 샘플 → L1별 L2 목록 + L2별 L3 후보 동시 생성 (1회 LLM 호출)
+    제약: L1당 L2 2~5개, L2당 L3 2~4개
+    """
+    logger.info(f"🗂️ [Step 2] L2/L3 Master Discovery for: {request.filename}")
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="Gemini client not initialized")
+
+    chunks = await get_document_chunks(request.filename, limit=30)
+    if not chunks:
+        raise HTTPException(status_code=404, detail=f"No chunks found for document: {request.filename}")
+
+    sample_text = "\n\n---\n\n".join([c["content"][:600] for c in chunks[:20]])
+
+    prompt = f"""
+<role>
+You are an expert document classifier building a strict hierarchical taxonomy.
+Generate L2 sub-categories and L3 leaf labels for the given L1 master list.
+</role>
+
+<constraints>
+- For each L1, create 2~5 L2 sub-categories covering distinct content themes.
+- For each L2, create 2~4 specific L3 labels describing concrete content within that L2.
+- L2 must NOT repeat section titles — classify by content theme, function, or topic.
+- All names in Korean (한국어), under 15 characters each.
+- Cover the full range of the document using the provided samples.
+</constraints>
+
+<l1_master>
+{json.dumps(request.selected_l1_list, ensure_ascii=False)}
+</l1_master>
+
+<context>
+{sample_text[:12000]}
+</context>
+
+<task>
+Based on the context above, generate the L2/L3 taxonomy and return a JSON object with this exact structure:
+{{
+  "L1명": {{
+    "L2명A": ["L3명1", "L3명2", "L3명3"],
+    "L2명B": ["L3명1", "L3명2"]
+  }}
+}}
+</task>
+"""
+
+    try:
+        res = await gemini_client.aio.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=google_genai.types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
+        )
+        l2_l3_master = json.loads(res.text)
+        total_l2 = sum(len(v) for v in l2_l3_master.values())
+        total_l3 = sum(len(lst) for d in l2_l3_master.values() for lst in d.values())
+        logger.info(f"✅ L2/L3 Master generated: {len(l2_l3_master)} L1, {total_l2} L2, {total_l3} L3")
+        return L2L3AnalysisResponse(l2_l3_master=l2_l3_master)
+    except Exception as e:
+        logger.error(f"❌ L2/L3 Master Discovery failed: {e}")
+        raise HTTPException(status_code=500, detail=f"L2/L3 analysis failed: {str(e)}")
 
 
 @router.get("/hierarchy-list")
@@ -1326,35 +1403,72 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
         completed = 0
 
         def _build_prompt(chunks_data: list) -> str:
-            return f"""
-            Analyze each text chunk and assign the most appropriate [L1, L2, L3] hierarchy.
+            if request.l2_l3_master:
+                return f"""
+<role>
+You are a strict document taxonomy classifier.
+You MUST select L1, L2, L3 values exclusively from the provided master_hierarchy.
+Do NOT generate, invent, or paraphrase any new values under any circumstances.
+</role>
 
-            ### Master L1 List (Choose ONE for each chunk):
-            {request.selected_l1_list}
+<constraints>
+- L1: select ONE value from the top-level keys of master_hierarchy
+- L2: select ONE value from the L2 keys under the selected L1
+- L3: select ONE value from the L3 list under the selected L2 (choose the closest match if none fits perfectly)
+- All selected values must exist verbatim in master_hierarchy
+</constraints>
 
-            ### CRITICAL CONSTRAINTS (Phase 2.7):
-            - L2 MUST be a DIFFERENT classification perspective from the document's section structure.
-            - Do NOT just repeat section titles as L2; instead, classify by content theme, function, or topic.
-            - Example: If section is "작성 배경 및 목적", L2 should be "품질 보증", "데이터 관리", etc., not "작성 배경".
+<master_hierarchy>
+{json.dumps(request.l2_l3_master, ensure_ascii=False, indent=2)}
+</master_hierarchy>
 
-            ### Output:
-            - Provide L2 and L3 that specifically describe each chunk's content within the chosen L1.
-            - L2 should represent a meaningful classification orthogonal to the sectional hierarchy.
-            - Terminology: Korean. Brevity (under 15 chars).
-            - Return JSON array of objects with EXACT idx values as given.
+<chunks>
+{json.dumps(chunks_data, ensure_ascii=False)}
+</chunks>
 
-            ### Input Chunks:
-            {json.dumps(chunks_data, ensure_ascii=False)}
+<task>
+For each chunk, select the best-fitting L1/L2/L3 from master_hierarchy.
+Return ONLY a JSON array with this exact structure — no explanation:
+[
+  {{
+    "idx": 0,
+    "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }}
+  }}
+]
+</task>
+"""
+            else:
+                return f"""
+<role>
+You are a document taxonomy classifier.
+Assign the most appropriate L1/L2/L3 hierarchy to each text chunk.
+</role>
 
-            ### JSON Structure:
-            [
-              {{
-                "idx": 0,
-                "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }}
-              }},
-              ...
-            ]
-            """
+<constraints>
+- L1: select ONE from the l1_master list
+- L2: must represent a content theme or function — do NOT repeat section titles
+- L3: specific label describing the chunk's concrete content
+- L2 and L3: Korean (한국어), under 15 characters each
+</constraints>
+
+<l1_master>
+{json.dumps(request.selected_l1_list, ensure_ascii=False)}
+</l1_master>
+
+<chunks>
+{json.dumps(chunks_data, ensure_ascii=False)}
+</chunks>
+
+<task>
+Return ONLY a JSON array with this exact structure — no explanation:
+[
+  {{
+    "idx": 0,
+    "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }}
+  }}
+]
+</task>
+"""
 
         async def process_batch(batch_idx: int, batch: list):
             nonlocal completed

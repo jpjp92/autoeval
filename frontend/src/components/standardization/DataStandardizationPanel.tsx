@@ -23,10 +23,12 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAnalyzingL2L3, setIsAnalyzingL2L3] = useState(false);
   const [isTagging, setIsTagging] = useState(false);
   const [isAnalyzingSamples, setIsAnalyzingSamples] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedL1s, setSelectedL1s] = useState<string[]>([]);
+  const [l2l3Master, setL2l3Master] = useState<Record<string, Record<string, string[]>> | null>(null);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [hierarchyTree, setHierarchyTree] = useState<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; l3_by_l1_l2: Record<string, string[]> } | null>(null);
@@ -68,7 +70,9 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setHierarchyMessage(null);
     setAnalysis(null);
     setTaggingSamples([]);
+    setL2l3Master(null);
     try {
+      // 1단계: L1 master 생성
       const res = await fetch(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -78,15 +82,31 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
       setSelectedL1s(data.l1_candidates);
-      runTagging(uploadedFilename, data.l1_candidates);
+      setIsAnalyzing(false);
+
+      // 2단계: L2/L3 master 생성
+      setIsAnalyzingL2L3(true);
+      const l2l3Res = await fetch(`${API_BASE}/api/ingestion/analyze-l2-l3`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: uploadedFilename, selected_l1_list: data.l1_candidates }),
+      });
+      if (!l2l3Res.ok) throw new Error((await l2l3Res.json()).detail || "L2/L3 분석 실패");
+      const l2l3Data = await l2l3Res.json();
+      const master = l2l3Data.l2_l3_master;
+      setL2l3Master(master);
+      setIsAnalyzingL2L3(false);
+
+      // 3단계: 태깅 적용
+      runTagging(uploadedFilename, data.l1_candidates, master);
     } catch (e: any) {
       setHierarchyMessage({ text: e.message, type: "error" });
-    } finally {
       setIsAnalyzing(false);
+      setIsAnalyzingL2L3(false);
     }
   };
 
-  const runTagging = async (filename: string, l1s: string[]) => {
+  const runTagging = async (filename: string, l1s: string[], master: Record<string, Record<string, string[]>>) => {
     setIsAnalyzingSamples(true);
     setIsTagging(true);
     setHierarchyTree(null);
@@ -94,11 +114,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const [samplesRes, taggingRes] = await Promise.all([
         fetch(`${API_BASE}/api/ingestion/analyze-tagging-samples`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_l1_list: l1s }),
+          body: JSON.stringify({ filename, selected_l1_list: l1s, l2_l3_master: master }),
         }),
         fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_l1_list: l1s }),
+          body: JSON.stringify({ filename, selected_l1_list: l1s, l2_l3_master: master }),
         }),
       ]);
       if (samplesRes.ok) {
@@ -197,7 +217,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                     <Upload className="w-5 h-5 text-slate-400" />
                   </div>
                   <p className="text-sm font-medium text-slate-600">클릭하여 파일 선택 또는 드래그 앤 드롭</p>
-                  <p className="text-xs text-slate-400 mt-1">PDF, DOCX, TXT, MD · 최대 10MB</p>
+                  <p className="text-xs text-slate-400 mt-1">PDF, DOCX · 최대 10MB</p>
                 </>
               )}
             </div>
@@ -253,16 +273,16 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               </div>
               <button
                 onClick={handleAnalyze}
-                disabled={isAnalyzing || isTagging}
+                disabled={isAnalyzing || isAnalyzingL2L3 || isTagging}
                 className={cn(
                   "min-w-[168px] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0",
-                  isAnalyzing || isTagging
+                  isAnalyzing || isAnalyzingL2L3 || isTagging
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 active:scale-[0.99]"
                 )}
               >
-                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {isAnalyzing ? "분석 중..." : "컨텍스트 분석"}
+                {(isAnalyzing || isAnalyzingL2L3 || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {isAnalyzing ? "L1 분석 중..." : isAnalyzingL2L3 ? "L2/L3 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
               </button>
             </div>
 
@@ -275,11 +295,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             )}
 
             {/* 진행 중 상태 */}
-            {(isAnalyzing || isTagging) && (
+            {(isAnalyzing || isAnalyzingL2L3 || isTagging) && (
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
                 <p className="text-sm text-indigo-700">
-                  {isAnalyzing ? "계층 구조 분석 중..." : "청크 태깅 적용 중..."}
+                  {isAnalyzing ? "1단계: L1 도메인 분석 중..." : isAnalyzingL2L3 ? "2단계: L2/L3 분류 체계 생성 중..." : "3단계: 청크 태깅 적용 중..."}
                 </p>
               </div>
             )}
