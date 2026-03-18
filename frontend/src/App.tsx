@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Header } from "./components/layout/Header";
 import { DashboardOverview } from "./components/dashboard/DashboardOverview";
-import { AgentTable } from "./components/agents/AgentTable";
 import { ChatPlayground } from "./components/playground/ChatPlayground";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { QAEvaluationDashboard } from "./components/evaluation/QAEvaluationDashboard";
@@ -21,6 +20,7 @@ function App() {
     if (activeTab === "generation") return "Data Generation";
     if (activeTab === "standardization") return "Data Standardization";
     if (activeTab === "overview") return "Dashboard";
+    if (activeTab === "settings") return "Settings";
     return activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
   };
 

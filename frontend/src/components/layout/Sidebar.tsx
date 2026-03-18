@@ -15,8 +15,6 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: "standardization", label: "Standardization", icon: Database },
     { id: "generation", label: "Data Generation", icon: FilePlus },
     { id: "evaluation", label: "Evaluation", icon: Target },
-    // { id: "playground", label: "Playground", icon: MessageSquare },  // 미구현 — 비활성화
-    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -66,20 +64,30 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       </div>
 
       <div className="p-4 border-t border-slate-800">
-        <div className={cn(
-          "flex items-center gap-3 rounded-lg bg-slate-800/50",
-          isCollapsed ? "justify-center p-2" : "px-3 py-2"
-        )}>
+        <button
+          onClick={() => setActiveTab("settings")}
+          className={cn(
+            "w-full flex items-center gap-3 rounded-lg transition-all duration-200",
+            isCollapsed ? "justify-center p-2" : "px-3 py-2",
+            activeTab === "settings"
+              ? "bg-indigo-600/20 ring-1 ring-indigo-500/40"
+              : "bg-slate-800/50 hover:bg-slate-800"
+          )}
+          title={isCollapsed ? "Settings" : undefined}
+        >
           <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0">
             <Users className="w-4 h-4 text-slate-300" />
           </div>
           {!isCollapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">Admin User</p>
-              <p className="text-xs text-slate-400 truncate">admin@autoeval.ai</p>
-            </div>
+            <>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-sm font-medium text-white truncate">Admin User</p>
+                <p className="text-xs text-slate-400 truncate">admin@autoeval.ai</p>
+              </div>
+              <Settings className="w-4 h-4 text-slate-500 shrink-0" />
+            </>
           )}
-        </div>
+        </button>
       </div>
     </div>
   );
