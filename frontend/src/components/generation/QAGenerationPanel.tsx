@@ -554,38 +554,63 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             <AnimatePresence>
               {phase === "complete" && resultFile && (
                 <motion.div
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }} transition={{ duration: 0.3 }}
-                  className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl space-y-3"
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }} transition={{ duration: 0.35, ease: "easeOut" }}
+                  className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50/80 to-white overflow-hidden"
                 >
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  {/* 헤더 */}
+                  <div className="flex items-center gap-3 px-5 py-4 border-b border-emerald-100">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    </div>
                     <p className="text-sm font-semibold text-emerald-800">
                       {formValues.autoEvaluate && evalReport ? "파이프라인 완료" : "생성 완료"}
                     </p>
                   </div>
 
-                  {formValues.autoEvaluate && evalReport && typeof evalReport === 'object' && 'summary' in evalReport && (
-                    <div className="grid grid-cols-4 gap-2">
-                      {[
-                        { label: "총 QA", value: `${evalReport.metadata?.total_qa}개` },
-                        { label: "구문 검증", value: `${evalReport.summary?.syntax_pass_rate}%` },
-                        { label: "Dataset Score", value: `${evalReport.summary?.dataset_quality_score}/10` },
-                        { label: "최종 등급", value: `${evalReport.summary?.grade}` },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="bg-white rounded-lg p-2.5 border border-emerald-100 space-y-0.5">
-                          <p className="text-xs text-slate-400">{label}</p>
-                          <p className="text-sm font-semibold text-slate-800">{value}</p>
+                  {/* 지표 그리드 */}
+                  {evalReport?.summary && (
+                    <div className="p-4 grid grid-cols-3 gap-2">
+                      {(() => {
+                        const s = evalReport.summary;
+                        const m = evalReport.metadata ?? {};
+                        const syntaxOk  = (s.syntax_pass_rate  ?? 0) >= 80;
+                        const datasetOk = (s.dataset_quality_score ?? 0) >= 7;
+                        const ragOk     = (s.rag_average_score  ?? 0) >= 0.7;
+                        const qualOk    = (s.quality_average_score ?? 0) >= 0.7;
+                        return [
+                          { label: "총 QA",     value: `${m.total_qa ?? '-'}개`,                     ok: null         },
+                          { label: "구문 통과율", value: `${s.syntax_pass_rate ?? 0}%`,               ok: syntaxOk     },
+                          { label: "Dataset",   value: `${s.dataset_quality_score ?? 0}/10`,          ok: datasetOk    },
+                          { label: "RAG 점수",  value: s.rag_average_score?.toFixed(2) ?? '-',        ok: ragOk        },
+                          { label: "품질 점수", value: s.quality_average_score?.toFixed(2) ?? '-',    ok: qualOk       },
+                          { label: "최종 점수", value: `${s.final_score ?? 0}/100`,                   ok: 'highlight' as any },
+                        ];
+                      })().map(({ label, value, ok }) => (
+                        <div key={label} className={cn(
+                          "rounded-xl border flex flex-col items-center justify-center py-3 gap-1 transition-all cursor-default select-none",
+                          ok === 'highlight' ? "bg-indigo-50 border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 hover:shadow-sm" :
+                          ok === true        ? "bg-white border-emerald-100 hover:bg-emerald-50 hover:border-emerald-200 hover:shadow-sm" :
+                          ok === false       ? "bg-white border-amber-100 hover:bg-amber-50 hover:border-amber-200 hover:shadow-sm" :
+                                              "bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200 hover:shadow-sm"
+                        )}>
+                          <p className="text-[10px] text-slate-400 font-medium">{label}</p>
+                          <p className={cn("text-sm font-bold",
+                            ok === 'highlight' ? "text-indigo-700" :
+                            ok === true        ? "text-emerald-700" :
+                            ok === false       ? "text-amber-600"  : "text-slate-700"
+                          )}>{value}</p>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {formValues.autoEvaluate && evalReport && onGoToEvaluation && (
-                    <div className="pt-2 border-t border-emerald-100 flex justify-end">
+                  {/* 액션 버튼 */}
+                  {onGoToEvaluation && (
+                    <div className="px-4 pb-4 flex justify-end">
                       <button
                         onClick={onGoToEvaluation}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm shadow-indigo-200 active:scale-[0.98]"
                       >
                         평가 결과 보기 <ChevronRight className="w-4 h-4" />
                       </button>
