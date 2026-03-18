@@ -603,7 +603,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
             )}
             {activeReport?.summary?.final_score != null && (
               <span className="text-sm text-slate-500 font-mono">
-                {activeReport.summary.final_score.toFixed(3)}
+                {(activeReport.summary.final_score * 100).toFixed(1)}점
               </span>
             )}
           </div>
@@ -916,7 +916,7 @@ function HistoryDropdown({
                     <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded border', GRADE_COLOR[item.final_grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
                       {item.final_grade}
                     </span>
-                    <span className="text-xs font-mono text-slate-600">{item.final_score?.toFixed(3)}</span>
+                    <span className="text-xs font-mono text-slate-600">{item.final_score != null ? (item.final_score * 100).toFixed(1) + '점' : '-'}</span>
                     <span className="text-xs text-slate-400">{item.total_qa} QA</span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 truncate">

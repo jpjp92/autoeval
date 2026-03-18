@@ -142,7 +142,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       <StepCard
         step={1}
         title="문서 업로드"
-        subtitle="PDF, DOCX, TXT, MD 파일을 업로드하면 Gemini Embedding 2로 벡터화합니다."
+        subtitle="PDF, DOCX 파일을 업로드하면 Gemini Embedding 2로 벡터화합니다."
         icon={<Database className="w-4 h-4" />}
         status={uploadDone ? "done" : "active"}
         isLast={false}

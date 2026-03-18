@@ -513,12 +513,6 @@ async def run_qa_generation_real(
                     "prompt_version": prompt_version,
                     "source_doc": doc_filename or "",
                 },
-                hierarchy={
-                    "sampling": "random",
-                    "category": None,
-                    "path_prefix": None,
-                    "filtered_document_count": total_docs
-                },
                 stats={
                     "total_qa": total_qa,
                     "total_documents": total_docs,
@@ -625,12 +619,6 @@ async def run_qa_generation_simulation(
                     "lang": lang,
                     "prompt_version": prompt_version,
                     "source_doc": "",
-                },
-                hierarchy={
-                    "sampling": "random",
-                    "category": None,
-                    "path_prefix": None,
-                    "filtered_document_count": samples
                 },
                 stats={
                     "total_qa": total_qa,

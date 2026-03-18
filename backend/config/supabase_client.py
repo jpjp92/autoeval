@@ -34,37 +34,38 @@ else:
 
 async def save_qa_generation_to_supabase(
     job_id: str,
-    metadata: Dict[str, Any],  # {generation_model, lang, prompt_version}
-    hierarchy: Dict[str, Any],  # {sampling, category, path_prefix, filtered_document_count}
+    metadata: Dict[str, Any],  # {generation_model, lang, prompt_version, source_doc}
     stats: Dict[str, Any],      # {total_qa, total_documents, tokens, cost}
-    qa_list: list,              # [{q, a, context, hierarchy, docId, ...}]
+    qa_list: list,              # [{docId, text, qa_list:[{q,a,intent}], ...}]
 ) -> Optional[str]:
     """
     QA 생성 결과를 Supabase에 저장하고 생성된 ID를 반환
-    
-    Args:
-        job_id: 생성 작업 ID (고유)
-        metadata: 생성 메타데이터
-        hierarchy: Hierarchy 샘플링 정보
-        stats: 생성 통계
-        qa_list: 생성된 QA 배열
-        
+
+    source_doc, doc_chunk_ids를 최상위 컬럼으로 추출해 저장하여
+    doc_chunks → qa_gen_results 추적 경로를 확보한다.
+
     Returns:
         생성된 UUID (또는 None if failed)
     """
     if not supabase_client:
         logger.warning("Supabase client not initialized. Skipping save.")
         return None
-    
+
     try:
+        # doc_chunk_ids: qa_list 안의 docId를 최상위 컬럼으로 추출
+        doc_chunk_ids = list({
+            r.get("docId") for r in qa_list if r.get("docId")
+        })
+
         # Supabase에 저장
         data = {
-            "job_id": job_id,
-            "metadata": metadata,
-            "hierarchy": hierarchy,
-            "stats": stats,
-            "qa_list": qa_list,
-            "created_at": datetime.utcnow().isoformat(),
+            "job_id":         job_id,
+            "metadata":       metadata,
+            "stats":          stats,
+            "qa_list":        qa_list,
+            "source_doc":     metadata.get("source_doc", ""),
+            "doc_chunk_ids":  doc_chunk_ids,
+            "created_at":     datetime.utcnow().isoformat(),
         }
         
         response = supabase_client.table("qa_gen_results").insert(data).execute()
@@ -119,7 +120,6 @@ async def save_evaluation_to_supabase(
     final_score: float,
     final_grade: str,
     pipeline_results: Dict[str, Any],  # 4단계 전체 결과 (상세)
-    interpretation: Optional[Dict[str, Any]] = None,  # 해석 & 개선
 ) -> Optional[str]:
     """
     평가 결과를 Supabase에 저장하고 평가 ID를 반환
@@ -133,8 +133,6 @@ async def save_evaluation_to_supabase(
         final_score: 최종 종합 점수 (0-1)
         final_grade: 최종 등급 (A+, A, B+, B, C, F)
         pipeline_results: 4단계 전체 평가 결과
-        interpretation: 해석 & 개선 추천사항
-        
     Returns:
         생성된 UUID (또는 None if failed)
     """
@@ -152,7 +150,6 @@ async def save_evaluation_to_supabase(
             "final_score": final_score,
             "final_grade": final_grade,
             "pipeline_results": pipeline_results,
-            "interpretation": interpretation,
             "created_at": datetime.utcnow().isoformat(),
         }
         
@@ -448,6 +445,48 @@ async def get_document_chunks(source_name: str, limit: int = 10) -> list:
         return response.data if response.data else []
     except Exception as e:
         logger.error(f"❌ Failed to get document chunks: {e}")
+        return []
+
+
+async def get_generations_by_chunk(chunk_id: str) -> list:
+    """
+    특정 doc_chunks.id가 사용된 qa_gen_results 목록 조회 (역방향 추적)
+    doc_chunk_ids 컬럼(uuid[])에 해당 chunk_id가 포함된 레코드를 반환.
+    """
+    if not supabase_client:
+        return []
+    try:
+        response = (
+            supabase_client.table("qa_gen_results")
+            .select("id, job_id, source_doc, created_at, metadata")
+            .contains("doc_chunk_ids", [chunk_id])
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        logger.error(f"❌ Failed to get generations by chunk {chunk_id}: {e}")
+        return []
+
+
+async def get_generations_by_source_doc(source_doc: str) -> list:
+    """
+    특정 문서(source_doc)로 생성된 qa_gen_results 목록 조회
+    source_doc 컬럼(text)으로 직접 필터링.
+    """
+    if not supabase_client:
+        return []
+    try:
+        response = (
+            supabase_client.table("qa_gen_results")
+            .select("id, job_id, source_doc, doc_chunk_ids, created_at, metadata, stats")
+            .eq("source_doc", source_doc)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        logger.error(f"❌ Failed to get generations by source_doc {source_doc}: {e}")
         return []
 
 

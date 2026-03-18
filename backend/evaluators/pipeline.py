@@ -578,7 +578,6 @@ def run_evaluation(
                     final_score=round(final_score, 3),
                     final_grade=grade,
                     pipeline_results=pipeline_results,
-                    interpretation=eval_report.get("interpretation", {}),
                 ))
                 if supabase_eval_id:
                     logger.info(f"[{job_id}] ✅ Evaluation Supabase saved: {supabase_eval_id}")

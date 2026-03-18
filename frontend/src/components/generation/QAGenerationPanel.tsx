@@ -584,7 +584,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                           { label: "Dataset",   value: `${s.dataset_quality_score ?? 0}/10`,          ok: datasetOk    },
                           { label: "RAG 점수",  value: s.rag_average_score?.toFixed(2) ?? '-',        ok: ragOk        },
                           { label: "품질 점수", value: s.quality_average_score?.toFixed(2) ?? '-',    ok: qualOk       },
-                          { label: "최종 점수", value: `${s.final_score ?? 0}/100`,                   ok: 'highlight' as any },
+                          { label: "최종 점수", value: `${(((s.final_score ?? 0) * 100)).toFixed(1)}/100`, ok: 'highlight' as any },
                         ];
                       })().map(({ label, value, ok }) => (
                         <div key={label} className={cn(
