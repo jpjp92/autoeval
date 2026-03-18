@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight } from "lucide-react";
+import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, ChevronDown } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { API_BASE } from "@/src/lib/api";
+import { API_BASE, getHierarchyList } from "@/src/lib/api";
 
 interface HierarchyData { l1: string; l2: string; l3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -12,9 +12,10 @@ interface AnalysisResult {
   validation: string;
 }
 
-export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
+export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTaggingComplete }: {
   setActiveTab?: (tab: string) => void;
   onUploadComplete?: (filename: string) => void;
+  onTaggingComplete?: () => void;
 }) {
   // --- Upload state ---
   const [file, setFile] = useState<File | null>(null);
@@ -30,6 +31,8 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
   const [selectedL1s, setSelectedL1s] = useState<string[]>([]);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [hierarchyTree, setHierarchyTree] = useState<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; l3_by_l1_l2: Record<string, string[]> } | null>(null);
+  const [expandedL1, setExpandedL1] = useState<Record<string, boolean>>({});
 
   // ── Upload handlers ──────────────────────────────────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,6 +92,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
   const runTagging = async (filename: string, l1s: string[]) => {
     setIsAnalyzingSamples(true);
     setIsTagging(true);
+    setHierarchyTree(null);
     try {
       const [samplesRes, taggingRes] = await Promise.all([
         fetch(`${API_BASE}/api/ingestion/analyze-tagging-samples`, {
@@ -105,6 +109,18 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
         setTaggingSamples(d.samples || []);
       }
       if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "태깅 실패");
+
+      // 태깅 완료 후 계층 트리 조회
+      const treeRes = await getHierarchyList(filename);
+      if (treeRes.success) {
+        setHierarchyTree(treeRes);
+        // L1 전체 펼침 (기본값)
+        const expanded: Record<string, boolean> = {};
+        treeRes.l1_list.forEach((l1: string) => { expanded[l1] = true; });
+        setExpandedL1(expanded);
+      }
+      // 태깅 완료 알림 → QAGenerationPanel hierarchy 재로드 트리거
+      onTaggingComplete?.();
     } catch (e: any) {
       setHierarchyMessage({ text: e.message, type: "error" });
     } finally {
@@ -299,6 +315,81 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete }: {
                 </div>
               </div>
             )}
+
+            {/* 계층 구조 트리 */}
+            {hierarchyTree && hierarchyTree.l1_list.length > 0 && (() => {
+              const totalL2 = (Object.values(hierarchyTree.l2_by_l1) as string[][]).reduce((s, arr) => s + arr.length, 0);
+              const totalL3 = (Object.values(hierarchyTree.l3_by_l1_l2) as string[][]).reduce((s, arr) => s + arr.length, 0);
+              return (
+                <div className="space-y-2 animate-in fade-in duration-400">
+                  {/* 헤더 */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-700">계층 구조</p>
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium">
+                      <span className="px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full">L1 · {hierarchyTree.l1_list.length}</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full">L2 · {totalL2}</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="px-2 py-0.5 bg-sky-100 text-sky-600 rounded-full">L3 · {totalL3}</span>
+                    </div>
+                  </div>
+
+                  {/* 트리 */}
+                  <div className="rounded-xl border border-slate-100 bg-white overflow-hidden divide-y divide-slate-50">
+                    {hierarchyTree.l1_list.map((l1: string) => {
+                      const l2s = hierarchyTree.l2_by_l1[l1] ?? [];
+                      const isOpen = expandedL1[l1] ?? true;
+                      return (
+                        <div key={l1}>
+                          {/* L1 행 */}
+                          <button
+                            onClick={() => setExpandedL1((prev: Record<string, boolean>) => ({ ...prev, [l1]: !isOpen }))}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                          >
+                            <ChevronDown className={cn("w-3.5 h-3.5 text-slate-300 transition-transform flex-shrink-0", !isOpen && "-rotate-90")} />
+                            <span className="w-2 h-2 rounded-full bg-violet-400 flex-shrink-0" />
+                            <span className="text-sm font-bold text-slate-800 flex-1">{l1}</span>
+                            <span className="text-[11px] text-slate-400">{l2s.length} L2</span>
+                          </button>
+
+                          {/* L2 + L3 트리 */}
+                          {isOpen && l2s.length > 0 && (
+                            <div className="pl-8 pr-4 pb-2 space-y-0">
+                              {l2s.map((l2: string, idx: number) => {
+                                const l3s = hierarchyTree.l3_by_l1_l2[`${l1}__${l2}`] ?? [];
+                                const isLast = idx === l2s.length - 1;
+                                return (
+                                  <div key={l2} className="relative flex items-start gap-2 py-1.5">
+                                    {/* 트리 라인 */}
+                                    <div className="flex flex-col items-center flex-shrink-0 w-4 mt-0.5">
+                                      <span className="text-slate-300 text-xs leading-none font-mono select-none">
+                                        {isLast ? '└' : '├'}
+                                      </span>
+                                    </div>
+                                    {/* L2 이름 + L3 chips */}
+                                    <div className="flex-1 flex items-center flex-wrap gap-1.5 min-w-0">
+                                      <span className="text-xs font-semibold text-indigo-600 whitespace-nowrap">{l2}</span>
+                                      {l3s.map((l3: string) => (
+                                        <span
+                                          key={l3}
+                                          className="px-1.5 py-0.5 text-[10px] bg-sky-50 text-sky-500 border border-sky-100 rounded font-medium whitespace-nowrap"
+                                        >
+                                          {l3}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 태깅 완료 → QA 생성 이동 버튼 */}
             {!isTagging && !isAnalyzingSamples && taggingSamples.length > 0 && setActiveTab && (

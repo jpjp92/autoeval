@@ -91,7 +91,10 @@ class GenerateRequest(BaseModel):
     samples: int = 10
     qa_per_doc: Optional[int] = None
     prompt_version: str = "v1"
-    
+
+    # Source document filename (used to filter Vector DB to a specific document)
+    filename: Optional[str] = None
+
     # Hierarchy filters for vector search
     hierarchy_l1: Optional[str] = None
     hierarchy_l2: Optional[str] = None
@@ -261,27 +264,30 @@ async def run_qa_generation_real(
     h2 = config.get("hierarchy_l2")
     h3 = config.get("hierarchy_l3")
     r_query = config.get("retrieval_query")
-    
+    doc_filename = config.get("filename")
+
+    logger.info(f"[{job_id}] Config: filename={doc_filename!r}, h1={h1!r}, h2={h2!r}, h3={h3!r}")
+
     items = []
-    
+
     from config.supabase_client import search_doc_chunks, get_doc_chunks_by_filter, is_supabase_available
-    
-    if is_supabase_available() and (h1 or h2 or h3 or r_query):
-        logger.info(f"[{job_id}] Using Vector DB retrieval (hierarchy filters present)")
+
+    if is_supabase_available() and (h1 or h2 or h3 or r_query or doc_filename):
+        logger.info(f"[{job_id}] Using Vector DB retrieval (filters present)")
         job_manager.update_job(job_id, message="Searching Vector DB...")
-        
+
         # 필터 구성
         filter_dict = {}
         if h1: filter_dict["hierarchy_l1"] = h1
         if h2: filter_dict["hierarchy_l2"] = h2
         if h3: filter_dict["hierarchy_l3"] = h3
-        
+
         # 쿼리 임베딩 생성 (유사도 검색 필요시)
         query_vector = None
         if r_query:
             from google import genai as google_genai
             gemini_client = google_genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-            res = gemini_client.models.embed_content(
+            res = await gemini_client.aio.models.embed_content(
                 model="gemini-embedding-2-preview",
                 contents=r_query,
                 config=google_genai.types.EmbedContentConfig(
@@ -290,12 +296,12 @@ async def run_qa_generation_real(
                 )
             )
             query_vector_values = res.embeddings[0].values
-            
+
             # L2 Normalization
             v_np = np.array(query_vector_values)
             v_norm = np.linalg.norm(v_np)
             query_vector = (v_np / v_norm).tolist() if v_norm > 0 else query_vector_values
-        
+
         if query_vector is not None:
             # r_query 있음 → 실제 semantic search
             chunks = await search_doc_chunks(
@@ -310,8 +316,10 @@ async def run_qa_generation_real(
                 hierarchy_l1=h1,
                 hierarchy_l2=h2,
                 hierarchy_l3=h3,
-                limit=samples,
+                filename=doc_filename,
+                limit=max(samples * 3, 30),  # 여유있게 가져와서 skip 후에도 충분히 확보
             )
+        logger.info(f"[{job_id}] Raw chunks from DB: {len(chunks)} (before skip filter)")
         
         # heading/발행처 청크 skip 판단
         _COLOPHON_KEYWORDS = ["발행처:", "발행인:", "저작권", "©", "무단전재", "재배포를 금"]
@@ -342,19 +350,22 @@ async def run_qa_generation_real(
 
         logger.info(f"[{job_id}] Vector DB found {len(items)} chunks (skipped {skipped} heading/colophon)")
     
-    # 2. Vector DB에서 결과가 없거나 필터가 없는 경우 로컬 JSON 폴백
+    # 2. Vector DB에서 결과가 없는 경우
     if not items:
         if is_supabase_available():
-            logger.warning(
-                f"[{job_id}] ⚠️ [FALLBACK] DB 청크 없음 또는 hierarchy 필터 미지정 → "
-                f"KT 통신사 JSON 데이터로 대체 (ref/data/data_2026-03-06_normalized.json). "
-                f"QA 생성 전 L1/L2 계층을 선택하거나 문서를 먼저 인제스션하세요."
+            raise ValueError(
+                "QA 생성에 필요한 문서 청크를 찾을 수 없습니다. "
+                "데이터 규격화 페이지에서 문서를 먼저 업로드·인제스션한 후 "
+                "L1/L2 계층을 선택하고 다시 시도하세요."
             )
-        logger.info(f"[{job_id}] Using local JSON data file")
+        # Supabase 미사용 환경: 로컬 JSON 폴백
+        logger.info(f"[{job_id}] Supabase unavailable — trying local JSON fallback")
         data_file = Path(__file__).parent.parent / "ref/data/data_2026-03-06_normalized.json"
-        
         if not data_file.exists():
-            raise FileNotFoundError(f"Data file not found: {data_file}")
+            raise FileNotFoundError(
+                f"로컬 데이터 파일을 찾을 수 없습니다: {data_file}\n"
+                "Supabase 연결을 확인하거나 문서를 먼저 인제스션하세요."
+            )
         
         with open(data_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -492,7 +503,8 @@ async def run_qa_generation_real(
                 metadata={
                     "generation_model": model,
                     "lang": lang,
-                    "prompt_version": prompt_version
+                    "prompt_version": prompt_version,
+                    "source_doc": doc_filename or "",
                 },
                 hierarchy={
                     "sampling": "random",
@@ -604,7 +616,8 @@ async def run_qa_generation_simulation(
                 metadata={
                     "generation_model": model,
                     "lang": lang,
-                    "prompt_version": prompt_version
+                    "prompt_version": prompt_version,
+                    "source_doc": "",
                 },
                 hierarchy={
                     "sampling": "random",

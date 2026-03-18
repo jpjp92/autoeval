@@ -42,6 +42,7 @@ Ingestion API  —  POST /api/ingestion/*
   → Supabase doc_chunks upsert (content_hash 중복 방지)
 """
 
+import asyncio
 import os
 import json
 import logging
@@ -932,7 +933,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
             batch = all_chunks_to_embed[i : i + batch_size]
             batch_texts = [item["text"] for item in batch]
             
-            res = gemini_client.models.embed_content(
+            res = await gemini_client.aio.models.embed_content(
                 model="gemini-embedding-2-preview",
                 contents=batch_texts,
                 config=google_genai.types.EmbedContentConfig(
@@ -1073,7 +1074,7 @@ async def analyze_tagging_samples(request: GranularTaggingRequest):
     """
     
     try:
-        res = gemini_client.models.generate_content(
+        res = await gemini_client.aio.models.generate_content(
             model="gemini-3-flash-preview",
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(
@@ -1081,7 +1082,7 @@ async def analyze_tagging_samples(request: GranularTaggingRequest):
             )
         )
         tagging_results = json.loads(res.text)
-        
+
         final_samples = []
         for item in tagging_results:
             orig = next((s for s in samples if s["id"] == item["id"]), None)
@@ -1144,14 +1145,14 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     """
     
     try:
-        response = gemini_client.models.generate_content(
+        response = await gemini_client.aio.models.generate_content(
             model="gemini-3-flash-preview",
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(
                 response_mime_type="application/json"
             )
         )
-        
+
         analysis_res = json.loads(response.text)
         logger.info(f"✅ Master Schema discovered with {len(analysis_res.get('l1_candidates', []))} candidates")
         return HierarchyAnalysisResponse(**analysis_res)
@@ -1181,99 +1182,108 @@ async def test_ingestion_route():
 
 
 @router.post("/apply-granular-tagging")
-async def apply_granular_tagging(request: GranularTaggingRequest, background_tasks: BackgroundTasks):
+async def apply_granular_tagging(request: GranularTaggingRequest):
     """
-    2&3단계: 개별 청크별 세밀한 매핑 실행 (백그라운드 처리)
+    2&3단계: 개별 청크별 세밀한 매핑 실행 (동기 처리 — 완료 후 반환)
     """
     logger.info(f"🚀 [Step 2&3] Starting Granular Tagging for: {request.filename}")
     
     # 백그라운드 태깅 프로세스 정의
     async def run_tagging():
-        # 로컬 임포트로 NameError 방지
         from config.supabase_client import update_chunk_metadata
-        
+
         # 1. 모든 청크 가져오기
-        all_chunks = await get_document_chunks(request.filename, limit=2000) # 상한선
+        all_chunks = await get_document_chunks(request.filename, limit=2000)
         if not all_chunks:
             return
-            
+
         logger.info(f"📊 Processing {len(all_chunks)} chunks for {request.filename}")
-        
-        # 2. 배치 처리 (5개씩 묶어서 비용/정확도 타협)
+
         batch_size = 5
-        for i in range(0, len(all_chunks), batch_size):
-            batch = all_chunks[i:i+batch_size]
-            
-            # 배치 분석 프롬프트
-            chunks_data = [{"id": c["id"], "content": c["content"][:1000]} for c in batch]
-            
-            prompt = f"""
+        batches = [all_chunks[i:i+batch_size] for i in range(0, len(all_chunks), batch_size)]
+        semaphore = asyncio.Semaphore(5)  # 동시 최대 5배치 (Gemini 3.1 Flash: 1,000 RPM)
+        completed = 0
+
+        def _build_prompt(chunks_data: list) -> str:
+            return f"""
             Analyze each text chunk and assign the most appropriate [L1, L2, L3] hierarchy.
-            
+
             ### Master L1 List (Choose ONE for each chunk):
             {request.selected_l1_list}
-            
+
             ### CRITICAL CONSTRAINTS (Phase 2.7):
             - L2 MUST be a DIFFERENT classification perspective from the document's section structure.
             - Do NOT just repeat section titles as L2; instead, classify by content theme, function, or topic.
             - Example: If section is "작성 배경 및 목적", L2 should be "품질 보증", "데이터 관리", etc., not "작성 배경".
-            
+
             ### Output:
             - Provide L2 and L3 that specifically describe each chunk's content within the chosen L1.
             - L2 should represent a meaningful classification orthogonal to the sectional hierarchy.
             - Terminology: Korean. Brevity (under 15 chars).
-            - Return JSON array of objects.
-            
+            - Return JSON array of objects with EXACT idx values as given.
+
             ### Input Chunks:
             {json.dumps(chunks_data, ensure_ascii=False)}
-            
+
             ### JSON Structure:
             [
               {{
-                "id": "chunk_uuid",
+                "idx": 0,
                 "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }}
               }},
               ...
             ]
             """
-            
-            try:
-                res = gemini_client.models.generate_content(
-                    model="gemini-3-flash-preview",
-                    contents=prompt,
-                    config=google_genai.types.GenerateContentConfig(
-                        response_mime_type="application/json"
-                    )
-                )
-                
-                tagging_results = json.loads(res.text)
-                
-                # 3. DB 업데이트
-                for item in tagging_results:
-                    chunk_id = item.get("id")
-                    h = item.get("hierarchy", {})
-                    
-                    # 기존 메타데이터 가져와서 업데이트
-                    target_chunk = next((c for c in batch if c["id"] == chunk_id), None)
-                    if target_chunk:
-                        meta = target_chunk.get("metadata", {})
-                        meta.update({
-                            "hierarchy_l1": h.get("l1"),
-                            "hierarchy_l2": h.get("l2"),
-                            "hierarchy_l3": h.get("l3")
-                        })
-                        await update_chunk_metadata(chunk_id, meta)
-                
-                logger.info(f"✅ Logged/Tagged batch {i//batch_size + 1}")
-                
-            except Exception as e:
-                logger.error(f"❌ Batch tagging error at {i}: {e}")
-                continue
-        
-        logger.info(f"🏁 Granular Tagging finished for {request.filename}")
 
-    background_tasks.add_task(run_tagging)
-    return {"success": True, "message": f"Granular tagging started for {len(request.selected_l1_list)} L1 categories."}
+        async def process_batch(batch_idx: int, batch: list):
+            nonlocal completed
+            async with semaphore:
+                # Use sequential indices instead of UUIDs (LLMs may corrupt long UUIDs)
+                chunks_data = [{"idx": i, "content": c["content"][:1000]} for i, c in enumerate(batch)]
+                try:
+                    # aio (비동기) 클라이언트 사용 — 이벤트 루프 블로킹 없음
+                    res = await gemini_client.aio.models.generate_content(
+                        model="gemini-3-flash-preview",
+                        contents=_build_prompt(chunks_data),
+                        config=google_genai.types.GenerateContentConfig(
+                            response_mime_type="application/json"
+                        )
+                    )
+                    tagging_results = json.loads(res.text)
+
+                    # 인덱스 기반 매핑 (UUID 대신 idx 사용 — LLM이 UUID를 변형할 수 있음)
+                    update_tasks = []
+                    matched = 0
+                    for item in tagging_results:
+                        idx = item.get("idx")
+                        h = item.get("hierarchy", {})
+                        if idx is None or not isinstance(idx, int) or idx >= len(batch):
+                            logger.warning(f"[Tagging] Invalid idx={idx} in batch {batch_idx + 1}, skipping")
+                            continue
+                        target = batch[idx]
+                        chunk_id = target["id"]
+                        meta = {**target.get("metadata", {}),
+                                "hierarchy_l1": h.get("l1"),
+                                "hierarchy_l2": h.get("l2"),
+                                "hierarchy_l3": h.get("l3")}
+                        update_tasks.append(update_chunk_metadata(chunk_id, meta))
+                        matched += 1
+
+                    logger.info(f"[Tagging] Batch {batch_idx + 1}: {matched}/{len(batch)} chunks matched, queuing updates")
+                    if update_tasks:
+                        await asyncio.gather(*update_tasks)
+
+                    completed += 1
+                    logger.info(f"✅ Logged/Tagged batch {batch_idx + 1}/{len(batches)} ({matched} updated)")
+                except Exception as e:
+                    logger.error(f"❌ Batch tagging error at batch {batch_idx + 1}: {e}")
+
+        # 2. 전체 배치 병렬 실행 (Semaphore로 동시성 제한)
+        await asyncio.gather(*[process_batch(i, b) for i, b in enumerate(batches)])
+        logger.info(f"🏁 Granular Tagging finished for {request.filename} ({completed}/{len(batches)} batches OK)")
+
+    await run_tagging()
+    return {"success": True, "message": f"Granular tagging completed for {len(request.selected_l1_list)} L1 categories."}
 
 
 @router.post("/update-hierarchy")

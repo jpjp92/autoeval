@@ -14,6 +14,8 @@ function App() {
   const [activeTab, setActiveTab] = useState("overview");
   const [currentFilename, setCurrentFilename] = useState<string | null>(null);
   const [lastEvalJobId, setLastEvalJobId] = useState<string | null>(null);
+  // taggingVersion 증가 시 QAGenerationPanel에서 hierarchy 재로드
+  const [taggingVersion, setTaggingVersion] = useState(0);
 
   const getHeaderTitle = () => {
     if (activeTab === "evaluation") return "Evaluation";
@@ -31,57 +33,48 @@ function App() {
         <Header title={getHeaderTitle()} />
         
         <main className="flex-1 overflow-y-auto p-8">
+          {/* 탭 전환 애니메이션 오버레이 */}
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="max-w-7xl mx-auto space-y-8"
-          >
-            {activeTab === "overview" && (
-              <DashboardOverview setActiveTab={setActiveTab} />
-            )}
+            transition={{ duration: 0.25 }}
+            className="pointer-events-none absolute inset-0"
+          />
 
-            {activeTab === "standardization" && (
-              <DataStandardizationPanel
-                setActiveTab={setActiveTab}
-                onUploadComplete={(filename) => setCurrentFilename(filename)}
-              />
-            )}
+          {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
+          <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
+            <DashboardOverview setActiveTab={setActiveTab} />
+          </div>
 
-            {activeTab === "generation" && (
-              <QAGenerationPanel
-                currentFilename={currentFilename}
-                onEvalComplete={(evalJobId) => {
-                  setLastEvalJobId(evalJobId);
-                }}
-                onGoToEvaluation={() => setActiveTab("evaluation")}
-              />
-            )}
+          <div className={activeTab === "standardization" ? "max-w-7xl mx-auto" : "hidden"}>
+            <DataStandardizationPanel
+              setActiveTab={setActiveTab}
+              onUploadComplete={(filename) => setCurrentFilename(filename)}
+              onTaggingComplete={() => setTaggingVersion((v: number) => v + 1)}
+            />
+          </div>
 
-            {activeTab === "evaluation" && (
-              <QAEvaluationDashboard evalJobId={lastEvalJobId} />
-            )}
+          <div className={activeTab === "generation" ? "max-w-7xl mx-auto" : "hidden"}>
+            <QAGenerationPanel
+              currentFilename={currentFilename}
+              taggingVersion={taggingVersion}
+              onEvalComplete={(evalJobId) => setLastEvalJobId(evalJobId)}
+              onGoToEvaluation={() => setActiveTab("evaluation")}
+            />
+          </div>
 
+          <div className={activeTab === "evaluation" ? "max-w-7xl mx-auto" : "hidden"}>
+            <QAEvaluationDashboard evalJobId={lastEvalJobId} />
+          </div>
 
-            {activeTab === "playground" && (
-              <ChatPlayground />
-            )}
+          <div className={activeTab === "playground" ? "max-w-7xl mx-auto" : "hidden"}>
+            <ChatPlayground />
+          </div>
 
-            {activeTab === "settings" && (
-              <SettingsPanel />
-            )}
-            
-            {activeTab !== "overview" && activeTab !== "standardization" && activeTab !== "generation" && activeTab !== "evaluation" && activeTab !== "playground" && activeTab !== "settings" && (
-              <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
-                <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4">
-                  <span className="text-2xl">🚧</span>
-                </div>
-                <h3 className="text-lg font-medium text-slate-600">Work in Progress</h3>
-                <p>The {activeTab} module is currently under development.</p>
-              </div>
-            )}
-          </motion.div>
+          <div className={activeTab === "settings" ? "max-w-7xl mx-auto" : "hidden"}>
+            <SettingsPanel />
+          </div>
         </main>
       </div>
     </div>

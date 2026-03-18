@@ -375,6 +375,7 @@ def run_evaluation(
         gen_lang       = "ko"
         gen_model      = ""
         gen_prompt_ver = "v1"
+        gen_source_doc = ""
 
         # generation_id 있으면 Supabase에서 직접 읽기 (파일 불필요)
         if generation_id:
@@ -385,6 +386,7 @@ def run_evaluation(
                 gen_lang       = gen_meta.get("lang", "ko")
                 gen_model      = gen_meta.get("generation_model", "")
                 gen_prompt_ver = gen_meta.get("prompt_version", "v1")
+                gen_source_doc = gen_meta.get("source_doc", "")
 
                 # qa_list 컬럼 = [{docId, text, qa_list: [{q,a,intent}]}, ...]
                 # 로컬 파일 fallback과 동일하게 flatten + context 주입
@@ -417,6 +419,7 @@ def run_evaluation(
             gen_lang       = gen_config.get("lang", "ko")
             gen_model      = gen_config.get("model", "")
             gen_prompt_ver = gen_config.get("prompt_version", "v1")
+            gen_source_doc = gen_config.get("source_doc", "")
 
             for result_idx, result in enumerate(result_data.get("results", [])):
                 context = result.get("text", "")
@@ -472,6 +475,25 @@ def run_evaluation(
         elif final_score >= 0.50: grade = "C"
         else:                     grade = "F"
 
+        # QA 상세 미리보기 (프론트엔드 테이블용, 최대 100개)
+        # rag/quality qa_scores를 qa_list와 병합
+        rag_by_idx     = {s["qa_index"]: s for s in (rag_data["qa_scores"]     if rag_data     else [])}
+        quality_by_idx = {s["qa_index"]: s for s in (quality_data["qa_scores"] if quality_data else [])}
+        qa_preview = []
+        for i, qa in enumerate(qa_list[:100]):
+            r = rag_by_idx.get(i, {})
+            q = quality_by_idx.get(i, {})
+            qa_preview.append({
+                "qa_index":    i,
+                "q":           qa.get("q", "")[:300],
+                "a":           qa.get("a", "")[:500],
+                "context":     qa.get("context", "")[:1000],
+                "intent":      qa.get("intent", ""),
+                "rag_avg":     r.get("avg_score"),
+                "quality_avg": q.get("avg_quality"),
+                "pass":        q.get("pass", False),
+            })
+
         eval_report = {
             "job_id":          job_id,
             "result_filename": result_filename,
@@ -487,6 +509,7 @@ def run_evaluation(
                 "rag":     rag_data,
                 "quality": quality_data,
             },
+            "qa_preview": qa_preview,
             "summary": {
                 "syntax_pass_rate":      syntax_pass_rate,
                 "dataset_quality_score": round(dataset_quality, 2),
@@ -537,6 +560,7 @@ def run_evaluation(
                         "evaluator_model":  evaluator_model,
                         "lang":             gen_lang,
                         "prompt_version":   gen_prompt_ver,
+                        "source_doc":       gen_source_doc,
                     },
                     total_qa=len(qa_list),
                     valid_qa=valid_qa_count,

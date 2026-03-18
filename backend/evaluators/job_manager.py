@@ -29,6 +29,7 @@ class EvalJob:
     error: Optional[str] = None
     eval_report: Optional[Dict] = None
     timestamp: str = ""
+    generation_id: Optional[str] = None   # qa_gen_results UUID (export용)
     # 4단계 평가 상황 추적
     layers_status: Dict[str, Dict] = None
 

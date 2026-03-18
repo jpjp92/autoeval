@@ -210,6 +210,71 @@ export async function exportResults(request: ExportRequest): Promise<ApiResponse
 }
 
 /**
+ * Get evaluation job status
+ */
+export async function getEvalStatus(jobId: string): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/status`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: `Failed to get eval status: ${(error as Error).message}` };
+  }
+}
+
+/**
+ * Get current session eval job list (in-memory)
+ */
+export async function getEvalList(): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/evaluate/list`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: `Failed to get eval list: ${(error as Error).message}` };
+  }
+}
+
+/**
+ * Fetch full QA + eval score detail for xlsx export (current session job)
+ */
+export async function getEvalExport(jobId: string): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/export`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: `Export fetch failed: ${(error as Error).message}` };
+  }
+}
+
+/**
+ * Fetch full QA + eval score detail by Supabase eval_id (history items)
+ */
+export async function getEvalExportById(evalId: string): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/evaluate/export-by-id/${encodeURIComponent(evalId)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: `Export fetch failed: ${(error as Error).message}` };
+  }
+}
+
+/**
+ * Get persistent eval history from Supabase
+ */
+export async function getEvalHistory(): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/evaluate/history`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: `Failed to get eval history: ${(error as Error).message}` };
+  }
+}
+
+/**
  * Watch SSE stream (for streaming responses)
  */
 export function watchStream(

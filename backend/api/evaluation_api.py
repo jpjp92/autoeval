@@ -8,7 +8,7 @@ Backend Evaluation API
 
 import logging
 from datetime import datetime
-from typing import Optional, Any, TYPE_CHECKING
+from typing import Optional, Any, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import FastAPI, BackgroundTasks
@@ -101,7 +101,9 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 return {"success": False, "error": "result_filename is required"}
 
             job_id = f"eval_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-            eval_manager.create_job(job_id, result_filename)
+            job = eval_manager.create_job(job_id, result_filename)
+            if generation_id:
+                eval_manager.update_job(job_id, generation_id=generation_id)
 
             logger.info(f"Starting evaluation job: {job_id} for {result_filename} with evaluator_model={evaluator_model}")
             if generation_id:
@@ -147,3 +149,163 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             "timestamp":   job.timestamp,
             "layers":      job.layers_status,
         }
+
+    @app.get("/api/evaluate/list")
+    async def list_eval_jobs() -> dict:
+        """현재 서버 세션의 평가 Job 목록 반환 (최신순)"""
+        jobs = sorted(eval_manager.jobs.values(), key=lambda j: j.timestamp, reverse=True)
+        return {
+            "success": True,
+            "count": len(jobs),
+            "jobs": [
+                {
+                    "job_id":          j.job_id,
+                    "result_filename": j.result_filename,
+                    "status":          j.status.value,
+                    "timestamp":       j.timestamp,
+                    "summary":         j.eval_report.get("summary")  if j.eval_report else None,
+                    "metadata":        j.eval_report.get("metadata") if j.eval_report else None,
+                }
+                for j in jobs
+            ],
+        }
+
+    @app.get("/api/evaluate/history")
+    async def get_eval_history() -> dict:
+        """Supabase qa_eval_results 테이블에서 과거 평가 기록 조회 (영구 보존)"""
+        try:
+            from config.supabase_client import supabase_client
+        except ImportError:
+            try:
+                from backend.config.supabase_client import supabase_client
+            except ImportError:
+                supabase_client = None
+
+        if not supabase_client:
+            return {"success": False, "error": "Supabase not available", "history": []}
+
+        try:
+            response = (
+                supabase_client.table("qa_eval_results")
+                .select("id, job_id, metadata, total_qa, valid_qa, final_score, final_grade, created_at, scores, pipeline_results")
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            return {"success": True, "history": response.data or []}
+        except Exception as e:
+            logger.error(f"Failed to fetch eval history: {e}")
+            return {"success": False, "error": str(e), "history": []}
+
+    # ── Export 공통 헬퍼 ────────────────────────────────────────────────────────
+    def _build_export_detail(qa_list_raw: list, pipeline_results: dict) -> list:
+        """qa_gen_results.qa_list + pipeline_results 점수를 조인하여 export 행 목록 반환"""
+        # qa_gen_results.qa_list 구조: [{docId, text, qa_list:[{q,a,intent,...}]}]
+        flat_qa: list = []
+        for result in qa_list_raw:
+            context = result.get("text", "")
+            for qa in result.get("qa_list", []):
+                flat_qa.append({
+                    "q":       qa.get("q", ""),
+                    "a":       qa.get("a", ""),
+                    "context": context,
+                    "intent":  qa.get("intent", ""),
+                    "docId":   result.get("docId", ""),
+                })
+
+        layers = pipeline_results.get("layers", pipeline_results)  # in-memory vs Supabase 구조 대응
+        rag_raw     = (layers.get("rag")     or {}).get("qa_scores", [])
+        quality_raw = (layers.get("quality") or {}).get("qa_scores", [])
+        rag_by_idx     = {s["qa_index"]: s for s in rag_raw}
+        quality_by_idx = {s["qa_index"]: s for s in quality_raw}
+
+        detail = []
+        for i, qa in enumerate(flat_qa):
+            r = rag_by_idx.get(i, {})
+            q = quality_by_idx.get(i, {})
+            detail.append({
+                "qa_index":    i,
+                "q":           qa["q"],
+                "a":           qa["a"],
+                "context":     qa["context"],
+                "intent":      qa["intent"],
+                "docId":       qa["docId"],
+                "rag_avg":     r.get("avg_score"),
+                "quality_avg": q.get("avg_quality"),
+                "pass":        q.get("pass", False),
+            })
+        return detail
+
+    @app.get("/api/evaluate/{job_id}/export")
+    async def export_eval_by_job(job_id: str) -> dict:
+        """현재 세션 job의 전체 QA + 평가 점수 조인 (generation_id → Supabase qa_gen_results)"""
+        import asyncio
+
+        job = eval_manager.get_job(job_id)
+        if not job:
+            return {"success": False, "error": f"Job {job_id} not found"}
+        if job.status.value != "completed":
+            return {"success": False, "error": "Evaluation not completed yet"}
+        if not job.generation_id:
+            return {"success": False, "error": "No generation_id linked to this job"}
+
+        try:
+            from config.supabase_client import get_qa_generation_from_supabase
+        except ImportError:
+            from backend.config.supabase_client import get_qa_generation_from_supabase
+
+        gen_data = await get_qa_generation_from_supabase(job.generation_id)
+        if not gen_data:
+            return {"success": False, "error": f"Generation data not found for id={job.generation_id}"}
+
+        pipeline = (job.eval_report or {}).get("pipeline_results", {})
+        detail = _build_export_detail(gen_data.get("qa_list", []), pipeline)
+
+        return {
+            "success":   True,
+            "detail":    detail,
+            "metadata":  (job.eval_report or {}).get("metadata", {}),
+            "timestamp": (job.eval_report or {}).get("timestamp"),
+        }
+
+    @app.get("/api/evaluate/export-by-id/{eval_id}")
+    async def export_eval_by_id(eval_id: str) -> dict:
+        """Supabase eval_id 기반 export (히스토리 항목용) — linked generation에서 QA 조회"""
+        try:
+            from config.supabase_client import supabase_client
+        except ImportError:
+            from backend.config.supabase_client import supabase_client
+
+        if not supabase_client:
+            return {"success": False, "error": "Supabase not available"}
+
+        try:
+            # 1. 평가 레코드 조회
+            eval_resp = supabase_client.table("qa_eval_results").select(
+                "id, job_id, metadata, pipeline_results, created_at"
+            ).eq("id", eval_id).single().execute()
+            eval_row = eval_resp.data
+            if not eval_row:
+                return {"success": False, "error": f"Eval record {eval_id} not found"}
+
+            # 2. linked_evaluation_id = eval_id 인 gen_results 조회
+            gen_resp = supabase_client.table("qa_gen_results").select(
+                "qa_list, metadata"
+            ).eq("linked_evaluation_id", eval_id).limit(1).execute()
+
+            if not gen_resp.data:
+                return {"success": False, "error": "Linked generation not found for this evaluation"}
+
+            gen_row = gen_resp.data[0]
+            pipeline = eval_row.get("pipeline_results", {})
+            detail = _build_export_detail(gen_row.get("qa_list", []), pipeline)
+
+            return {
+                "success":   True,
+                "detail":    detail,
+                "metadata":  eval_row.get("metadata", {}),
+                "timestamp": eval_row.get("created_at"),
+            }
+        except Exception as e:
+            logger.error(f"Export by eval_id failed: {e}")
+            return {"success": False, "error": str(e)}

@@ -35,11 +35,12 @@ interface FormValues {
 
 interface QAGenerationPanelProps {
   currentFilename?: string | null;
+  taggingVersion?: number;
   onEvalComplete?: (evalJobId: string) => void;
   onGoToEvaluation?: () => void;
 }
 
-export function QAGenerationPanel({ currentFilename, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
+export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
   // Form State
   const [formValues, setFormValues] = useState<FormValues>({
     model: "gemini-3.1-flash",
@@ -84,10 +85,10 @@ export function QAGenerationPanel({ currentFilename, onEvalComplete, onGoToEvalu
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
 
-  // currentFilename 변경 시 hierarchy 목록 재로드
+  // currentFilename 변경 또는 태깅 완료 시 hierarchy 목록 재로드
   useEffect(() => {
     loadHierarchyList();
-  }, [currentFilename]);
+  }, [currentFilename, taggingVersion]);
 
   const loadHierarchyList = async () => {
     setSelectedL1("");
