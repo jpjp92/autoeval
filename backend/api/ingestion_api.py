@@ -761,8 +761,77 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
         elif ext in ['doc', 'docx']:
             doc = Document(io.BytesIO(file_content))
-            full_text = "\n\n".join([normalize_text(para.text) for para in doc.paragraphs if para.text.strip()])
-            return [{"text": full_text, "page": 1, "blocks": []}]
+            WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+            def _cell_text(cell_elm) -> str:
+                """셀 내 모든 w:t 텍스트 수집 (중첩 표 포함)"""
+                return normalize_text(
+                    "".join(node.text or "" for node in cell_elm.iter() if node.tag == f"{{{WNS}}}t")
+                )
+
+            def _extract_table(tbl_elm) -> str:
+                """표 element → '| c1 | c2 |' 형식 문자열 (최상위 행만)"""
+                rows_text = []
+                for tr in tbl_elm.findall(f"{{{WNS}}}tr"):
+                    cells = []
+                    seen = set()
+                    for tc in tr.findall(f"{{{WNS}}}tc"):
+                        ct = _cell_text(tc).strip()
+                        if ct and ct not in seen:
+                            seen.add(ct)
+                            cells.append(ct)
+                    if cells:
+                        rows_text.append("| " + " | ".join(cells) + " |")
+                return "\n".join(rows_text)
+
+            blocks = []
+            for idx, child in enumerate(doc.element.body):
+                local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+
+                if local == 'p':
+                    raw = "".join(
+                        node.text or "" for node in child.iter()
+                        if node.tag == f"{{{WNS}}}t"
+                    )
+                    text = normalize_text(raw)
+                    if not text.strip():
+                        continue
+                    # 스타일로 font_size 추정
+                    ppr = child.find(f"{{{WNS}}}pPr")
+                    pstyle = ppr.find(f"{{{WNS}}}pStyle") if ppr is not None else None
+                    sval = (pstyle.get(f"{{{WNS}}}val") or "").lower() if pstyle is not None else ""
+                    if "heading1" in sval or sval == "1":
+                        font_size = 18.0
+                    elif "heading2" in sval or sval == "2":
+                        font_size = 16.0
+                    elif "heading3" in sval or sval == "3":
+                        font_size = 14.0
+                    elif "heading" in sval:
+                        font_size = 13.0
+                    else:
+                        # 첫 번째 w:sz 값 (half-points → pt)
+                        sz = child.find(f".//{{{WNS}}}sz")
+                        font_size = int(sz.get(f"{{{WNS}}}val", "22")) / 2 if sz is not None else 11.0
+                    blocks.append({
+                        "text": text,
+                        "font_size": font_size,
+                        "bbox": [0, idx * 20, 500, idx * 20 + 18],
+                        "page": 1,
+                    })
+
+                elif local == 'tbl':
+                    table_text = _extract_table(child)
+                    if table_text.strip():
+                        blocks.append({
+                            "text": table_text,
+                            "font_size": 10.0,
+                            "bbox": [0, idx * 20, 500, idx * 20 + 18],
+                            "page": 1,
+                            "is_table": True,
+                        })
+
+            full_text = "\n\n".join(b["text"] for b in blocks)
+            return [{"text": full_text, "page": 1, "blocks": blocks}]
 
         elif ext in ['txt', 'md']:
             full_text = normalize_text(file_content.decode('utf-8'))
@@ -809,7 +878,15 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
         # 2. 섹션 계층 구조 구축 (Production Section Builder)
         sections = build_sections(all_blocks)
-        
+        logger.info(f"[{filename}] build_sections result: {len(sections)} sections")
+        if not sections:
+            logger.warning(f"[{filename}] No sections built — check build_sections logic for this PDF structure.")
+            return
+        # 섹션별 텍스트 길이 샘플 (최대 5개)
+        for i, s in enumerate(sections[:5]):
+            sec_text = "\n".join(b.get("text", "") for b in s.get("blocks", []))
+            logger.info(f"[{filename}] Section[{i}] heading={s.get('heading','')!r:.30} blocks={len(s.get('blocks',[]))} text_len={len(sec_text)}")
+
         # 3. 섹션 기반 청킹 및 데이터 매핑
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=1200, # 운영급 최적 사이즈
@@ -820,7 +897,8 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
         section_stack = []
         all_chunks_to_embed = []
         seen_hashes = set()
-        
+        _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
+
         for sec in sections:
             heading = sec["heading"]
             level = sec["level"]
@@ -871,16 +949,19 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 # 첩크 레벨 TOC 필터 (Phase 2.13: · 밀도 기반으로 교정 후 재활성화)
                 if is_toc_chunk(chunk_text):
                     logger.info(f"[{filename}] TOC chunk filtered (p{sec['page']}): {chunk_text[:50]!r}")
+                    _filter_counts["toc"] += 1
                     continue
 
                 # P2-3: 발행처/저작권 청크 필터 (인제스션 레벨에서 제거)
                 if _is_colophon_chunk(chunk_text):
                     logger.info(f"[{filename}] Colophon chunk filtered (p{sec['page']}): {chunk_text[:50]!r}")
+                    _filter_counts["colophon"] += 1
                     continue
 
                 # Phase 2.15: 기호/체크박스 노이즈 청크 필터 (중첩 표, 폼 필드 등)
                 if _is_symbol_noise_chunk(chunk_text):
                     logger.info(f"[{filename}] Symbol noise chunk filtered (p{sec['page']}): {chunk_text[:60]!r}")
+                    _filter_counts["symbol"] += 1
                     continue
 
                 # 🔴 Layer 3: footer/header bleed-through 노이즈 제거 (Phase 2.5)
@@ -891,12 +972,14 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
                 # 품질 필터 (노이즈 제거 후 기준 적용)
                 if len(chunk_text.strip()) < 50:
+                    _filter_counts["too_short"] += 1
                     continue
-                
+
                 # 중복 제거 (정규화 해시)
                 norm_text = normalize_for_hash(chunk_text)
                 content_hash = hashlib.sha1(norm_text.encode('utf-8')).hexdigest()
                 if content_hash in seen_hashes:
+                    _filter_counts["duplicate"] += 1
                     continue
                 seen_hashes.add(content_hash)
                 
@@ -925,7 +1008,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "keywords": keywords
                 })
 
-        logger.info(f"[{filename}] Section-First processing complete: {len(all_chunks_to_embed)} chunks.")
+        logger.info(f"[{filename}] Section-First processing complete: {len(all_chunks_to_embed)} chunks. Filtered — {_filter_counts}")
 
         # 4. 배치 임베딩 및 저장 (Batch Size=64)
         batch_size = 64
@@ -976,8 +1059,15 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
             
             logger.info(f"   - Batch {i//batch_size + 1} finalized ({len(batch)} chunks).")
             
+        if len(all_chunks_to_embed) == 0:
+            logger.error(
+                f"❌ [{filename}] 0 chunks produced after full pipeline. "
+                f"Filtered — {_filter_counts}. "
+                "Check PDF text quality or filter thresholds."
+            )
+            return
+
         logger.info(f"✅ Phase 2.4 Upgrade Complete: {filename} ({len(all_chunks_to_embed)} chunks)")
-            
         logger.info(f"✅ Enhanced Ingestion Complete: {filename} ({len(all_chunks_to_embed)} chunks)")
         
     except Exception as e:
@@ -1003,6 +1093,37 @@ async def upload_document(
         pages = extract_text_by_page(content_bytes, file.filename)
         if not pages:
             raise HTTPException(status_code=400, detail="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
+
+        # 텍스트 밀도 사전 검사 — PDF: block 기반, DOCX/TXT: page-level text 기반
+        ext_lower = file.filename.split('.')[-1].lower()
+        if ext_lower == 'pdf':
+            total_text = "".join(
+                b.get("text", "") for p in pages for b in p.get("blocks", [])
+            )
+            total_blocks = sum(len(p.get("blocks", [])) for p in pages)
+            avg_chars_per_block = len(total_text) / max(total_blocks, 1)
+            if len(total_text) < 300 or avg_chars_per_block < 5:
+                logger.warning(
+                    f"[{file.filename}] Insufficient text: total={len(total_text)} chars, "
+                    f"blocks={total_blocks}, avg={avg_chars_per_block:.1f} chars/block. "
+                    "Likely image-based or symbol-font PDF."
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "PDF에서 텍스트를 추출할 수 없습니다. "
+                        "이미지 기반 PDF이거나 커스텀 심볼 폰트를 사용하는 문서입니다. "
+                        "텍스트 레이어가 포함된 PDF를 업로드해 주세요."
+                    )
+                )
+        else:
+            # DOCX / TXT / MD — page-level text로 검사
+            total_text = "".join(p.get("text", "") for p in pages)
+            if len(total_text) < 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail="문서에서 텍스트를 추출할 수 없습니다. 내용이 비어 있거나 지원하지 않는 형식입니다."
+                )
 
         # 3. 비동기 백그라운드 작업 예약
         metadata = {

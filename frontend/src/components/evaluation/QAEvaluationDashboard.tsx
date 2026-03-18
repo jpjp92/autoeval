@@ -39,8 +39,9 @@ const INTENT_COLORS: Record<string, string> = {
 type QAStatus = 'success' | 'hold' | 'fail';
 
 function getQAStatus(quality_avg?: number | null, rag_avg?: number | null): QAStatus {
-  const qFail = quality_avg != null && quality_avg < 0.7;
-  const rFail = rag_avg    != null && rag_avg    < 0.7;
+  // null/undefined = 미평가 → 임계값 미달로 처리 (export와 동일 기준)
+  const qFail = quality_avg == null || quality_avg < 0.7;
+  const rFail = rag_avg    == null || rag_avg    < 0.7;
   if (qFail && rFail)    return 'fail';
   if (qFail || rFail)    return 'hold';
   return 'success';
@@ -68,7 +69,7 @@ interface EvalReport {
   job_id: string;
   result_filename: string;
   timestamp: string;
-  metadata: { total_qa: number; valid_qa: number; evaluator_model: string; generation_model?: string };
+  metadata: { total_qa: number; valid_qa: number; evaluator_model: string; generation_model?: string; source_doc?: string };
   pipeline_results: {
     syntax?:  { total: number; valid: number; invalid: number; pass_rate: number };
     stats?:   {
@@ -97,6 +98,7 @@ interface HistoryItem {
   id: string;
   job_id: string;
   metadata: { generation_model?: string; evaluator_model?: string; lang?: string; source_doc?: string };
+  result_filename?: string;
   total_qa: number;
   final_score: number;
   final_grade: string;
@@ -120,10 +122,10 @@ function buildChartData(report: EvalReport) {
   ];
 
   const layer1Stats = [
-    { subject: '다양성',   A: s?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복없음', A: s?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향없음', A: s?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충분성',   A: s?.data_sufficiency?.score ?? 0, fullMark: 10 },
+    { subject: '다양성', A: s?.diversity?.score        ?? 0, fullMark: 10 },
+    { subject: '중복성', A: s?.duplication_rate?.score ?? 0, fullMark: 10 },
+    { subject: '편향성', A: s?.skewness?.score         ?? 0, fullMark: 10 },
+    { subject: '충분성', A: s?.data_sufficiency?.score ?? 0, fullMark: 10 },
   ];
 
   const intentDist = s?.diversity?.intent_distribution ?? {};
@@ -160,10 +162,10 @@ function buildChartDataFromHistory(item: HistoryItem) {
   ];
 
   const layer1Stats = [
-    { subject: '다양성',   A: st?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복없음', A: st?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향없음', A: st?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충분성',   A: st?.data_sufficiency?.score ?? 0, fullMark: 10 },
+    { subject: '다양성', A: st?.diversity?.score        ?? 0, fullMark: 10 },
+    { subject: '중복성', A: st?.duplication_rate?.score ?? 0, fullMark: 10 },
+    { subject: '편향성', A: st?.skewness?.score         ?? 0, fullMark: 10 },
+    { subject: '충분성', A: st?.data_sufficiency?.score ?? 0, fullMark: 10 },
   ];
 
   const intentDist = st?.diversity?.intent_distribution ?? {};
@@ -199,13 +201,56 @@ const IntentTooltip = ({ active, payload }: any) => {
 // ─── 품질 점수 인터랙티브 바 차트 ────────────────────────────────────────────
 function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number }> }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [animated, setAnimated]     = useState(false);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevKeyRef    = useRef<string | null>(null);
+  const wasHiddenRef  = useRef(true); // hidden 탭에서 시작 가정
+
+  // 애니메이션 트리거 (ref로 저장 → 항상 최신 참조)
+  const triggerFnRef = useRef(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setAnimated(false);
+    timerRef.current = window.setTimeout(() => setAnimated(true), 100);
+  });
+
+  // data 실제 값이 바뀔 때 재애니메이션 (히스토리 전환 등)
+  useEffect(() => {
+    const key = data.map((d) => d.score.toFixed(4)).join(',');
+    if (key === '' || prevKeyRef.current === key) return;
+    prevKeyRef.current = key;
+    triggerFnRef.current();
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 탭 전환으로 컨테이너가 hidden→visible 될 때 재애니메이션 (recharts와 동일 원리)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const visible = el.offsetWidth > 0;
+      if (visible && wasHiddenRef.current) {
+        wasHiddenRef.current = false;
+        triggerFnRef.current();
+      } else if (!visible) {
+        wasHiddenRef.current = true;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // unmount 시 timer 정리
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   return (
-    <div className="space-y-3 py-1 px-1">
+    <div ref={containerRef} className="space-y-3 py-1 px-1">
       {data.map((item, i) => {
         const color = item.score >= 0.85 ? 'bg-emerald-500' : item.score >= 0.7 ? 'bg-amber-400' : 'bg-rose-400';
         const textColor = item.score >= 0.85 ? 'text-emerald-600' : item.score >= 0.7 ? 'text-amber-600' : 'text-rose-500';
         const isHovered = hoveredIdx === i;
+        const targetW = Math.min(item.score * 100, 100);
         return (
           <div
             key={i}
@@ -229,8 +274,14 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
             </div>
             <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className={cn('h-full rounded-full transition-all duration-700 ease-out', color, isHovered && 'brightness-110')}
-                style={{ width: `${Math.min(item.score * 100, 100)}%` }}
+                className={cn('h-full rounded-full', color, isHovered && 'brightness-110')}
+                style={{
+                  width: `${targetW}%`,
+                  clipPath: animated ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)',
+                  transition: animated
+                    ? `clip-path 700ms ease-out ${i * 100}ms`
+                    : 'none',
+                }}
               />
             </div>
           </div>
@@ -437,11 +488,18 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
     llmQualityScores:   chartData.llmQualityScores,
     detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass })),
     metadata: {
-      qa_model:  activeReport?.metadata?.generation_model ?? activeItem?.metadata?.generation_model ?? '-',
-      eval_model: activeReport?.metadata?.evaluator_model ?? activeItem?.metadata?.evaluator_model ?? '-',
-      source:    (activeReport?.metadata as any)?.source_doc || activeItem?.metadata?.source_doc || activeReport?.result_filename || activeItem?.job_id || '-',
-      timestamp: activeReport?.timestamp ?? activeItem?.created_at ?? new Date().toISOString(),
-      model:     activeReport?.metadata?.evaluator_model ?? activeItem?.metadata?.evaluator_model ?? '-',
+      qa_model: (() => {
+        const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
+        if (fromMeta) return fromMeta;
+        // fallback: result_filename 패턴 "qa_{model}_{lang}_..." 에서 모델 파싱
+        const fn = activeReport?.result_filename || activeItem?.result_filename || '';
+        const m = fn.match(/^qa_(.+?)_[a-z]{2}_/);
+        return m?.[1] || '-';
+      })(),
+      eval_model: activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
+      source:     activeReport?.metadata?.source_doc || activeItem?.metadata?.source_doc || activeReport?.result_filename || activeItem?.result_filename || '-',
+      timestamp:  activeReport?.timestamp ?? activeItem?.created_at ?? new Date().toISOString(),
+      model:      activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
     },
   } : null;
 
@@ -559,7 +617,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-40"
+              className="flex items-center justify-center gap-2 w-32 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-40"
             >
               {exportLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중...</>
@@ -614,7 +672,8 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
               <div className="flex-1 min-h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={intentDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value" isAnimationActive={false}>
+                    <Pie data={intentDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"
+                      isAnimationActive={true} animationBegin={0} animationDuration={900} animationEasing="ease-out">
                       {intentDistribution.map((entry, i) => (
                         <Cell key={i} fill={INTENT_COLORS[entry.name] ?? '#94a3b8'} />
                       ))}
@@ -625,10 +684,9 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
               </div>
               <div className="grid grid-cols-4 gap-1 mt-2">
                 {intentDistribution.map((e) => (
-                  <div key={e.name} className="flex items-center gap-1 text-[10px] font-medium text-slate-600 group hover:bg-slate-50 px-1 py-0.5 rounded cursor-default">
+                  <div key={e.name} className="flex items-center gap-1 text-[10px] font-medium text-slate-600 px-1 py-0.5 rounded cursor-default">
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: INTENT_COLORS[e.name] ?? '#94a3b8' }} />
-                    <span className="truncate group-hover:hidden">{e.krLabel}</span>
-                    <span className="hidden group-hover:block text-slate-700 font-semibold text-[9px]">{e.krLabel}<br/><span className="text-slate-400 font-normal">{e.label}</span></span>
+                    <span className="truncate">{e.krLabel}</span>
                   </div>
                 ))}
               </div>
@@ -831,7 +889,7 @@ function HistoryDropdown({
     <div className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        className="flex items-center justify-center gap-2 w-32 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
       >
         <History className="w-4 h-4" />
         히스토리

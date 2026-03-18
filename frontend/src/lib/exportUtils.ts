@@ -4,6 +4,17 @@
  */
 import * as XLSX from 'xlsx';
 
+const INTENT_KR: Record<string, string> = {
+  factoid:   '사실형',
+  numeric:   '수치형',
+  procedure: '절차형',
+  why:       '이유형',
+  how:       '방법형',
+  definition:'정의형',
+  list:      '목록형',
+  boolean:   '확인형',
+};
+
 export interface EvaluationData {
   summaryStats: Array<{ label: string; value: string; icon?: any; color?: string; bg?: string }>;
   layer1Stats: Array<{ subject: string; A: number; fullMark: number }>;
@@ -43,9 +54,9 @@ function toKST(isoString?: string): string {
 export function exportToCSV(data: EvaluationData): void {
   const wb = XLSX.utils.book_new();
   const evalDate = toKST(data.metadata?.timestamp);
-  const qaModel   = data.metadata?.qa_model   ?? data.metadata?.model ?? '-';
-  const evalModel = data.metadata?.eval_model ?? data.metadata?.model ?? '-';
-  const source    = data.metadata?.source ?? '-';
+  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || '-';
+  const evalModel = data.metadata?.eval_model || data.metadata?.model || '-';
+  const source    = data.metadata?.source || '-';
 
   // ── Stats 시트 ──────────────────────────────────────────────────────────────
   const statsRows: (string | number)[][] = [];
@@ -95,7 +106,7 @@ export function exportToCSV(data: EvaluationData): void {
     const status = qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공';
     return [
       qa.id,
-      qa.intent,
+      INTENT_KR[qa.intent] ?? qa.intent,
       qa.context ?? '',
       qa.q,
       qa.a ?? '',
@@ -128,10 +139,110 @@ export function exportToCSV(data: EvaluationData): void {
 /**
  * Export evaluation results to HTML
  */
+// ── SVG 차트 생성 헬퍼 ────────────────────────────────────────────────────────
+// 공통 캔버스 너비 260, 상호작용은 onmouseover/out + showTip/hideTip (HTML inline JS)
+
+function svgDonut(
+  items: Array<{ name: string; krLabel?: string; label?: string; value: number }>,
+  colorMap: Record<string, string>,
+): string {
+  const W = 260; const cx = 130; const cy = 100; const R = 78; const r = 50;
+  const total = items.reduce((s, i) => s + i.value, 0);
+  if (total === 0) return `<svg width="${W}" height="200"></svg>`;
+
+  let paths = ''; let angle = -Math.PI / 2;
+  for (const item of items) {
+    const sweep = (item.value / total) * 2 * Math.PI;
+    if (sweep === 0) { angle += sweep; continue; }
+    const end = angle + sweep;
+    const lg = sweep > Math.PI ? 1 : 0;
+    const c0 = Math.cos(angle), s0 = Math.sin(angle), c1 = Math.cos(end), s1 = Math.sin(end);
+    const d = `M ${(cx+R*c0).toFixed(1)} ${(cy+R*s0).toFixed(1)} A ${R} ${R} 0 ${lg} 1 ${(cx+R*c1).toFixed(1)} ${(cy+R*s1).toFixed(1)} L ${(cx+r*c1).toFixed(1)} ${(cy+r*s1).toFixed(1)} A ${r} ${r} 0 ${lg} 0 ${(cx+r*c0).toFixed(1)} ${(cy+r*s0).toFixed(1)} Z`;
+    const pct = ((item.value / total) * 100).toFixed(1);
+    const lbl = item.krLabel ?? item.label ?? item.name;
+    paths += `<path d="${d}" fill="${colorMap[item.name] ?? '#94a3b8'}" opacity="0.85" style="cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity=1;showTip(event,'${lbl}: ${item.value}개 (${pct}%)')" onmouseout="this.style.opacity=.85;hideTip()"/>`;
+    angle = end;
+  }
+
+  // 2열 범례
+  const rows = Math.ceil(items.length / 2);
+  const legendItems = items.map((item, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const lx = col === 0 ? 12 : 138, ly = 210 + row * 19;
+    const lbl = item.krLabel ?? item.label ?? item.name;
+    return `<rect x="${lx}" y="${ly-7}" width="9" height="9" rx="2" fill="${colorMap[item.name] ?? '#94a3b8'}"/>
+<text x="${lx+13}" y="${ly}" font-size="10" fill="#475569">${lbl}(${item.value})</text>`;
+  }).join('');
+  const H = 205 + rows * 19 + 8;
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+${paths}
+${legendItems}
+</svg>`;
+}
+
+function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>): string {
+  const W = 260; const H = 260; const cx = 130; const cy = 125; const maxR = 88; const n = items.length;
+  const ang = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
+  const pt  = (i: number, r: number): [number, number] => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
+
+  // 그리드 (4레벨, 최외각 연한 배경)
+  let grid = '';
+  for (let lv = 1; lv <= 4; lv++) {
+    const r = maxR * lv / 4;
+    const pts = Array.from({ length: n }, (_, i) => pt(i, r));
+    grid += `<polygon points="${pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="${lv===4?'#f8fafc':'none'}" stroke="#e2e8f0" stroke-width="1"/>`;
+  }
+  // 축
+  let axes = '';
+  for (let i = 0; i < n; i++) {
+    const [ox, oy] = pt(i, maxR);
+    axes += `<line x1="${cx}" y1="${cy}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`;
+  }
+  // 데이터 폴리곤
+  const dpts = items.map((item, i) => pt(i, (item.A / item.fullMark) * maxR));
+  const polygon = `<polygon points="${dpts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="#6366f1" fill-opacity="0.2" stroke="#6366f1" stroke-width="2"/>`;
+  // 인터랙티브 점
+  const dots = items.map((item, i) => {
+    const [px, py] = dpts[i];
+    return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" fill="#6366f1" stroke="white" stroke-width="2" style="cursor:pointer;transition:r .15s" onmouseover="this.setAttribute('r','7');showTip(event,'${item.subject}: ${item.A.toFixed(2)} / ${item.fullMark}')" onmouseout="this.setAttribute('r','5');hideTip()"/>`;
+  }).join('');
+  // 레이블
+  const labels = items.map((item, i) => {
+    const [lx, ly] = pt(i, maxR + 20);
+    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="#64748b" font-weight="500">${item.subject}</text>`;
+  }).join('');
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+${grid}${axes}${polygon}${dots}${labels}
+</svg>`;
+}
+
+function svgBars(items: Array<{ name: string; nameEn?: string; score: number }>): string {
+  const W = 260; const barH = 22; const gap = 12; const labelW = 68; const barMaxW = 158;
+  const totalH = gap + items.length * (barH + gap);
+  let bars = '';
+  items.forEach((item, i) => {
+    const y = gap + i * (barH + gap);
+    const w = Math.max(2, item.score * barMaxW);
+    const color = item.score >= 0.85 ? '#10b981' : item.score >= 0.7 ? '#6366f1' : '#ef4444';
+    bars += `
+<text x="${labelW-6}" y="${(y+barH/2+1).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="#475569">${item.name}</text>
+<rect x="${labelW}" y="${y}" width="${barMaxW}" height="${barH}" rx="4" fill="#f1f5f9"/>
+<rect x="${labelW}" y="${y}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${color}" opacity="0.85" style="cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity=1;showTip(event,'${item.name}: ${item.score.toFixed(3)}')" onmouseout="this.style.opacity=.85;hideTip()"/>
+<text x="${(labelW+w+5).toFixed(1)}" y="${(y+barH/2+1).toFixed(1)}" dominant-baseline="middle" font-size="11" fill="#1e293b" font-weight="600">${item.score.toFixed(3)}</text>`;
+  });
+  return `<svg width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg">
+${bars}
+</svg>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function exportToHTML(data: EvaluationData): void {
   const timestamp = toKST(data.metadata?.timestamp);
-  const qaModel   = data.metadata?.qa_model   ?? data.metadata?.model ?? 'N/A';
-  const evalModel = data.metadata?.eval_model ?? data.metadata?.model ?? 'N/A';
+  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || 'N/A';
+  const evalModel = data.metadata?.eval_model || data.metadata?.model || 'N/A';
   const source    = data.metadata?.source ?? 'N/A';
 
   const intentColorsMap: Record<string, string> = {
@@ -139,6 +250,11 @@ export function exportToHTML(data: EvaluationData): void {
     why: '#d946ef', how: '#22c55e', definition: '#0ea5e9',
     list: '#f59e0b', boolean: '#c026d3',
   };
+
+  // 차트 SVG 생성
+  const donutSVG  = svgDonut(data.intentDistribution, intentColorsMap);
+  const radarSVG  = svgRadar(data.layer1Stats);
+  const barsSVG   = svgBars(data.llmQualityScores);
 
   const htmlContent = `<!DOCTYPE html>
 <html lang="ko">
@@ -197,6 +313,24 @@ export function exportToHTML(data: EvaluationData): void {
     </section>
 
     <section>
+        <h2>📊 시각화 차트</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
+            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
+                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">의도 분류</h3>
+                ${donutSVG}
+            </div>
+            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
+                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">데이터셋 통계</h3>
+                ${radarSVG}
+            </div>
+            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
+                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">품질 점수</h3>
+                ${barsSVG}
+            </div>
+        </div>
+    </section>
+
+    <section>
         <h2>🎯 데이터셋 통계 (0–10)</h2>
         <table>
             <thead><tr><th>지표</th><th>점수</th><th>비율</th></tr></thead>
@@ -247,6 +381,13 @@ export function exportToHTML(data: EvaluationData): void {
 
     <footer>Generated on ${timestamp} · Auto Evaluation Dashboard</footer>
 </div>
+
+<div id="tip" style="position:fixed;pointer-events:none;display:none;background:#1e293b;color:#f8fafc;padding:6px 11px;border-radius:7px;font-size:12px;font-weight:500;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.25);white-space:nowrap;"></div>
+<script>
+function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.style.display='block';el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}
+function hideTip(){document.getElementById('tip').style.display='none';}
+document.addEventListener('mousemove',function(e){var el=document.getElementById('tip');if(el.style.display!=='none'){el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}});
+</script>
 </body>
 </html>`;
 
@@ -265,8 +406,8 @@ export function exportToHTML(data: EvaluationData): void {
  * Export evaluation results to JSON (정제된 구조)
  */
 export function exportToJSON(data: EvaluationData): void {
-  const qaModel   = data.metadata?.qa_model   ?? data.metadata?.model ?? '-';
-  const evalModel = data.metadata?.eval_model ?? data.metadata?.model ?? '-';
+  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || '-';
+  const evalModel = data.metadata?.eval_model || data.metadata?.model || '-';
 
   const cleaned = {
     metadata: {

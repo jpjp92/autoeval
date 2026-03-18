@@ -494,14 +494,23 @@ def run_evaluation(
                 "pass":        q.get("pass", False),
             })
 
+        # 평가 모델 model_id 변환 (키명 → 실제 버전)
+        try:
+            from config.models import MODEL_CONFIG as _MC
+        except ImportError:
+            from backend.config.models import MODEL_CONFIG as _MC
+        evaluator_model_id = _MC.get(evaluator_model, {}).get("model_id", evaluator_model)
+
         eval_report = {
             "job_id":          job_id,
             "result_filename": result_filename,
             "timestamp":       datetime.now().isoformat(),
             "metadata": {
-                "total_qa":        len(qa_list),
-                "valid_qa":        valid_qa_count,
-                "evaluator_model": evaluator_model,
+                "total_qa":         len(qa_list),
+                "valid_qa":         valid_qa_count,
+                "evaluator_model":  evaluator_model_id,
+                "generation_model": gen_model,
+                "source_doc":       gen_source_doc,
             },
             "pipeline_results": {
                 "syntax":  syntax_data,
@@ -557,10 +566,11 @@ def run_evaluation(
                     job_id=job_id,
                     metadata={
                         "generation_model": gen_model,
-                        "evaluator_model":  evaluator_model,
+                        "evaluator_model":  evaluator_model_id,
                         "lang":             gen_lang,
                         "prompt_version":   gen_prompt_ver,
                         "source_doc":       gen_source_doc,
+                        "generation_id":    generation_id or "",
                     },
                     total_qa=len(qa_list),
                     valid_qa=valid_qa_count,

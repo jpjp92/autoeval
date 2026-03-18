@@ -8,7 +8,6 @@ import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { QAEvaluationDashboard } from "./components/evaluation/QAEvaluationDashboard";
 import { QAGenerationPanel } from "./components/generation/QAGenerationPanel";
 import { DataStandardizationPanel } from "./components/standardization/DataStandardizationPanel";
-import { motion } from "motion/react";
 
 function App() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -32,16 +31,7 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={getHeaderTitle()} />
         
-        <main className="flex-1 overflow-y-auto p-8">
-          {/* 탭 전환 애니메이션 오버레이 */}
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="pointer-events-none absolute inset-0"
-          />
-
+        <main className="flex-1 overflow-y-scroll p-8">
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
             <DashboardOverview setActiveTab={setActiveTab} />

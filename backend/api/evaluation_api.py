@@ -192,7 +192,60 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 .limit(50)
                 .execute()
             )
-            return {"success": True, "history": response.data or []}
+            history = response.data or []
+
+            # source_doc 없는 레코드를 위해 qa_gen_results에서 일괄 보완
+            missing = [r for r in history if not (r.get("metadata") or {}).get("source_doc")]
+            if missing:
+                missing_eval_ids = [r["id"] for r in missing]
+
+                # 1차: linked_evaluation_id 기반 조회
+                gen_resp = (
+                    supabase_client.table("qa_gen_results")
+                    .select("id, linked_evaluation_id, metadata")
+                    .in_("linked_evaluation_id", missing_eval_ids)
+                    .execute()
+                )
+                source_map: dict = {}  # eval_id → source_doc
+                for row in (gen_resp.data or []):
+                    eid = row.get("linked_evaluation_id")
+                    src = (row.get("metadata") or {}).get("source_doc", "")
+                    if eid and src:
+                        source_map[eid] = src
+
+                # 2차: metadata.generation_id 기반 조회 (linked_evaluation_id 미설정 레코드 보완)
+                still_missing = [r for r in missing if r["id"] not in source_map]
+                if still_missing:
+                    gen_ids = [
+                        (r.get("metadata") or {}).get("generation_id")
+                        for r in still_missing
+                    ]
+                    gen_ids = [g for g in gen_ids if g]
+                    if gen_ids:
+                        gen_resp2 = (
+                            supabase_client.table("qa_gen_results")
+                            .select("id, metadata")
+                            .in_("id", gen_ids)
+                            .execute()
+                        )
+                        gen_by_id = {
+                            row["id"]: (row.get("metadata") or {}).get("source_doc", "")
+                            for row in (gen_resp2.data or [])
+                        }
+                        for r in still_missing:
+                            gid = (r.get("metadata") or {}).get("generation_id", "")
+                            src = gen_by_id.get(gid, "")
+                            if src:
+                                source_map[r["id"]] = src
+
+                # 보완 주입
+                for r in history:
+                    if r["id"] in source_map:
+                        r.setdefault("metadata", {})
+                        if not r["metadata"].get("source_doc"):
+                            r["metadata"]["source_doc"] = source_map[r["id"]]
+
+            return {"success": True, "history": history}
         except Exception as e:
             logger.error(f"Failed to fetch eval history: {e}")
             return {"success": False, "error": str(e), "history": []}

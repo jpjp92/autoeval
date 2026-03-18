@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutDashboard, Users, MessageSquare, Settings, Bot, Zap, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database } from "lucide-react";
+import { LayoutDashboard, Users, Settings, Zap, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface SidebarProps {
@@ -15,7 +15,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: "standardization", label: "Standardization", icon: Database },
     { id: "generation", label: "Data Generation", icon: FilePlus },
     { id: "evaluation", label: "Evaluation", icon: Target },
-    { id: "playground", label: "Playground", icon: MessageSquare },
+    // { id: "playground", label: "Playground", icon: MessageSquare },  // 미구현 — 비활성화
     { id: "settings", label: "Settings", icon: Settings },
   ];
 

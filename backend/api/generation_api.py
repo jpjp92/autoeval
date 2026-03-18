@@ -46,6 +46,7 @@ from config.supabase_client import (
     save_qa_generation_to_supabase,
     is_supabase_available,
 )
+from config.models import MODEL_CONFIG
 
 # ============= Configurations =============
 
@@ -374,6 +375,12 @@ async def run_qa_generation_real(
         items = data if isinstance(data, list) else data.get("documents", [])
         items = items[:samples]
     
+    # doc_filename 보완: filename이 없을 때 첫 청크의 metadata.filename 사용
+    if not doc_filename and items:
+        doc_filename = items[0].get("metadata", {}).get("filename", "") or ""
+        if doc_filename:
+            logger.info(f"[{job_id}] doc_filename inferred from chunks: {doc_filename!r}")
+
     logger.info(f"[{job_id}] Loaded {len(items)} items for generation")
     job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} items")
 
@@ -501,7 +508,7 @@ async def run_qa_generation_real(
             supabase_id = await save_qa_generation_to_supabase(
                 job_id=job_id,
                 metadata={
-                    "generation_model": model,
+                    "generation_model": MODEL_CONFIG.get(model, {}).get("model_id", model),
                     "lang": lang,
                     "prompt_version": prompt_version,
                     "source_doc": doc_filename or "",
@@ -614,7 +621,7 @@ async def run_qa_generation_simulation(
             supabase_id = await save_qa_generation_to_supabase(
                 job_id=job_id,
                 metadata={
-                    "generation_model": model,
+                    "generation_model": MODEL_CONFIG.get(model, {}).get("model_id", model),
                     "lang": lang,
                     "prompt_version": prompt_version,
                     "source_doc": "",
