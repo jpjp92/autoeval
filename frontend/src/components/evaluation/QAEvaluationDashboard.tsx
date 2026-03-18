@@ -288,7 +288,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
         );
       })}
       {/* 0.7 기준선 범례 */}
-      <div className="flex items-center gap-1.5 pt-0.5 justify-end">
+      <div className="flex items-center gap-1.5 pt-7.5 justify-end">
         <div className="flex gap-3 text-[9px] text-slate-400 items-center">
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />≥ 0.85</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />≥ 0.70</span>
@@ -726,7 +726,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
             <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
               <Target className="w-4 h-4 text-indigo-500" /> 품질 점수
             </h3>
-            <p className="text-xs text-slate-500">LLM 기반 품질 평가 (0–1) · 항목에 마우스를 올리면 영문명 표시</p>
+            <p className="text-xs text-slate-500">LLM 기반 품질 평가 (0–1)</p>
           </div>
           <div className="flex-1">
             <QualityScoreChart data={llmQualityScores} />

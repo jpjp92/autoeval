@@ -140,16 +140,16 @@ export function exportToCSV(data: EvaluationData): void {
  * Export evaluation results to HTML
  */
 // ── SVG 차트 생성 헬퍼 ────────────────────────────────────────────────────────
-// 공통 캔버스 너비 260, 상호작용은 onmouseover/out + showTip/hideTip (HTML inline JS)
 
 function svgDonut(
   items: Array<{ name: string; krLabel?: string; label?: string; value: number }>,
   colorMap: Record<string, string>,
 ): string {
-  const W = 260; const cx = 130; const cy = 100; const R = 78; const r = 50;
+  const W = 260; const cx = 130; const cy = 90; const R = 70; const r = 44;
   const total = items.reduce((s, i) => s + i.value, 0);
   if (total === 0) return `<svg width="${W}" height="200"></svg>`;
 
+  // 슬라이스 paths (full angle — 애니메이션은 clipPath가 담당)
   let paths = ''; let angle = -Math.PI / 2;
   for (const item of items) {
     const sweep = (item.value / total) * 2 * Math.PI;
@@ -164,76 +164,110 @@ function svgDonut(
     angle = end;
   }
 
-  // 2열 범례
-  const rows = Math.ceil(items.length / 2);
+  // 4열 원형 범례 (평가 페이지 동일)
+  const cols = 4; const colW = Math.floor(W / cols);
   const legendItems = items.map((item, i) => {
-    const col = i % 2, row = Math.floor(i / 2);
-    const lx = col === 0 ? 12 : 138, ly = 210 + row * 19;
+    const col = i % cols, row = Math.floor(i / cols);
+    const lx = col * colW + 6, ly = 178 + row * 18;
     const lbl = item.krLabel ?? item.label ?? item.name;
-    return `<rect x="${lx}" y="${ly-7}" width="9" height="9" rx="2" fill="${colorMap[item.name] ?? '#94a3b8'}"/>
-<text x="${lx+13}" y="${ly}" font-size="10" fill="#475569">${lbl}(${item.value})</text>`;
+    return `<circle cx="${lx+4}" cy="${ly-3}" r="4" fill="${colorMap[item.name] ?? '#94a3b8'}"/>
+<text x="${lx+12}" y="${ly}" font-size="10" fill="#475569">${lbl}</text>`;
   }).join('');
-  const H = 205 + rows * 19 + 8;
+  const legendRows = Math.ceil(items.length / cols);
+  const H = 174 + legendRows * 18 + 8;
 
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-${paths}
-${legendItems}
+  // 애니메이션용 clipPath (초기: 점 → JS가 sweep 확장)
+  const clipId = 'dc';
+  const initX = (cx + R * Math.cos(-Math.PI / 2)).toFixed(1);
+  const initY = (cy + R * Math.sin(-Math.PI / 2)).toFixed(1);
+
+  return `<svg class="donut-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
+  data-cx="${cx}" data-cy="${cy}" data-r="${R}">
+  <defs><clipPath id="${clipId}"><path class="donut-clip" d="M ${cx} ${cy} L ${initX} ${initY} Z"/></clipPath></defs>
+  <g clip-path="url(#${clipId})">${paths}</g>
+  ${legendItems}
 </svg>`;
 }
 
 function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>): string {
-  const W = 260; const H = 260; const cx = 130; const cy = 125; const maxR = 88; const n = items.length;
+  const W = 260; const H = 226; const cx = 130; const cy = 100; const maxR = 74; const n = items.length;
   const ang = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
-  const pt  = (i: number, r: number): [number, number] => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
+  const pt  = (i: number, rr: number): [number, number] => [cx + rr * Math.cos(ang(i)), cy + rr * Math.sin(ang(i))];
 
-  // 그리드 (4레벨, 최외각 연한 배경)
   let grid = '';
   for (let lv = 1; lv <= 4; lv++) {
-    const r = maxR * lv / 4;
-    const pts = Array.from({ length: n }, (_, i) => pt(i, r));
+    const rr = maxR * lv / 4;
+    const pts = Array.from({ length: n }, (_, i) => pt(i, rr));
     grid += `<polygon points="${pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="${lv===4?'#f8fafc':'none'}" stroke="#e2e8f0" stroke-width="1"/>`;
   }
-  // 축
   let axes = '';
   for (let i = 0; i < n; i++) {
     const [ox, oy] = pt(i, maxR);
     axes += `<line x1="${cx}" y1="${cy}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`;
   }
-  // 데이터 폴리곤
+
+  // 데이터 폴리곤: 애니메이션을 위해 center points로 시작, target을 data 속성에 저장
   const dpts = items.map((item, i) => pt(i, (item.A / item.fullMark) * maxR));
-  const polygon = `<polygon points="${dpts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="#6366f1" fill-opacity="0.2" stroke="#6366f1" stroke-width="2"/>`;
-  // 인터랙티브 점
+  const targetPts = JSON.stringify(dpts.map(([x,y]) => [+x.toFixed(2), +y.toFixed(2)]));
+  const centerPts = Array.from({ length: n }, () => `${cx},${cy}`).join(' ');
+  const polygon = `<polygon class="radar-polygon" points="${centerPts}" fill="#6366f1" fill-opacity="0.2" stroke="#6366f1" stroke-width="2" data-target='${targetPts}' data-cx="${cx}" data-cy="${cy}"/>`;
+
+  // 점: center에서 시작
   const dots = items.map((item, i) => {
-    const [px, py] = dpts[i];
-    return `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" fill="#6366f1" stroke="white" stroke-width="2" style="cursor:pointer;transition:r .15s" onmouseover="this.setAttribute('r','7');showTip(event,'${item.subject}: ${item.A.toFixed(2)} / ${item.fullMark}')" onmouseout="this.setAttribute('r','5');hideTip()"/>`;
+    const [tx, ty] = dpts[i];
+    return `<circle class="radar-dot" cx="${cx}" cy="${cy}" r="5" fill="#6366f1" stroke="white" stroke-width="2" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}" style="cursor:pointer;transition:r .15s" onmouseover="this.setAttribute('r','7');showTip(event,'${item.subject}: ${item.A.toFixed(2)} / ${item.fullMark}')" onmouseout="this.setAttribute('r','5');hideTip()"/>`;
   }).join('');
-  // 레이블
+
   const labels = items.map((item, i) => {
     const [lx, ly] = pt(i, maxR + 20);
     return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="#64748b" font-weight="500">${item.subject}</text>`;
   }).join('');
 
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+  // 통합 점수 (layer1Stats 평균)
+  const intScore = (items.reduce((s, i) => s + i.A, 0) / items.length).toFixed(1);
+
+  return `<svg class="radar-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
 ${grid}${axes}${polygon}${dots}${labels}
+<text x="${cx}" y="${H-14}" text-anchor="middle" font-size="11" fill="#64748b">통합 점수:
+  <tspan font-weight="700" fill="#6366f1"> ${intScore} / 10</tspan>
+</text>
 </svg>`;
 }
 
 function svgBars(items: Array<{ name: string; nameEn?: string; score: number }>): string {
-  const W = 260; const barH = 22; const gap = 12; const labelW = 68; const barMaxW = 158;
-  const totalH = gap + items.length * (barH + gap);
+  const W = 260; const barH = 24; const gap = 10; const labelW = 68; const barMaxW = 150;
+  const barsH = gap + items.length * (barH + gap);
+  const legendY = barsH + 22;
+  const totalH = legendY + 16;
+
   let bars = '';
   items.forEach((item, i) => {
     const y = gap + i * (barH + gap);
-    const w = Math.max(2, item.score * barMaxW);
-    const color = item.score >= 0.85 ? '#10b981' : item.score >= 0.7 ? '#6366f1' : '#ef4444';
+    const targetW = Math.max(2, item.score * barMaxW);
+    const color = item.score >= 0.85 ? '#10b981' : item.score >= 0.7 ? '#f59e0b' : '#f43f5e';
+    const tip = item.nameEn ? `${item.name}(${item.nameEn}): ${item.score.toFixed(3)}` : `${item.name}: ${item.score.toFixed(3)}`;
     bars += `
 <text x="${labelW-6}" y="${(y+barH/2+1).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="#475569">${item.name}</text>
 <rect x="${labelW}" y="${y}" width="${barMaxW}" height="${barH}" rx="4" fill="#f1f5f9"/>
-<rect x="${labelW}" y="${y}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${color}" opacity="0.85" style="cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity=1;showTip(event,'${item.name}: ${item.score.toFixed(3)}')" onmouseout="this.style.opacity=.85;hideTip()"/>
-<text x="${(labelW+w+5).toFixed(1)}" y="${(y+barH/2+1).toFixed(1)}" dominant-baseline="middle" font-size="11" fill="#1e293b" font-weight="600">${item.score.toFixed(3)}</text>`;
+<rect class="bar-fill" x="${labelW}" y="${y}" width="${targetW.toFixed(1)}" height="${barH}" rx="4" fill="${color}"
+  style="clip-path:inset(0 100% 0 0 round 4px);cursor:pointer;transition:opacity .15s"
+  data-delay="${80 + i * 100}"
+  onmouseover="this.style.opacity='.7';showTip(event,'${tip}')" onmouseout="this.style.opacity='1';hideTip()"/>
+<text x="${(labelW + targetW + 5).toFixed(1)}" y="${(y+barH/2+1).toFixed(1)}" dominant-baseline="middle" font-size="11" fill="#1e293b" font-weight="600">${item.score.toFixed(3)}</text>`;
   });
-  return `<svg width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg">
+
+  // 범례 (평가 페이지 동일)
+  const legend = `
+<circle cx="4"   cy="${legendY+5}" r="4" fill="#10b981"/>
+<text x="12"  y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.85</text>
+<circle cx="60"  cy="${legendY+5}" r="4" fill="#f59e0b"/>
+<text x="68"  y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.70</text>
+<circle cx="116" cy="${legendY+5}" r="4" fill="#f43f5e"/>
+<text x="124" y="${legendY+9}" font-size="9" fill="#64748b">&lt; 0.70</text>`;
+
+  return `<svg class="bars-svg" width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg">
 ${bars}
+${legend}
 </svg>`;
 }
 
@@ -290,6 +324,10 @@ export function exportToHTML(data: EvaluationData): void {
         .status-fail { display: inline-block; padding: 3px 10px; background: #fee2e2; color: #991b1b; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; }
         footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px; }
         @media print { body { background: white; } section { page-break-inside: avoid; } }
+        .chart-card { background: white; padding: 20px 20px 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; align-items: flex-start; }
+        .chart-card-inner { width: 100%; display: flex; flex-direction: column; align-items: center; }
+        .chart-title { font-size: 15px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+        .chart-sub { font-size: 11px; color: #64748b; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -315,17 +353,20 @@ export function exportToHTML(data: EvaluationData): void {
     <section>
         <h2>📊 시각화 차트</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
-            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
-                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">의도 분류</h3>
-                ${donutSVG}
+            <div class="chart-card">
+                <div class="chart-title">의도 분류</div>
+                <div class="chart-sub">질문 유형 분포</div>
+                <div class="chart-card-inner">${donutSVG}</div>
             </div>
-            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
-                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">데이터셋 통계</h3>
-                ${radarSVG}
+            <div class="chart-card">
+                <div class="chart-title">⚡ 데이터셋 통계</div>
+                <div class="chart-sub">구조적·통계적 검증 (0–10)</div>
+                <div class="chart-card-inner">${radarSVG}</div> 
             </div>
-            <div style="background:white;padding:20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;">
-                <h3 style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;align-self:flex-start;">품질 점수</h3>
-                ${barsSVG}
+            <div class="chart-card">
+                <div class="chart-title">🎯 품질 점수</div>
+                <div class="chart-sub">LLM 기반 품질 평가 (0–1)</div>
+                <div class="chart-card-inner">${barsSVG}</div>
             </div>
         </div>
     </section>
@@ -387,6 +428,64 @@ export function exportToHTML(data: EvaluationData): void {
 function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.style.display='block';el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}
 function hideTip(){document.getElementById('tip').style.display='none';}
 document.addEventListener('mousemove',function(e){var el=document.getElementById('tip');if(el.style.display!=='none'){el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}});
+
+function animateDonut(){
+  document.querySelectorAll('.donut-svg').forEach(function(svg){
+    var cx=+svg.getAttribute('data-cx'),cy=+svg.getAttribute('data-cy'),R=+svg.getAttribute('data-r');
+    var clip=svg.querySelector('.donut-clip');
+    if(!clip)return;
+    var ix=(cx+R*Math.cos(-Math.PI/2)).toFixed(1),iy=(cy+R*Math.sin(-Math.PI/2)).toFixed(1);
+    var st=null,dur=900;
+    function step(ts){
+      if(!st)st=ts;
+      var t=Math.min((ts-st)/dur,1);
+      var e=t<0.5?2*t*t:-1+(4-2*t)*t;
+      if(t>=1){clip.setAttribute('d','M 0 0 H 9999 V 9999 H 0 Z');}
+      else{
+        var a=-Math.PI/2+e*2*Math.PI,lg=e>0.5?1:0;
+        clip.setAttribute('d','M '+cx+' '+cy+' L '+ix+' '+iy+' A '+R+' '+R+' 0 '+lg+' 1 '+(cx+R*Math.cos(a)).toFixed(1)+' '+(cy+R*Math.sin(a)).toFixed(1)+' Z');
+      }
+      if(t<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function animateRadar(){
+  document.querySelectorAll('.radar-polygon').forEach(function(poly){
+    var cx=+poly.getAttribute('data-cx'),cy=+poly.getAttribute('data-cy');
+    var targets=JSON.parse(poly.getAttribute('data-target'));
+    var dots=poly.closest('svg').querySelectorAll('.radar-dot');
+    var st=null,dur=900;
+    function step(ts){
+      if(!st)st=ts;
+      var t=Math.min((ts-st)/dur,1);
+      var e=t<0.5?2*t*t:-1+(4-2*t)*t;
+      var pts=targets.map(function(p){return (cx+(p[0]-cx)*e).toFixed(2)+','+(cy+(p[1]-cy)*e).toFixed(2);});
+      poly.setAttribute('points',pts.join(' '));
+      dots.forEach(function(dot,i){
+        if(i>=targets.length)return;
+        var tx=+dot.getAttribute('data-tx'),ty=+dot.getAttribute('data-ty');
+        dot.setAttribute('cx',(cx+(tx-cx)*e).toFixed(2));
+        dot.setAttribute('cy',(cy+(ty-cy)*e).toFixed(2));
+      });
+      if(t<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function animateBars(){
+  document.querySelectorAll('.bar-fill').forEach(function(bar){
+    var delay=+(bar.getAttribute('data-delay')||0);
+    setTimeout(function(){
+      bar.style.transition='clip-path 700ms ease-out';
+      bar.style.clipPath='inset(0 0% 0 0 round 4px)';
+    },delay);
+  });
+}
+
+window.addEventListener('load',function(){animateBars();animateDonut();animateRadar();});
 </script>
 </body>
 </html>`;
