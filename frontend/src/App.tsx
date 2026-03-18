@@ -25,12 +25,20 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans">
+    <div className="flex h-screen font-sans relative overflow-hidden"
+      style={{ background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 40%, #f0f9ff 70%, #f8fafc 100%)" }}
+    >
+      {/* Gradient blobs */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-32 right-0 w-[600px] h-[600px] bg-indigo-100/40 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 -left-24 w-[500px] h-[500px] bg-sky-100/30 rounded-full blur-3xl" />
+      </div>
+
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={getHeaderTitle()} />
-        
+
         <main className="flex-1 overflow-y-scroll p-8">
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>

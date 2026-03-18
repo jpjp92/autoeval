@@ -70,8 +70,8 @@ function StepCard({
         )}
       </div>
       <div className={cn(
-        "flex-1 bg-white rounded-2xl border shadow-sm overflow-hidden mb-4 transition-all",
-        status === "pending" ? "border-slate-200 opacity-60" : "border-slate-200"
+        "flex-1 bg-white/80 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 overflow-hidden mb-4 transition-all",
+        status === "pending" ? "border-white/60 opacity-60" : "border-white/60"
       )}>
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
           <div className={cn(

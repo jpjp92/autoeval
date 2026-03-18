@@ -1,88 +1,98 @@
-import { ArrowUpRight, ArrowDownRight, Database, FileText, DollarSign, Activity } from "lucide-react";
+import { Database, Activity, FileText, CheckCircle2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface StatCardProps {
   title: string;
   value: string;
-  change: string;
-  trend: "up" | "down";
+  subtitle?: string;
   icon: any;
-  color: "indigo" | "emerald" | "amber" | "rose";
+  accentColor: string;
+  iconBg: string;
+  iconColor: string;
+  loading?: boolean;
 }
 
-function StatCard({ title, value, change, trend, icon: Icon, color }: StatCardProps) {
-  const colorStyles = {
-    indigo: "bg-indigo-50 text-indigo-600",
-    emerald: "bg-emerald-50 text-emerald-600",
-    amber: "bg-amber-50 text-amber-600",
-    rose: "bg-rose-50 text-rose-600",
-  };
-
+function StatCard({ title, value, subtitle, icon: Icon, accentColor, iconBg, iconColor, loading }: StatCardProps) {
   return (
-    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+    <div className={cn(
+      "bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60",
+      "shadow-lg shadow-slate-200/40 p-6 border-l-4",
+      accentColor
+    )}>
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <h3 className="text-2xl font-bold text-slate-900 mt-2">{value}</h3>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{title}</p>
+          {loading ? (
+            <div className="h-8 w-24 bg-slate-100 rounded-lg animate-pulse mt-2" />
+          ) : (
+            <h3 className="text-2xl font-bold text-slate-900 mt-2 tabular-nums">{value}</h3>
+          )}
         </div>
-        <div className={cn("p-3 rounded-lg", colorStyles[color])}>
-          <Icon className="w-5 h-5" />
+        <div className={cn("p-3 rounded-xl shrink-0 ml-4", iconBg)}>
+          <Icon className={cn("w-5 h-5", iconColor)} />
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-2">
-        <span className={cn(
-          "flex items-center text-xs font-medium px-2 py-1 rounded-full",
-          trend === "up" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-        )}>
-          {trend === "up" ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownRight className="w-3 h-3 mr-1" />}
-          {change}
-        </span>
-        <span className="text-xs text-slate-400">vs last week</span>
-      </div>
+      {subtitle && !loading && (
+        <p className="mt-3 text-[11px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">{subtitle}</p>
+      )}
     </div>
   );
 }
 
-export function StatsGrid() {
+interface StatsGridProps {
+  summary?: {
+    total_qa: number;
+    avg_final_score: number;
+    total_documents: number;
+    pass_rate: number;
+  };
+  loading?: boolean;
+}
+
+export function StatsGrid({ summary, loading }: StatsGridProps) {
   const stats: StatCardProps[] = [
     {
       title: "Total QA Generated",
-      value: "14,205",
-      change: "2,106",
-      trend: "up",
+      value: summary ? summary.total_qa.toLocaleString() : "—",
+      subtitle: "Supabase 누적 생성 수",
       icon: Database,
-      color: "indigo"
+      accentColor: "border-l-indigo-500",
+      iconBg: "bg-indigo-50",
+      iconColor: "text-indigo-600",
     },
     {
-      title: "Avg Quality Score",
-      value: "0.86",
-      change: "0.02",
-      trend: "up",
+      title: "Avg Final Score",
+      value: summary ? summary.avg_final_score.toFixed(3) : "—",
+      subtitle: "전체 평가 평균 점수",
       icon: Activity,
-      color: "emerald"
+      accentColor: "border-l-emerald-500",
+      iconBg: "bg-emerald-50",
+      iconColor: "text-emerald-600",
     },
     {
-      title: "Total API Cost",
-      value: "$42.50",
-      change: "$12.40",
-      trend: "up",
-      icon: DollarSign,
-      color: "amber"
-    },
-    {
-      title: "Failed Validations",
-      value: "142",
-      change: "12%",
-      trend: "down",
+      title: "Total Documents",
+      value: summary ? String(summary.total_documents) : "—",
+      subtitle: "업로드 처리 문서 수",
       icon: FileText,
-      color: "rose"
-    }
+      accentColor: "border-l-amber-500",
+      iconBg: "bg-amber-50",
+      iconColor: "text-amber-600",
+    },
+    {
+      title: "Quality Pass Rate",
+      value: summary ? `${summary.pass_rate}%` : "—",
+      subtitle: "valid_qa / total_qa",
+      icon: CheckCircle2,
+      accentColor: "border-l-rose-500",
+      iconBg: "bg-rose-50",
+      iconColor: "text-rose-600",
+    },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
       {stats.map((stat, index) => (
-        <StatCard key={index} {...stat} />
+        <StatCard key={index} {...stat} loading={loading ?? false} />
       ))}
     </div>
   );

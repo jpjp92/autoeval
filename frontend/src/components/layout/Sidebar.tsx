@@ -19,7 +19,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
   return (
     <div className={cn(
-      "h-screen bg-slate-900 text-white flex flex-col border-r border-slate-800 transition-all duration-300 relative",
+      "h-screen bg-slate-900/95 backdrop-blur-xl text-white flex flex-col border-r border-slate-700/50 transition-all duration-300 relative shrink-0",
       isCollapsed ? "w-20" : "w-64"
     )}>
       {/* Header Area */}
@@ -52,8 +52,8 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
               activeTab === item.id
-                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/20"
-                : "text-slate-400 hover:text-white hover:bg-slate-800",
+                ? "bg-indigo-500/20 text-white border border-indigo-400/30 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-white/10",
               isCollapsed ? "justify-center" : ""
             )}
           >

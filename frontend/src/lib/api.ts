@@ -65,6 +65,22 @@ export async function healthCheck(): Promise<ApiResponse> {
 }
 
 /**
+ * Dashboard metrics
+ */
+export async function getDashboardMetrics(): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE}/api/dashboard/metrics`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return {
+      success: false,
+      error: `Failed to get dashboard metrics: ${(error as Error).message}`,
+    };
+  }
+}
+
+/**
  * Get system configuration
  */
 export async function getConfig(): Promise<ApiResponse> {

@@ -555,7 +555,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
         </div>
-        <div className="flex flex-col items-center justify-center h-72 bg-white rounded-xl border border-slate-200 shadow-sm text-slate-400 gap-3">
+        <div className="flex flex-col items-center justify-center h-72 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 text-slate-400 gap-3">
           <Activity className="w-12 h-12 text-slate-200" />
           <p className="text-sm font-medium">평가 결과가 없습니다</p>
           <p className="text-xs text-slate-400">QA 생성 패널에서 평가를 완료하면 결과가 여기에 표시됩니다.</p>
@@ -735,7 +735,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
       </div>
 
       {/* Detailed QA Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden">
         {/* 테이블 헤더 */}
         {!selectedQA && (
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">

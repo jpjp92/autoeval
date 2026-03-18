@@ -253,6 +253,18 @@ def root():
     }
 
 
+# ============= Dashboard API =============
+
+@app.get("/api/dashboard/metrics")
+async def dashboard_metrics():
+    """Dashboard 요약 데이터 조회"""
+    from config.supabase_client import get_dashboard_metrics
+    result = await get_dashboard_metrics()
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+    return {"success": True, "data": result}
+
+
 # ============= Results API =============
 
 @app.get("/api/results")
