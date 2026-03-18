@@ -48,6 +48,17 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 - 근거 없는 의도 유형은 건너뛰고 근거 있는 다른 유형으로 대체합니다
 - "N/A" 또는 답변 불가 표시 금지
 - 언어: 한국어로 자연스럽게 작성하세요
+
+[질문 생성 기준]
+- 질문은 컨텍스트에 명시적으로 서술된 사실/정의/절차만을 근거로 생성할 것
+- 문서의 흐름·맥락에서 유추 가능한 내용을 질문화하지 말 것
+  (예: 명시되지 않은 "어떤 평가를 거쳐", "내부적으로 어떻게 결정했는지" 금지)
+- procedure 유형: 컨텍스트에 순서가 있는 단계(1→2→3)가 명시된 경우에만 선택
+
+[답변 스타일]
+- 답변은 "컨텍스트에 따르면", "문서에 의하면", "제공된 정보에 따르면" 등
+  메타 표현으로 시작하지 말 것
+- 직접적인 사실 진술로 시작할 것 (예: "표 9는 ..." / "해당 절차는 ...")
 </constraints>"""
 
 SYSTEM_PROMPT_EN_V1 = """<role>
@@ -94,6 +105,17 @@ Do NOT use outside knowledge — never generate content absent from the context.
 - Skip intent types lacking context evidence; substitute with a supported type
 - Do NOT generate "unanswerable" or "N/A" responses
 - Language: Write all questions and answers in Korean (한국어)
+
+[Question Generation Rules]
+- Generate questions based ONLY on facts/definitions/procedures explicitly stated in the context
+- Do NOT turn inferred or implied content into questions
+  (e.g., avoid "What evaluation was conducted?" when no evaluation is explicitly described)
+- procedure type: select ONLY when numbered/ordered steps (1→2→3) are explicitly written
+
+[Answer Style]
+- Do NOT start answers with meta-expressions like "According to the context,",
+  "Based on the provided information,", or "컨텍스트에 따르면,"
+- Start directly with a factual statement (e.g., "Table 9 shows..." / "The procedure is...")
 </constraints>"""
 
 USER_TEMPLATE_KO_V1 = """<generation_guide>
@@ -118,6 +140,8 @@ USER_TEMPLATE_KO_V1 = """<generation_guide>
 - 모든 답변에 컨텍스트 근거가 명시되어야 함
 - 금지 표현: "안내합니다", "정책입니다", "규정입니다" (이유 설명 없이)
 - 필수: "~때문에", "~으로 인해", "~를 위해" (명시된 이유/근거)
+- 답변 시작 금지: "컨텍스트에 따르면", "문서에 의하면", "제공된 정보에 따르면" 등 메타 표현
+- 질문은 컨텍스트에 명시적으로 서술된 내용만 근거로 생성 (흐름·맥락 유추 금지)
 </groundedness_check>
 </generation_guide>
 
@@ -179,6 +203,17 @@ _CORE_PRINCIPLES_KO = """
 - 근거 없는 의도 유형은 건너뛰고 근거 있는 다른 유형으로 대체합니다
 - "N/A" 또는 답변 불가 표시 금지
 - 언어: 한국어로 자연스럽게 작성하세요
+
+[질문 생성 기준]
+- 질문은 컨텍스트에 명시적으로 서술된 사실/정의/절차만을 근거로 생성할 것
+- 문서의 흐름·맥락에서 유추 가능한 내용을 질문화하지 말 것
+  (예: 명시되지 않은 "어떤 평가를 거쳐", "내부적으로 어떻게 결정했는지" 금지)
+- procedure 유형: 컨텍스트에 순서가 있는 단계(1→2→3)가 명시된 경우에만 선택
+
+[답변 스타일]
+- 답변은 "컨텍스트에 따르면", "문서에 의하면", "제공된 정보에 따르면" 등
+  메타 표현으로 시작하지 말 것
+- 직접적인 사실 진술로 시작할 것 (예: "표 9는 ..." / "해당 절차는 ...")
 </constraints>"""
 
 
@@ -256,6 +291,8 @@ def build_user_template(
         f"- 모든 답변에 컨텍스트 근거가 명시되어야 함\n"
         f'- 금지 표현: "안내합니다", "정책입니다", "규정입니다" (이유 설명 없이)\n'
         f"- 필수: \"~때문에\", \"~으로 인해\", \"~를 위해\" (명시된 이유/근거)\n"
+        f'- 답변 시작 금지: "컨텍스트에 따르면", "문서에 의하면", "제공된 정보에 따르면" 등 메타 표현\n'
+        f"- 질문은 컨텍스트에 명시적으로 서술된 내용만 근거로 생성 (흐름·맥락 유추 금지)\n"
         f"</groundedness_check>\n"
         f"</generation_guide>\n\n"
         f"<category>{{hierarchy}}</category>\n\n"
@@ -297,6 +334,9 @@ Same type allowed maximum 2 times. Priority group (factoid/definition/how) must 
 - Include explicit evidence from context in all answers
 - Forbidden: "As policy states", "per guidelines" (no reason provided)
 - Required: "because...", "due to...", "in order to..." (explicit reason)
+- Do NOT start answers with "According to the context,", "Based on the provided information,",
+  or "컨텍스트에 따르면," — start directly with a factual statement
+- Generate questions ONLY from explicitly stated content, not from inferred flow or implied meaning
 </groundedness_check>
 </generation_guide>
 
