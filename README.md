@@ -27,22 +27,26 @@
     → Gemini Embedding 2 벡터화 → Supabase doc_chunks 저장
     (content_hash 기반 중복 방지)
 
-[2] 계층 태깅 (Hierarchy Tagging)
-    AI 기반 L1/L2/L3 계층 분석 → doc_chunks.metadata 업데이트
+[2] 계층 태깅 — 3-Pass Master 방식 (Hierarchy Tagging)
+    Step 1: analyze-hierarchy   → L1 master (3~5개) 확정
+    Step 2: analyze-l2-l3      → L2/L3 master 동시 생성 (LLM 1회)
+    Step 3: apply-granular-tagging → 청크별 master에서 선택만 (생성 금지)
+    → doc_chunks.metadata.hierarchy_l1/l2/l3 업데이트
     → 프론트엔드 L1/L2 드롭다운으로 QA 생성 범위 지정
 
 [3] QA 생성 (Generation)
-    L1/L2 필터 → doc_chunks 직접 조회 (vector similarity 없음)
+    L1/L2 필터 → doc_chunks 직접 조회
     → heading/colophon 청크 skip
     → [도메인 분석] doc_chunks 샘플 → LLM → domain_profile (job당 1회)
-    → domain_profile 기반 적응형 프롬프트 빌드 (chunk_type별 intent 분기)
+    → domain_profile 기반 적응형 프롬프트 빌드 (XML 태그 구조)
     → ThreadPoolExecutor 병렬 QA 생성 → qa_gen_results 저장
+    (생성 수량 4~8개 유연 조정, 의도 유형 컨텍스트 적합성 기반 선택)
 
 [4] 4레이어 평가 (Evaluation)
     Layer 1-A: Syntax Validation
     Layer 1-B: Dataset Statistics (다양성, 중복률)
     Layer 2:   RAG Triad (Relevance / Groundedness / Clarity)
-    Layer 3:   Quality Score (Factuality / Completeness)
+    Layer 3:   Quality Score (Factuality / Completeness / Groundedness)
     → qa_eval_results 저장 + qa_gen_results.linked_evaluation_id 업데이트
 ```
 
@@ -54,9 +58,10 @@
 |------|------|
 | **Frontend** | React 19, TypeScript, Tailwind CSS, Lucide icons |
 | **Backend** | FastAPI (Python 3.12+), Uvicorn, uv |
-| **Database** | Supabase (PostgreSQL 15 + pgvector) |
+| **Database** | Supabase (PostgreSQL 15 + pgvector), service_role key |
 | **Embeddings** | Gemini Embedding 2 (`gemini-embedding-2-preview`) — 1536dim, L2 정규화 |
 | **Orchestration** | Custom JobManager + ThreadPoolExecutor 병렬 처리 |
+| **Prompt** | XML 태그 구조 (`<role>` `<constraints>` `<context>` `<task>`) — Gemini/Claude/GPT 공통 |
 
 ---
 
@@ -82,22 +87,36 @@
 
 ## DB 스키마
 
-Supabase 3개 테이블 + 2개 뷰. 상세 스키마: [DBINFO.md](DBINFO.md)
+Supabase (autoeval 프로젝트) — 3개 테이블 + 2개 뷰
 
 | 객체 | 유형 | 설명 |
 |------|------|------|
-| `doc_chunks` | 테이블 | 문서 청크 + Gemini 임베딩 (HNSW 인덱스) |
-| `qa_gen_results` | 테이블 | QA 생성 결과 (job별 qa_list JSONB 중첩) |
-| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + 최종 등급 |
-| `qa_pairs_view` | 뷰 | qa_gen_results.qa_list를 flat하게 펼친 QA 샘플 확인용 |
+| `doc_chunks` | 테이블 | 문서 청크 + Gemini 임베딩 vector(1536), HNSW 인덱스 |
+| `qa_gen_results` | 테이블 | QA 생성 결과 (qa_list JSONB, source_doc, doc_chunk_ids uuid[]) |
+| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade |
+| `qa_pairs_view` | 뷰 | qa_gen_results.qa_list를 flat하게 펼친 QA 확인용 |
 | `evaluation_qa_joined` | 뷰 | qa_eval_results ↔ qa_gen_results 조인 |
+
+### 테이블 간 연계
+
+```
+doc_chunks.id
+  ← qa_gen_results.doc_chunk_ids[]   (GIN 인덱스, 역추적)
+  ← qa_gen_results.qa_list[*].docId  (JSONB 내부)
+
+qa_gen_results.id
+  ← qa_eval_results.metadata.generation_id
+
+qa_gen_results.linked_evaluation_id
+  → qa_eval_results.id
+```
 
 ### 최종 등급 체계
 
 ```
-final_score = syntax*0.2 + stats*0.2 + rag*0.3 + quality*0.3
+final_score = syntax×0.2 + stats×0.2 + rag×0.3 + quality×0.3
 
-A+ (≥0.92) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
+A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 ```
 
 ---
@@ -122,7 +141,7 @@ GOOGLE_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 SUPABASE_URL=...
-SUPABASE_API_KEY=...   # anon 또는 service_role 키
+SUPABASE_API_KEY=...   # service_role 키 (RLS 우회, 백엔드 insert 안정성)
 ```
 
 ### 3. DB 초기화 (최초 1회)
@@ -138,7 +157,7 @@ backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results, 뷰
 
 ```bash
 # Backend
-cd backend && uv run main.py
+python -m uvicorn backend.main:app --reload
 
 # Frontend (별도 터미널)
 cd frontend && npm run dev
@@ -153,46 +172,55 @@ autoeval/
 ├── backend/
 │   ├── main.py                      # FastAPI 허브 — api/* 라우트 통합 + 로깅 설정
 │   ├── api/                         # API 라우트 레이어
-│   │   ├── generation_api.py        # POST /api/generate — 생성 job 관리 + 2단계 흐름
+│   │   ├── generation_api.py        # POST /api/generate — 생성 job 관리
 │   │   ├── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
-│   │   └── ingestion_api.py         # POST /api/ingestion/* — 문서 인제스션 + hierarchy
+│   │   └── ingestion_api.py         # POST /api/ingestion/* — 문서 인제스션 + 3-Pass 계층 태깅
 │   ├── generators/                  # QA 생성 핵심 로직
-│   │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
+│   │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출
 │   │   └── domain_profiler.py       # analyze_domain() — doc_chunks 샘플 → LLM 도메인 분석
 │   ├── evaluators/                  # 4레이어 평가 로직
 │   │   ├── pipeline.py              # 평가 파이프라인 + Supabase 저장
 │   │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
-│   │   ├── rag_triad.py             # Layer 2: RAG Triad (Relevance/Groundedness/Clarity)
-│   │   └── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness)
-│   ├── config/
-│   │   ├── supabase_client.py       # DB 클라이언트 + 저장/조회 함수
-│   │   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더 (build_system_prompt 등)
-│   │   ├── models.py                # 모델 alias → model_id, cost 매핑
-│   │   └── constants.py             # 경로, worker 수 등 기본 상수
-│   └── scripts/
-│       ├── setup_vector_db.sql      # doc_chunks 테이블 + match_doc_chunks RPC
-│       └── setup_qa_eval_tables.sql # qa_eval_results, qa_gen_results, 뷰 2개
+│   │   ├── rag_triad.py             # Layer 2: RAG Triad (XML 프롬프트)
+│   │   ├── qa_quality.py            # Layer 3: Quality Score (XML 프롬프트 + system 분리)
+│   │   └── job_manager.py           # EvaluationManager (in-memory job 관리)
+│   └── config/
+│       ├── supabase_client.py       # DB 클라이언트 + 저장/조회 함수
+│       ├── prompts.py               # XML 태그 프롬프트 + 적응형 빌더
+│       ├── models.py                # 모델 alias → model_id, cost 매핑
+│       └── constants.py             # 경로, worker 수 등 기본 상수
 │
 ├── frontend/
 │   └── src/
 │       ├── App.tsx
 │       ├── lib/api.ts               # 백엔드 API 클라이언트
 │       └── components/
-│           ├── standardization/     # 문서 업로드 + 계층 태깅 UI
+│           ├── standardization/     # 문서 업로드 + 3-Pass 계층 태깅 UI
 │           ├── generation/          # QA 생성 UI (L1/L2 드롭다운)
 │           └── evaluation/          # 평가 결과 UI
 │
-├── DBINFO.md                        # DB 스키마 상세 문서
-├── DEV_260317.md                    # 개발 세션 로그 (2026-03-17)
-├── DEV_PRIORITY.md                  # 수정 우선순위 (P0~P4)
-├── DEV_PROMPT_ADAPTIVE.md           # 적응형 프롬프트 설계 문서
+├── DEV_260318v2.md                  # 전체 플로우 & 세션 관리 설계 (2026-03-18)
+├── DEV_260318v3.md                  # 골든셋 설계 계획 (2026-03-18)
 └── README.md
 ```
 
 ---
 
 ## 개발 노트
+
+### 완료 항목 (2026-03-18)
+
+| 항목 | 내용 |
+|------|------|
+| **Supabase 프로젝트 전환** | app_test → autoeval 신규 프로젝트, service_role key 적용 |
+| **DB 스키마 정리** | `qa_gen_results.hierarchy` 컬럼 제거, `qa_eval_results.interpretation` 컬럼 제거 |
+| **doc_chunk_ids 추가** | `qa_gen_results`에 `uuid[]` 컬럼 + GIN 인덱스 — doc_chunks 역추적 가능 |
+| **Hierarchy 3-Pass Master** | L2 과잉 생성 방지 — L1 확정 → L2/L3 master 동시 생성 → 청크별 선택만 |
+| **XML 프롬프트 전환** | 전 파이프라인 프롬프트 XML 태그 구조화 (ingestion / generation / evaluation) |
+| **유연 생성 조건** | 8개 고정 → 4~8개 범위, 의도 유형 컨텍스트 적합성 기반 선택 + 다양성 규칙 |
+| **평가 프롬프트 개선** | `rag_triad.py` 3개 메서드 XML 전환, `qa_quality.py` system/user 메시지 분리 |
+| **E2E 통합 테스트** | 테스트데이터_1.pdf (11 chunks), 테스트데이터.docx (2 chunks) — 전 파이프라인 정상 동작 확인 |
 
 ### 완료 항목 (2026-03-17)
 
@@ -202,20 +230,17 @@ autoeval/
 | **content_hash 중복 방지** | 재업로드 시 동일 청크 INSERT skip (SHA-1 기반) |
 | **Ingestion 품질** | `Ÿ` 정규화, 문장 줄바꿈 결합, 짧은 청크 병합, colophon 필터 |
 | **DB 청크 조회 전환** | dummy zero vector 제거 → `get_doc_chunks_by_filter()` 직접 select |
-| **heading/colophon skip** | 생성 단계에서 제목 전용·발행처 청크 제외 |
-| **프롬프트 범용화** | 통신사 도메인 하드코딩 제거 → 범용 QA 전문가 프롬프트 |
 | **P3 적응형 프롬프트** | `domain_profiler.py` 도메인 분석 + `prompts.py` 빌더화 (chunk_type별 intent 분기) |
-| **TruLens 로그 억제** | `logging.getLogger("trulens").setLevel(logging.ERROR)` 적용 |
 | **백엔드 디렉토리 분리** | `api/` (라우트) + `generators/` (생성 로직) 구조로 리팩토링 |
-| **E2E 검증** | doc_chunks 11개 / avg 773자 / 생성·평가·링크 전체 동작 확인 |
 
 ### 다음 작업
 
 | 우선순위 | 항목 |
 |---------|------|
-| P3 | 적응형 프롬프트 E2E 테스트 — domain_profile 로그 확인 |
-| P4 | 키 불일치 수정: `m.get("pages")` → `m.get("page")`, `m.get("type")` → `m.get("chunk_type")` |
+| 중 | Supabase jobs 테이블 최소 연계 — generation/evaluation 생성·완료 시점 DB 동기화 |
+| 중 | Few-shot 예시 추가 — `_build_prompt`에 태깅 예시 1~2개 삽입 |
+| 낮음 | 골든셋 구축 — `qa_golden_set` 테이블 + 자동 후보 추출 (DEV_260318v3.md 참고) |
 
 ---
 
-**Last Updated**: 2026-03-17 | **Branch**: main
+**Last Updated**: 2026-03-18 | **Branch**: main

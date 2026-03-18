@@ -94,11 +94,15 @@ class QAQualityEvaluator:
 
     def _call_llm_combined(self, prompt: str) -> str:
         """3개 지표를 단일 호출로 평가 — JSON 응답"""
-        sys_msg = (
-            "You are a strict but fair data quality auditor. "
-            "Evaluate all three dimensions and respond ONLY with valid JSON. "
-            "No explanation outside the JSON block."
-        )
+        sys_msg = """\
+<role>
+You are a strict but fair data quality auditor evaluating QA pairs.
+Evaluate all three dimensions objectively based solely on the provided context.
+</role>
+<output_format>
+Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
+{"factuality": <int 0-10>, "completeness": <int 0-10>, "groundedness": <int 0-10>}
+</output_format>"""
         try:
             if self.provider == "openai" and self.client:
                 response = self.client.chat.completions.create(
@@ -115,7 +119,12 @@ class QAQualityEvaluator:
                 return (response.choices[0].message.content or "{}").strip()
 
             elif self.judge_model:
-                response = self.judge_model.invoke(f"{sys_msg}\n\n{prompt}")
+                # Claude / Gemini: SystemMessage/HumanMessage 분리 (권장 방식)
+                from langchain_core.messages import SystemMessage, HumanMessage
+                response = self.judge_model.invoke([
+                    SystemMessage(content=sys_msg),
+                    HumanMessage(content=prompt),
+                ])
                 return (response.content or "{}").strip()
 
         except Exception as e:
@@ -143,18 +152,14 @@ class QAQualityEvaluator:
     def evaluate_all(self, question: str, answer: str, context: str) -> dict:
         """사실성·완전성·근거성을 단일 LLM 호출로 평가 (3 calls → 1 call)"""
         clean_ctx = clean_markdown(context)
-        prompt = f"""Evaluate the QA pair below on three dimensions. Score each 0-10.
-
-[CONTEXT]
+        prompt = f"""<context>
 {clean_ctx[:3500]}
+</context>
 
-[QUESTION]
-{question}
+<question>{question}</question>
+<answer>{answer}</answer>
 
-[ANSWER]
-{answer}
-
-[SCORING DIMENSIONS]
+<scoring_dimensions>
 1. factuality (0-10): Are the answer's claims factually consistent with the context?
    - 10: All claims match context semantically
    - 6-7: Core claims match, minor gaps
@@ -169,9 +174,13 @@ class QAQualityEvaluator:
    - 10: All claims clearly derivable from context
    - 6-7: Core claims derivable, minor unsupported details
    - 0-3: Most claims cannot be traced to context
+</scoring_dimensions>
 
-[OUTPUT — valid JSON only]
-{{"factuality": <0-10>, "completeness": <0-10>, "groundedness": <0-10>}}"""
+<task>
+Evaluate the QA pair on all three dimensions. Score each 0-10.
+Return ONLY valid JSON:
+{{"factuality": <0-10>, "completeness": <0-10>, "groundedness": <0-10>}}
+</task>"""
         try:
             raw = self._call_llm_combined(prompt)
             return self._parse_combined(raw)

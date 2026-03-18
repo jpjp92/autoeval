@@ -169,12 +169,21 @@ class RAGTriadEvaluator:
         if not self.judge_model or not question or not answer:
             return 0.7
         try:
-            prompt = f"""Rate the relevance of the answer to the question on a scale of 0-10.
+            prompt = f"""<role>
+You are a strict QA evaluator. Assess how relevant the answer is to the question.
+</role>
 
-Question: {question}
-Answer: {answer}
+<constraints>
+- Score 0-10 (integer only)
+- Return ONLY the final integer on the last line, no explanation
+</constraints>
 
-Return ONLY a single integer (0-10) with no explanation."""
+<question>{question}</question>
+<answer>{answer}</answer>
+
+<task>
+Rate relevance: 0 = completely irrelevant, 10 = perfectly relevant.
+</task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
@@ -187,39 +196,35 @@ Return ONLY a single integer (0-10) with no explanation."""
             return 0.7
         try:
             context_text = context[:10000] if context else "일반적인 배경 지식"
-            prompt = f"""You are an expert at assessing whether an answer is grounded in provided context.
-Use systematic step-by-step reasoning (Chain of Thought) to evaluate.
+            prompt = f"""<role>
+You are an expert at assessing whether an answer is grounded in the provided context.
+Use Chain of Thought reasoning to evaluate systematically.
+</role>
 
-Context:
+<constraints>
+- Use FLEXIBLE MATCHING (NOT exact string matching) when finding evidence
+- Return ONLY the final integer score (0-10) on the last line
+</constraints>
+
+<context>
 {context_text}
+</context>
 
-Answer:
+<answer>
 {answer}
+</answer>
 
-Evaluate groundedness using the following reasoning process:
-
-Step 1: IDENTIFY KEY CLAIMS
-List the main factual claims or statements in the answer.
-
-Step 2: FIND SUPPORTING EVIDENCE
-For each claim, search the context for supporting evidence.
-Use FLEXIBLE MATCHING (NOT exact matching).
-
-Step 3: ASSESS ALIGNMENT
-Score evidence strength per claim:
-- Strong (0.9-1.0): Direct quote or clear paraphrase
-- Medium (0.7-0.8): Multiple elements logically combined
-- Weak (0.5-0.6): Inference supported by context
-- None (0.0): Not in context
-
-Step 4: DETERMINE GROUNDING LEVEL
-- 10: All strong
-- 7-9: Mostly supported
-- 5-6: Partial support
-- 0-4: Mostly hallucinated
-
-Return ONLY:
-The final integer score (0-10) on the last line."""
+<task>
+Step 1: IDENTIFY KEY CLAIMS — list the main factual claims in the answer
+Step 2: FIND SUPPORTING EVIDENCE — search context per claim using flexible matching
+Step 3: ASSESS ALIGNMENT per claim:
+  - Strong (0.9-1.0): Direct quote or clear paraphrase
+  - Medium (0.7-0.8): Multiple elements logically combined
+  - Weak  (0.5-0.6): Inference supported by context
+  - None  (0.0):     Not in context
+Step 4: DETERMINE GROUNDING LEVEL:
+  - 10: All strong / 7-9: Mostly supported / 5-6: Partial / 0-4: Mostly hallucinated
+</task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
@@ -231,17 +236,24 @@ The final integer score (0-10) on the last line."""
         if not self.judge_model or not answer:
             return 0.7
         try:
-            prompt = f"""Rate the clarity and comprehensibility of the question-answer pair on 0-10 scale.
+            prompt = f"""<role>
+You are a strict QA evaluator assessing question-answer pair clarity and comprehensibility.
+</role>
 
-Question: {question}
-Answer: {answer}
+<constraints>
+- Score 0-10 (integer only)
+- Return ONLY the final integer on the last line, no explanation
+</constraints>
 
-Consider:
+<question>{question}</question>
+<answer>{answer}</answer>
+
+<task>
+Rate clarity on a 0-10 scale:
 - Is the question well-formed and understandable?
 - Is the answer clearly written without ambiguities?
 - Is the answer properly structured?
-
-Return ONLY a single integer (0-10) with no explanation."""
+</task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
