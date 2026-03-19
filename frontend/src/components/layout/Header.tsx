@@ -2,7 +2,7 @@ import { Bell } from "lucide-react";
 
 export function Header({ title }: { title: string }) {
   return (
-    <header className="h-16 bg-white/70 backdrop-blur-md border-b border-slate-200/50 flex items-center justify-between px-8 sticky top-0 z-10">
+    <header className="h-16 bg-indigo-50/60 backdrop-blur-md border-b border-indigo-100/60 flex items-center justify-between px-8 sticky top-0 z-10">
       <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
 
       <div className="flex items-center gap-4">

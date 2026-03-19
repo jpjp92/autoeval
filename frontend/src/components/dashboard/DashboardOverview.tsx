@@ -61,18 +61,23 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [jobPage, setJobPage] = useState(0);
+  const [gradeAnimated, setGradeAnimated] = useState(false);
 
   useEffect(() => {
     if (!isActive) return;
     let cancelled = false;
     setJobPage(0);
+    setGradeAnimated(false);
     async function load() {
       setLoading(true);
       const res = await getDashboardMetrics();
       if (!cancelled && res.success && res.data) {
         setData(res.data as DashboardData);
       }
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setTimeout(() => setGradeAnimated(true), 100);
+      }
     }
     load();
     return () => { cancelled = true; };
@@ -88,7 +93,7 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
         <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">최근 파이프라인 실행</h3>
+              <h3 className="text-lg font-semibold text-slate-800">최근 파이프라인 로그</h3>
               <p className="text-sm text-slate-500">DB 생성·평가 기록</p>
             </div>
             <button
@@ -200,7 +205,7 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
           <div className="space-y-3 flex-1">
             <button
               onClick={() => setActiveTab("standardization")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 transition-all group text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
                 <Database className="w-5 h-5" />
@@ -213,7 +218,7 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
 
             <button
               onClick={() => setActiveTab("generation")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all group text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors shrink-0">
                 <Play className="w-5 h-5" />
@@ -226,7 +231,7 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
 
             <button
               onClick={() => setActiveTab("evaluation")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-all group text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
                 <FileText className="w-5 h-5" />
@@ -264,38 +269,60 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
             </div>
           ) : (
             <div className="space-y-3">
-              {Object.entries(data?.grade_distribution || {}).map(([grade, count]) => {
+              {(() => {
                 const dist = (data?.grade_distribution || {}) as Record<string, number>;
                 const total = Object.values(dist).reduce((a, b) => a + b, 0);
-                const pct = total > 0 ? ((count as number) / total) * 100 : 0;
                 const barColors: Record<string, string> = {
-                  "A+": "bg-indigo-500",
-                  "A": "bg-emerald-500",
-                  "B+": "bg-sky-500",
-                  "B": "bg-amber-500",
-                  "C": "bg-orange-500",
-                  "F": "bg-rose-500",
+                  "A+": "bg-indigo-500", "A": "bg-emerald-500",
+                  "B+": "bg-sky-500", "B": "bg-amber-500",
+                  "C": "bg-orange-500", "F": "bg-rose-500",
                 };
-                return (
-                  <div key={grade}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={cn(
-                        "text-xs font-bold px-2 py-0.5 rounded border",
-                        GRADE_COLORS[grade] || "bg-slate-100 text-slate-600 border-slate-200"
-                      )}>
-                        {grade}
-                      </span>
-                      <span className="text-sm font-medium text-slate-700">{count}건</span>
+                const gradeRanges: Record<string, string> = {
+                  "A+": "≥ 0.95",
+                  "A":  "0.85 – 0.94",
+                  "B+": "0.75 – 0.84",
+                  "B":  "0.65 – 0.74",
+                  "C":  "0.50 – 0.64",
+                  "F":  "< 0.50",
+                };
+                return Object.entries(dist).map(([grade, count], idx) => {
+                  const pct = total > 0 ? (count / total) * 100 : 0;
+                  return (
+                    <div key={grade} className="group cursor-default">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-xs font-bold px-2 py-0.5 rounded border",
+                            GRADE_COLORS[grade] || "bg-slate-100 text-slate-600 border-slate-200"
+                          )}>
+                            {grade}
+                          </span>
+                          <span className={cn(
+                            "text-[10px] text-slate-400 font-mono transition-all duration-200",
+                            "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
+                          )}>
+                            {gradeRanges[grade]}
+                          </span>
+                        </div>
+                        <span className="text-sm font-medium text-slate-700">{count}건</span>
+                      </div>
+                      <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full", barColors[grade] || "bg-slate-400")}
+                          style={{
+                            width: `${pct}%`,
+                            minWidth: pct > 0 ? '4px' : '0',
+                            clipPath: gradeAnimated ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)',
+                            transition: gradeAnimated
+                              ? `clip-path 600ms ease-out ${idx * 80}ms`
+                              : 'none',
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2">
-                      <div
-                        className={cn("h-2 rounded-full transition-all duration-500", barColors[grade] || "bg-slate-400")}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
               {Object.values(data?.grade_distribution || {}).every(v => v === 0) && (
                 <p className="text-sm text-slate-400 text-center py-4">아직 평가 데이터가 없습니다</p>
               )}
