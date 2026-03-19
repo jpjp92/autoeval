@@ -149,9 +149,11 @@ autoeval/
 │   ├── main.py                      # FastAPI 앱 + 라우트 등록 + 로깅 설정
 │   │                                  GET /api/dashboard/metrics 포함
 │   ├── api/
-│   │   ├── ingestion_api.py         # POST /api/ingestion/* — 업로드 + 3-Pass 계층 태깅
+│   │   ├── ingestion_api.py         # POST /api/ingestion/* — 라우터 + process_and_ingest
 │   │   ├── generation_api.py        # POST /api/generation/generate — 병렬 QA 생성 job
 │   │   └── evaluation_api.py        # POST /api/evaluation/evaluate — 4레이어 평가 job
+│   ├── ingestion/
+│   │   └── parsers.py               # 파싱·정규화·필터·청킹 순수 함수 (I/O 없음)
 │   ├── generators/
 │   │   ├── qa_generator.py          # 프로바이더별 LLM API 호출 + 응답 파싱
 │   │   └── domain_profiler.py       # doc_chunks 샘플 → LLM → domain_profile 생성
@@ -189,7 +191,8 @@ autoeval/
 │       ├── playground/
 │       │   └── ChatPlayground.tsx            # LLM 채팅 플레이그라운드
 │       └── settings/
-│           └── SettingsPanel.tsx             # 시스템 설정 (Admin User에서 접근)
+│           ├── SettingsPanel.tsx             # 시스템 설정 (Profile / API Keys / Pipeline)
+│           └── PipelineFlow.tsx              # ReactFlow 5-스텝 파이프라인 시각화
 │
 ├── DEV_260318v2.md      # 플로우 & 프롬프트 개선 세션 (2026-03-18)
 ├── DEV_260318v3.md      # 골든셋 설계 계획

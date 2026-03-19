@@ -10,10 +10,13 @@ FastAPI 기반 QA 생성·평가 백엔드.
 ```
 backend/
 ├── main.py                      # FastAPI 앱 + 라우트 통합 허브 + 로깅 설정
-├── api/                         # API 라우트 레이어
+├── api/                         # API 라우트 레이어 (얇은 라우터 전용)
+│   ├── ingestion_api.py         # POST /api/ingestion/* — 라우터 + process_and_ingest
 │   ├── generation_api.py        # POST /api/generate — 생성 job 관리 + 2단계 흐름
-│   ├── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
-│   └── ingestion_api.py         # POST /api/ingestion/* — 문서 인제스션 + hierarchy 태깅
+│   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
+├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
+│   ├── __init__.py
+│   └── parsers.py               # 파싱·정규화·필터·청킹 전 함수 (extract_text_by_page 등)
 ├── generators/                  # QA 생성 핵심 로직
 │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
 │   └── domain_profiler.py       # analyze_domain() — doc_chunks 샘플 → LLM 도메인 분석
@@ -70,11 +73,11 @@ API 문서: `http://localhost:8000/docs`
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/analyze-hierarchy` | 업로드 문서 L1 후보 + 계층 제안 |
-| `POST` | `/analyze-tagging-samples` | L2/L3 AI 태깅 샘플 미리보기 |
-| `POST` | `/apply-granular-tagging` | doc_chunks.metadata hierarchy 일괄 적용 |
-| `POST` | `/update-hierarchy` | 단일 청크 계층 수동 업데이트 |
-| `GET`  | `/hierarchy-list` | DB L1/L2 고유 목록 반환 (드롭다운용) |
+| `POST` | `/analyze-hierarchy` | Pass 1 — doc_chunks 샘플 → L1 master 3~5개 도출 |
+| `POST` | `/analyze-l2-l3` | Pass 2 — L1 기반 L2/L3 master 동시 생성 |
+| `POST` | `/analyze-tagging-samples` | 태깅 적용 전 3~5개 청크 미리보기 |
+| `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
+| `GET`  | `/hierarchy-list` | DB L1/L2/L3 고유 목록 반환 (드롭다운용) |
 
 ### Generation  `/api/generate`
 
