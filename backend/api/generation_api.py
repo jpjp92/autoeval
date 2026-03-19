@@ -51,7 +51,6 @@ from config.models import MODEL_CONFIG
 # ============= Configurations =============
 
 BASE_DIR = Path(__file__).parent.parent
-OUTPUT_DIR = BASE_DIR / "output"
 
 logger = logging.getLogger("autoeval.generation")
 
@@ -460,13 +459,11 @@ async def run_qa_generation_real(
     
     logger.info(f"[{job_id}] Saving results...")
     job_manager.update_job(job_id, progress=92, message="Saving results...")
-    
-    # Save results
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     lang_suffix = "ko" if lang == "ko" else "en"
     result_filename = f"qa_{model}_{lang_suffix}_{prompt_version}_{timestamp}.json"
-    result_filepath = OUTPUT_DIR / result_filename
-    
+
     output_data = {
         "config": {
             "model": model,
@@ -483,13 +480,7 @@ async def run_qa_generation_real(
         },
         "results": results,
     }
-    
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    with open(result_filepath, 'w', encoding='utf-8') as f:
-        json.dump(output_data, f, ensure_ascii=False, indent=2)
-    
-    logger.info(f"[{job_id}] Results saved to {result_filename}")
-    
+
     # ✨ Save to Supabase
     supabase_id = None
     try:
@@ -571,9 +562,8 @@ async def run_qa_generation_simulation(
         job_manager.update_job(job_id, progress=progress, message=msg)
         time.sleep(1)  # Simulate work
 
-    # Save simulated result
+    # Build simulated result
     result_filename = f"qa_{model}_{lang}_{prompt_version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    result_filepath = OUTPUT_DIR / result_filename
 
     result_data = {
         "config": {
@@ -600,12 +590,6 @@ async def run_qa_generation_simulation(
         ]
     }
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    with open(result_filepath, 'w', encoding='utf-8') as f:
-        json.dump(result_data, f, ensure_ascii=False, indent=2)
-
-    logger.info(f"[{job_id}] Simulated results saved to {result_filename}")
-    
     # ✨ Save to Supabase
     supabase_id = None
     try:

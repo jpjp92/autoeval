@@ -83,26 +83,28 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `POST` | `/` | QA 생성 job 시작 (domain_profiler → 적응형 프롬프트 → 병렬 생성) |
-| `GET`  | `/{job_id}/status` | 생성 job 진행 상태 조회 |
-| `GET`  | `/jobs` | 전체 job 목록 |
-| `DELETE` | `/{job_id}` | job 취소 |
+| `POST` | `/api/generate` | QA 생성 job 시작 (domain_profiler → 적응형 프롬프트 → 병렬 생성) |
+| `GET`  | `/api/generate/{job_id}/status` | 생성 job 진행 상태 조회 |
+| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
+| `DELETE` | `/api/generate/{job_id}` | job 취소 |
 
 ### Evaluation  `/api/evaluate`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `POST` | `/` | 4레이어 평가 job 시작 |
-| `GET`  | `/{job_id}/status` | 평가 job 진행 상태 + 레이어별 결과 |
+| `POST` | `/api/evaluate` | 4레이어 평가 job 시작 |
+| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
+| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory) |
+| `GET`  | `/api/evaluate/history` | Supabase 저장된 평가 이력 |
+| `GET`  | `/api/evaluate/{job_id}/export` | 현재 세션 job QA+점수 상세 내보내기 |
+| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 |
 
 ### System
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `GET` | `/health` | 헬스체크 |
-| `GET` | `/api/results` | 로컬 결과 파일 목록 |
-| `GET` | `/api/results/{filename}` | 특정 결과 파일 상세 |
-| `POST` | `/api/export` | 결과 내보내기 (CSV/HTML/XLSX/JSON) |
+| `GET` | `/api/dashboard/metrics` | 대시보드 집계 데이터 (Supabase) |
 
 ---
 
@@ -127,8 +129,8 @@ Layer 1-B  Dataset Statistics     다양성·중복률 (SequenceMatcher 기반)
 Layer 2    RAG Triad               Relevance / Groundedness / Clarity (TruLens + LangChain judge)
 Layer 3    Quality Score           Factuality / Completeness (LLM judge)
 
-final_score = syntax*0.2 + stats*0.2 + rag*0.3 + quality*0.3
-등급: A+(≥0.92) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)
+final_score = syntax*0.1 + stats*0.1 + rag*0.4 + quality*0.4
+등급: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)
 ```
 
 ---

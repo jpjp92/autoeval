@@ -4,12 +4,10 @@ Evaluation Pipeline
 Layer 1-A, 2, 3는 ThreadPoolExecutor로 병렬 처리
 """
 import asyncio
-import json
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from pathlib import Path
 from threading import Lock
 from typing import Dict, List, Optional, Any
 
@@ -21,10 +19,6 @@ from .qa_quality import QAQualityEvaluator
 from .recommendations import generate_recommendations
 
 logger = logging.getLogger(__name__)
-
-BASE_DIR = Path(__file__).parent.parent.parent
-OUTPUT_DIR = BASE_DIR / "output"
-VALIDATED_OUTPUT_DIR = BASE_DIR / "validated_output"
 
 # ============= Rate Limit 기반 프로바이더별 최대 워커 수 =============
 PROVIDER_MAX_WORKERS: Dict[str, int] = {
@@ -407,31 +401,7 @@ def run_evaluation(
             else:
                 raise ValueError(f"generation_id {generation_id} 를 Supabase에서 찾을 수 없습니다.")
         else:
-            # fallback: 로컬 파일에서 읽기
-            result_filepath = OUTPUT_DIR / result_filename
-            if not result_filepath.exists():
-                raise FileNotFoundError(f"Result file not found: {result_filename}")
-
-            with open(result_filepath, "r", encoding="utf-8") as f:
-                result_data = json.load(f)
-
-            gen_config     = result_data.get("config", {})
-            gen_lang       = gen_config.get("lang", "ko")
-            gen_model      = gen_config.get("model", "")
-            gen_prompt_ver = gen_config.get("prompt_version", "v1")
-            gen_source_doc = gen_config.get("source_doc", "")
-
-            for result_idx, result in enumerate(result_data.get("results", [])):
-                context = result.get("text", "")
-                for qa_idx, qa in enumerate(result.get("qa_list", [])):
-                    qa_list.append({
-                        "q":       qa.get("q", ""),
-                        "a":       qa.get("a", ""),
-                        "context": context[:10000],
-                        "qa_id":   qa.get("qa_id", f"qa_{result_idx}_{qa_idx}"),
-                        "intent":  qa.get("intent", ""),
-                        "docId":   qa.get("docId", ""),
-                    })
+            raise ValueError("generation_id가 없습니다. Supabase에서 평가 대상을 조회할 수 없습니다.")
 
         if limit:
             qa_list = qa_list[:limit]
@@ -542,12 +512,6 @@ def run_evaluation(
                 ),
             },
         }
-
-        VALIDATED_OUTPUT_DIR.mkdir(exist_ok=True)
-        report_filename = f"qa_quality_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(VALIDATED_OUTPUT_DIR / report_filename, "w", encoding="utf-8") as f:
-            json.dump(eval_report, f, ensure_ascii=False, indent=2)
-        logger.info(f"[{job_id}] 평가 완료: {report_filename}")
 
         # Supabase 저장
         try:

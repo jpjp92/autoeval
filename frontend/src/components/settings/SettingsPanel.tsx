@@ -184,7 +184,7 @@ export function SettingsPanel() {
           <div className="h-full animate-in fade-in duration-300 -m-8">
             <div className="px-8 pt-8 pb-4">
               <h3 className="text-lg font-semibold text-slate-800 mb-1">Pipeline</h3>
-              <p className="text-sm text-slate-500">AutoEval 전체 데이터 처리 파이프라인 구조입니다. 드래그·줌·패닝으로 탐색하세요.</p>
+              <p className="text-sm text-slate-500">AutoEval 전체 데이터 처리 파이프라인 구조입니다. 드래그·줌으로 탐색하세요.</p>
             </div>
             <div style={{ height: 'calc(100% - 88px)' }}>
               <PipelineFlow />

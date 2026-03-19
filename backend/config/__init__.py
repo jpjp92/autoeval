@@ -10,7 +10,7 @@ from .prompts import (
     USER_TEMPLATE_KO_V1,
     USER_TEMPLATE_EN_V1,
 )
-from .constants import OUTPUT_DIR, DATA_FILE
+from .constants import DATA_FILE
 
 __all__ = [
     "MODEL_CONFIG",
@@ -20,6 +20,5 @@ __all__ = [
     "SYSTEM_PROMPT_EN_V1",
     "USER_TEMPLATE_KO_V1",
     "USER_TEMPLATE_EN_V1",
-    "OUTPUT_DIR",
     "DATA_FILE",
 ]

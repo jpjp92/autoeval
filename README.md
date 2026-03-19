@@ -318,17 +318,43 @@ cd frontend && npm run dev
 
 ## API 엔드포인트
 
+### Ingestion
+
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `POST` | `/api/ingestion/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → DB 저장 |
-| `POST` | `/api/ingestion/analyze-hierarchy` | L1 master 생성 (Pass 1) |
-| `POST` | `/api/ingestion/analyze-l2-l3` | L2/L3 master 생성 (Pass 2) |
-| `POST` | `/api/ingestion/apply-granular-tagging` | 청크별 계층 태깅 (Pass 3) |
-| `POST` | `/api/generation/generate` | QA 생성 job 시작 |
-| `GET`  | `/api/generation/status/{job_id}` | 생성 job 상태 조회 |
-| `POST` | `/api/evaluation/evaluate` | 4레이어 평가 job 시작 |
-| `GET`  | `/api/evaluation/status/{job_id}` | 평가 job 상태 조회 |
-| `GET`  | `/api/dashboard/metrics` | 대시보드 집계 데이터 |
+| `POST` | `/api/ingestion/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
+| `POST` | `/api/ingestion/analyze-hierarchy` | Pass 1 — L1 master 3~5개 도출 |
+| `POST` | `/api/ingestion/analyze-l2-l3` | Pass 2 — L2/L3 master 동시 생성 |
+| `POST` | `/api/ingestion/analyze-tagging-samples` | 태깅 미리보기 (DB 업데이트 없음) |
+| `POST` | `/api/ingestion/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
+| `GET`  | `/api/ingestion/hierarchy-list` | L1/L2/L3 고유 목록 (드롭다운용) |
+
+### Generation
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| `POST` | `/api/generate` | QA 생성 job 시작 |
+| `GET`  | `/api/generate/{job_id}/status` | 생성 job 상태 조회 |
+| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
+| `DELETE` | `/api/generate/{job_id}` | job 취소 |
+
+### Evaluation
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| `POST` | `/api/evaluate` | 4레이어 평가 job 시작 |
+| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
+| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory) |
+| `GET`  | `/api/evaluate/history` | Supabase 저장된 평가 이력 전체 |
+| `GET`  | `/api/evaluate/{job_id}/export` | 세션 job QA+점수 상세 내보내기 |
+| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 |
+
+### System
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| `GET` | `/health` | 헬스체크 |
+| `GET` | `/api/dashboard/metrics` | 대시보드 집계 데이터 (Supabase) |
 
 ---
 
