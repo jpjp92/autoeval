@@ -445,6 +445,15 @@ Return a JSON object:
             config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
         )
         l2_l3_master = json.loads(res.text)
+        # LLM이 간혹 dict 대신 list of dict를 반환하는 경우 병합
+        if isinstance(l2_l3_master, list):
+            merged: Dict[str, Any] = {}
+            for item in l2_l3_master:
+                if isinstance(item, dict):
+                    merged.update(item)
+            l2_l3_master = merged
+        if not isinstance(l2_l3_master, dict):
+            raise ValueError(f"Unexpected LLM response type: {type(l2_l3_master)}")
         return L2L3AnalysisResponse(l2_l3_master=l2_l3_master)
     except Exception as e:
         logger.error(f"❌ L2/L3 analysis failed: {e}")
