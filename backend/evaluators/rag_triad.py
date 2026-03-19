@@ -164,25 +164,30 @@ class RAGTriadEvaluator:
             logger.warning(f"Score extraction error: {e}")
             return 0.5
 
-    def evaluate_relevance(self, question: str, answer: str) -> float:
-        """질문과 답변의 관련성 평가 (0-1)"""
+    def evaluate_relevance(self, question: str, answer: str, context: str = "") -> float:
+        """질문과 답변의 관련성 평가 (0-1) — 도메인 컨텍스트 반영"""
         if not self.judge_model or not question or not answer:
             return 0.7
         try:
+            ctx_block = f"\n<context_excerpt>{context[:2000]}</context_excerpt>\n" if context else ""
             prompt = f"""<role>
-You are a strict QA evaluator. Assess how relevant the answer is to the question.
+You are a strict QA evaluator. Assess how relevant the answer is to the question
+in the context of the provided domain material.
 </role>
 
 <constraints>
 - Score 0-10 (integer only)
 - Return ONLY the final integer on the last line, no explanation
 </constraints>
-
+{ctx_block}
 <question>{question}</question>
 <answer>{answer}</answer>
 
 <task>
-Rate relevance: 0 = completely irrelevant, 10 = perfectly relevant.
+Rate relevance considering:
+- Does the answer address what the question is asking?
+- Is the answer relevant within the domain established by the context?
+0 = completely irrelevant, 10 = perfectly relevant to both question and domain.
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
