@@ -350,19 +350,39 @@ cd frontend && npm run dev
 # 1. 환경변수 준비
 cp .env.example .env   # API 키 입력
 
-# 2. 프로덕션 빌드 & 실행
-docker compose up --build
-# → client(nginx): http://localhost:3000  |  server(FastAPI): http://localhost:8000
+# 2. 이미지 빌드
+docker compose build
 
-# 3. 개발 모드 (server --reload + client HMR)
+# 3. 백그라운드 실행
+docker compose up -d
+
+# 4. 로그 확인
+docker compose logs -f
+
+# 5. 중지
+docker compose down
+```
+
+```bash
+# 개발 모드 (server --reload + client Vite HMR)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-# → client(Vite HMR): http://localhost:3000  |  server(--reload): http://localhost:8000
+```
+
+```bash
+# 유용한 명령어
+docker compose ps                    # 컨테이너 상태 확인
+docker compose logs server --tail=50 # server 로그
+docker compose logs client --tail=20 # client(nginx) 로그
+docker compose restart server        # server만 재시작
+docker compose build client          # client 이미지만 재빌드
 ```
 
 | 서비스 | 포트 | 설명 |
 |--------|------|------|
 | client | 3000 | Nginx → SPA + `/api/` 프록시 → server |
-| server | 8000 | FastAPI (직접 접근 가능, Swagger /docs) |
+| server | 8000 | FastAPI (직접 접근 가능, Swagger `/docs`) |
+
+> **참고**: nginx upstream DNS 지연 문제로 `resolver 127.0.0.11`(Docker 내장 DNS) + `set $upstream` 변수 사용 → 요청 시점 동적 조회
 
 ---
 
