@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: server
+    ports:
+      - "8000:8000"
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  client:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ""   # 빈값 → /api/... 상대경로 → nginx가 server로 프록시
+    container_name: client
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy

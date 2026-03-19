@@ -1,0 +1,18 @@
+# 프론트엔드 개발용 Dockerfile (Vite HMR 지원)
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 패키지 설치
+COPY package.json package-lock.json ./
+RUN npm install
+
+# 소스 코드는 docker-compose volumes에서 마운트되므로
+# 빌드 시점 초기화용으로만 복사
+COPY . .
+
+# Vite 기본 포트
+EXPOSE 5173
+
+# Vite 개발 서버 실행 (--host: 컨테이너 외부 접근 허용)
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -1,0 +1,25 @@
+# 개발 오버라이드: backend --reload + frontend HMR (Vite dev server)
+# 사용법: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  server:
+    volumes:
+      - ./backend:/app/backend   # 코드 변경 실시간 반영
+    environment:
+      LOG_LEVEL: DEBUG
+    command:
+      ["uv", "run", "uvicorn", "backend.main:app",
+       "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      start_period: 60s
+
+  client:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev   # Vite dev server (HMR)
+    ports:
+      - "3000:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules          # node_modules는 컨테이너 내부 유지
+    depends_on:
+      - server                     # 개발 모드는 healthcheck 없이 단순 의존

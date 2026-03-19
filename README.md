@@ -292,28 +292,36 @@ A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50
 
 ## 빠른 시작
 
-### 1. 환경 설정
+### 로컬 개발 (권장)
+
+#### 1. 의존성 설치
 
 ```bash
-# Python (uv 권장)
+# Python (uv 권장, 프로젝트 루트에서 실행)
 uv sync
 
 # Node
 cd frontend && npm install
 ```
 
-### 2. 환경 변수
+#### 2. 환경 변수
 
 ```bash
-# backend/.env
-GOOGLE_API_KEY=...
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-SUPABASE_URL=...
-SUPABASE_API_KEY=...   # service_role 키
+# 프로젝트 루트에 .env 파일 생성 (.env.example 참고)
+cp .env.example .env
 ```
 
-### 3. DB 초기화 (최초 1회)
+```env
+ANTHROPIC_API_KEY=...
+GOOGLE_API_KEY=...
+OPENAI_API_KEY=...
+SUPABASE_URL=...
+SUPABASE_API_KEY=...   # service_role 키
+LOG_LEVEL=INFO
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+#### 3. DB 초기화 (최초 1회)
 
 Supabase SQL Editor에서 순서대로 실행:
 
@@ -322,15 +330,39 @@ backend/scripts/setup_vector_db.sql       # doc_chunks + match_doc_chunks RPC
 backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results, 뷰 2개
 ```
 
-### 4. 실행
+#### 4. 서버 실행
 
 ```bash
-# Backend
+# Backend (프로젝트 루트에서)
 python -m uvicorn backend.main:app --reload
+# → http://localhost:8000  |  Swagger: http://localhost:8000/docs
 
 # Frontend (별도 터미널)
 cd frontend && npm run dev
+# → http://localhost:3000
 ```
+
+---
+
+### Docker (로컬 환경 통일)
+
+```bash
+# 1. 환경변수 준비
+cp .env.example .env   # API 키 입력
+
+# 2. 프로덕션 빌드 & 실행
+docker compose up --build
+# → client(nginx): http://localhost:3000  |  server(FastAPI): http://localhost:8000
+
+# 3. 개발 모드 (server --reload + client HMR)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# → client(Vite HMR): http://localhost:3000  |  server(--reload): http://localhost:8000
+```
+
+| 서비스 | 포트 | 설명 |
+|--------|------|------|
+| client | 3000 | Nginx → SPA + `/api/` 프록시 → server |
+| server | 8000 | FastAPI (직접 접근 가능, Swagger /docs) |
 
 ---
 
@@ -353,6 +385,7 @@ cd frontend && npm run dev
 |--------|------|------|
 | `POST` | `/api/generate` | QA 생성 job 시작 |
 | `GET`  | `/api/generate/{job_id}/status` | 생성 job 상태 조회 |
+| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (최대 N개, context 포함) |
 | `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
 | `DELETE` | `/api/generate/{job_id}` | job 취소 |
 
@@ -413,4 +446,4 @@ cd frontend && npm run dev
 
 ---
 
-**Last Updated**: 2026-03-19 | **Branch**: main
+**Last Updated**: 2026-03-19 (2차) | **Branch**: main
