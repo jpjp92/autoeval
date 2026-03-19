@@ -1,12 +1,14 @@
-import { User, Key, Bell, Shield, Eye, EyeOff } from 'lucide-react';
+import { User, Key, Bell, Shield, Eye, EyeOff, GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/src/lib/utils';
+import { PipelineFlow } from './PipelineFlow';
 
 const sections = [
-  { id: 'profile',  label: 'Profile',  icon: User   },
-  { id: 'api-keys', label: 'API Keys', icon: Key    },
-  { id: 'notifications', label: 'Notifications', icon: Bell   },
-  { id: 'security', label: 'Security', icon: Shield },
+  { id: 'profile',       label: 'Profile',       icon: User      },
+  { id: 'api-keys',      label: 'API Keys',      icon: Key       },
+  { id: 'pipeline',      label: 'Pipeline',      icon: GitBranch },
+  { id: 'notifications', label: 'Notifications', icon: Bell      },
+  { id: 'security',      label: 'Security',      icon: Shield    },
 ];
 
 interface ApiKeyRowProps {
@@ -130,7 +132,7 @@ export function SettingsPanel() {
               <div className="mt-4 p-4 rounded-xl border border-indigo-100 bg-indigo-50/50">
                 <p className="text-xs font-semibold text-indigo-700 mb-1">Auth 연동 예정</p>
                 <p className="text-xs text-indigo-600 leading-relaxed">
-                  향후 Supabase Auth 테이블과 연동하여 사용자별 프로필, 권한, 설정을 독립적으로 관리할 예정입니다.
+                  향후 DB Auth 테이블과 연동하여 사용자별 프로필, 권한, 설정을 독립적으로 관리할 예정입니다.
                   현재는 단일 관리자 계정으로 운영됩니다.
                 </p>
               </div>
@@ -177,8 +179,21 @@ export function SettingsPanel() {
           </div>
         )}
 
+        {/* Pipeline Flow */}
+        {activeSection === 'pipeline' && (
+          <div className="h-full animate-in fade-in duration-300 -m-8">
+            <div className="px-8 pt-8 pb-4">
+              <h3 className="text-lg font-semibold text-slate-800 mb-1">Pipeline</h3>
+              <p className="text-sm text-slate-500">AutoEval 전체 데이터 처리 파이프라인 구조입니다. 드래그·줌·패닝으로 탐색하세요.</p>
+            </div>
+            <div style={{ height: 'calc(100% - 88px)' }}>
+              <PipelineFlow />
+            </div>
+          </div>
+        )}
+
         {/* 미구현 섹션 */}
-        {activeSection !== 'profile' && activeSection !== 'api-keys' && (
+        {activeSection !== 'profile' && activeSection !== 'api-keys' && activeSection !== 'pipeline' && (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 animate-in fade-in duration-300">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
               {(() => { const s = sections.find(s => s.id === activeSection); return s ? <s.icon className="w-6 h-6 text-slate-300" /> : null; })()}

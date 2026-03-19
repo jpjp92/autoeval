@@ -1,0 +1,243 @@
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  type Node,
+  type Edge,
+  BackgroundVariant,
+  Handle,
+  Position,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+// ── 레이아웃 상수 ────────────────────────────────────────────
+const C   = [0, 280, 560, 840, 1120]; // 컬럼 left X
+const GW  = 240;  // 그룹 너비
+const NW  = 210;  // 노드 너비
+const NOX = (GW - NW) / 2; // 노드 x offset 내 그룹 (= 15)
+const GY  = 72;   // 그룹 top Y (upload 아래)
+const NS  = 64;   // 노드 간격
+
+function nx(col: number) { return C[col] + NOX; }
+function ny(idx: number) { return GY + 28 + idx * NS; }
+function gh(n: number)   { return 28 + n * NS + 12; }  // 그룹 높이 (n = 노드 수)
+
+// ── STEP 별 색상 ─────────────────────────────────────────────
+const PALETTE = [
+  { bg: '#eef2ff55', bd: '#818cf8', tx: '#3730a3' },  // S1 indigo
+  { bg: '#fffbeb55', bd: '#fbbf24', tx: '#92400e' },  // S2 amber
+  { bg: '#ecfdf555', bd: '#34d399', tx: '#065f46' },  // S3 emerald
+  { bg: '#fff1f255', bd: '#fca5a5', tx: '#9f1239' },  // S4 red
+  { bg: '#eef2ff55', bd: '#818cf8', tx: '#3730a3' },  // S5 indigo
+];
+
+// ── 커스텀 노드 컴포넌트 ─────────────────────────────────────
+
+// 그룹 배경 (라벨 포함, non-interactive)
+function BgNode({ data }: { data: any }) {
+  return (
+    <div style={{
+      width: data.w, height: data.h,
+      background: data.bg,
+      border: `1.5px dashed ${data.bd}`,
+      borderRadius: 14,
+      pointerEvents: 'none',
+      position: 'relative',
+    }}>
+      <span style={{
+        position: 'absolute', top: 8, left: 12,
+        color: data.tx, fontWeight: 700, fontSize: 10.5,
+        letterSpacing: '0.01em',
+      }}>{data.label}</span>
+    </div>
+  );
+}
+
+// 처리 단계 노드
+function StepNode({ data }: { data: any }) {
+  return (
+    <div style={{
+      width: NW,
+      background: data.color ?? '#fff',
+      border: `1.5px solid ${data.bd}`,
+      borderRadius: 9,
+      padding: '7px 10px',
+      fontSize: 11,
+      color: data.tx,
+      textAlign: 'center',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    }}>
+      <Handle type="target" position={Position.Top}   style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Left}  style={{ opacity: 0 }} id="left" />
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} id="right" />
+      <div style={{ fontWeight: 700, lineHeight: 1.4, wordBreak: 'keep-all' }}>{data.label}</div>
+      {data.sub && (
+        <div style={{ fontWeight: 400, fontSize: 9.5, opacity: 0.7, marginTop: 2, lineHeight: 1.35, wordBreak: 'keep-all' }}>
+          {data.sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// DB 저장소 노드
+function DbNode({ data }: { data: any }) {
+  return (
+    <div style={{
+      width: NW,
+      background: '#ede9fe',
+      border: '1.5px solid #7c3aed',
+      borderRadius: 9,
+      padding: '6px 10px',
+      fontSize: 10,
+      color: '#5b21b6',
+      textAlign: 'center',
+      fontWeight: 600,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    }}>
+      <Handle type="target" position={Position.Top}   style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} id="right" />
+      <div style={{ wordBreak: 'keep-all' }}>🗄 {data.label}</div>
+    </div>
+  );
+}
+
+const nodeTypes = { bg: BgNode, step: StepNode, db: DbNode };
+
+// ── 노드 정의 ────────────────────────────────────────────────
+function s(id: string, col: number, row: number, label: string, sub: string | undefined, ci: number, extra?: object): Node {
+  return { id, type: 'step', position: { x: nx(col), y: ny(row) }, zIndex: 2,
+    data: { label, sub, bd: PALETTE[ci].bd, tx: PALETTE[ci].tx, ...extra } };
+}
+function d(id: string, col: number, row: number, label: string): Node {
+  return { id, type: 'db', position: { x: nx(col), y: ny(row) }, zIndex: 2, data: { label } };
+}
+function g(id: string, col: number, n: number, label: string, ci: number): Node {
+  return { id, type: 'bg', position: { x: C[col] - 5, y: GY - 4 },
+    selectable: false, draggable: false, zIndex: -1,
+    data: { label, w: GW + 10, h: gh(n), bg: PALETTE[ci].bg, bd: PALETTE[ci].bd, tx: PALETTE[ci].tx } };
+}
+
+const nodes: Node[] = [
+  // ── 업로드 ──
+  { id: 'upload', type: 'step', position: { x: nx(0), y: 0 }, zIndex: 2,
+    data: { label: '📄 PDF / DOCX 업로드', bd: '#6366f1', tx: '#3730a3', color: '#e0e7ff' } },
+
+  // ── S1: 데이터 규격화 ── (5 nodes)
+  g('g1', 0, 5, 'STEP 1  ·  데이터 규격화', 0),
+  s('s1-parse',  0, 0, 'PyMuPDF 파싱',         'Section-First 청킹',      0),
+  s('s1-norm',   0, 1, 'normalize_text',         '특수문자·줄바꿈 정리',    0),
+  s('s1-dedup',  0, 2, 'content_hash',           '중복 확인 · 신규만 처리', 0),
+  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '1536dim 벡터화',          0),
+  d('db1',       0, 4, 'doc_chunks'),
+
+  // ── S2: 계층 태깅 ── (4 nodes)
+  g('g2', 1, 4, 'STEP 2  ·  계층 태깅', 1),
+  s('s2-p1', 1, 0, 'Pass 1 — L1 master',   'analyze-hierarchy',      1),
+  s('s2-p2', 1, 1, 'Pass 2 — L2/L3 master','analyze-l2-l3',          1),
+  s('s2-p3', 1, 2, 'Pass 3 — 청크 태깅',   'apply-granular-tagging', 1),
+  d('db2',   1, 3, 'metadata  l1 / l2 / l3'),
+
+  // ── S3: QA 생성 ── (4 nodes)
+  g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
+  s('s3-filter', 2, 0, 'L1/L2 필터 조회', 'heading · colophon skip',  2),
+  s('s3-prof',   2, 1, 'domain_profiler',  'domain_profile (job당 1회)', 2),
+  s('s3-gen',    2, 2, '병렬 QA 생성',    'ThreadPoolExecutor · XML', 2),
+  d('db3',       2, 3, 'qa_gen_results'),
+
+  // ── S4: 4레이어 평가 ── (6 nodes)
+  g('g4', 3, 6, 'STEP 4  ·  4레이어 평가', 3),
+  s('s4-l1a',   3, 0, 'Layer 1-A  Syntax',     'Validation',                      3),
+  s('s4-l1b',   3, 1, 'Layer 1-B  Statistics', '다양성 · 중복률',                 3),
+  s('s4-l2',    3, 2, 'Layer 2  RAG Triad',    'Relevance · Groundedness',         3),
+  s('s4-l3',    3, 3, 'Layer 3  Quality',      'Factuality · Completeness',        3),
+  s('s4-score', 3, 4, '최종 점수 집계',        'syntax·stats ×0.1 / rag·quality ×0.4', 3,
+    { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
+  d('db4', 3, 5, 'qa_eval_results  ·  grade'),
+
+  // ── S5: 대시보드 ── (2 nodes)
+  g('g5', 4, 2, 'STEP 5  ·  대시보드', 4),
+  s('s5-api',  4, 0, 'GET /dashboard/metrics', 'Supabase 집계',                 4),
+  s('s5-view', 4, 1, '대시보드 뷰',            'QA · 점수 · 등급 분포 · 추이', 4,
+    { color: '#e0e7ff', tx: '#3730a3', bd: '#6366f1' }),
+];
+
+// ── 엣지 ────────────────────────────────────────────────────
+const iv = { stroke: '#94a3b8', strokeWidth: 1.5 };  // within group
+const xv = { stroke: '#6366f1', strokeWidth: 2 };    // cross group (animated)
+
+const edges: Edge[] = [
+  // Upload → S1
+  { id: 'e-up',    source: 'upload',    target: 's1-parse',  style: iv },
+
+  // S1 내부
+  { id: 'e-1a',    source: 's1-parse',  target: 's1-norm',   style: iv },
+  { id: 'e-1b',    source: 's1-norm',   target: 's1-dedup',  style: iv },
+  { id: 'e-1c',    source: 's1-dedup',  target: 's1-embed',  style: iv },
+  { id: 'e-1d',    source: 's1-embed',  target: 'db1',       style: iv },
+
+  // S1 → S2 (cross)
+  { id: 'e-x12',   source: 'db1',    target: 's2-p1',
+    sourceHandle: 'right', targetHandle: 'left',
+    type: 'smoothstep', animated: true, style: xv },
+
+  // S2 내부
+  { id: 'e-2a',    source: 's2-p1',    target: 's2-p2',     style: iv },
+  { id: 'e-2b',    source: 's2-p2',    target: 's2-p3',     style: iv },
+  { id: 'e-2c',    source: 's2-p3',    target: 'db2',       style: iv },
+
+  // S2 → S3 (cross)
+  { id: 'e-x23',   source: 'db2',    target: 's3-filter',
+    sourceHandle: 'right', targetHandle: 'left',
+    type: 'smoothstep', animated: true, style: xv },
+
+  // S3 내부
+  { id: 'e-3a',    source: 's3-filter', target: 's3-prof',   style: iv },
+  { id: 'e-3b',    source: 's3-prof',   target: 's3-gen',    style: iv },
+  { id: 'e-3c',    source: 's3-gen',    target: 'db3',       style: iv },
+
+  // S3 → S4 (cross)
+  { id: 'e-x34',   source: 'db3',    target: 's4-l1a',
+    sourceHandle: 'right', targetHandle: 'left',
+    type: 'smoothstep', animated: true, style: xv },
+
+  // S4 내부
+  { id: 'e-4a',    source: 's4-l1a',   target: 's4-l1b',    style: iv },
+  { id: 'e-4b',    source: 's4-l1b',   target: 's4-l2',     style: iv },
+  { id: 'e-4c',    source: 's4-l2',    target: 's4-l3',     style: iv },
+  { id: 'e-4d',    source: 's4-l3',    target: 's4-score',  style: iv },
+  { id: 'e-4e',    source: 's4-score', target: 'db4',       style: iv },
+
+  // S4 → S5 (cross)
+  { id: 'e-x45',   source: 'db4',    target: 's5-api',
+    sourceHandle: 'right', targetHandle: 'left',
+    type: 'smoothstep', animated: true, style: xv },
+
+  // S5 내부
+  { id: 'e-5a',    source: 's5-api',   target: 's5-view',   style: iv },
+];
+
+// ── 컴포넌트 ─────────────────────────────────────────────────
+export function PipelineFlow() {
+  return (
+    <div style={{ width: '100%', height: '100%' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.14 }}
+        minZoom={0.3}
+        maxZoom={2}
+        nodesDraggable={false}
+        panOnDrag={true}
+        zoomOnScroll={true}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
+        <Controls style={{ bottom: 12, right: 12, left: 'auto', top: 'auto' }} showInteractive={false} />
+      </ReactFlow>
+    </div>
+  );
+}
