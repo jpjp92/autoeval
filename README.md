@@ -29,11 +29,11 @@ flowchart LR
         direction TB
         A1[PyMuPDF 파싱\nSection-First 청킹]
         A2[normalize_text\n특수문자·줄바꿈 정리]
-        A3{content_hash\n중복 확인}
+        A3[content_hash\n중복 확인 · 신규만 처리]
         A4[Gemini Embedding 2\n1536dim 벡터화]
         A5[(doc_chunks)]
-        A1 --> A2 --> A3 --신규--> A4 --> A5
-        A3 --중복--> A5
+        A6[ ]
+        A1 --> A2 --> A3 --> A4 --> A5 ~~~ A6
     end
 
     subgraph S2["STEP 2 · 계층 태깅"]
@@ -41,8 +41,10 @@ flowchart LR
         B1[Pass 1\nL1 master 확정]
         B2[Pass 2\nL2/L3 master 생성]
         B3[Pass 3\n청크별 태깅]
-        B4[(metadata\nl1/l2/l3)]
-        B1 --> B2 --> B3 --> B4
+        B4[(metadata l1/l2/l3)]
+        B5[ ]
+        B6[ ]
+        B1 --> B2 --> B3 --> B4 ~~~ B5 ~~~ B6
     end
 
     subgraph S3["STEP 3 · QA 생성"]
@@ -51,7 +53,9 @@ flowchart LR
         C2[domain_profiler\ndomain_profile 생성]
         C3[병렬 QA 생성\nThreadPoolExecutor]
         C4[(qa_gen_results)]
-        C1 --> C2 --> C3 --> C4
+        C5[ ]
+        C6[ ]
+        C1 --> C2 --> C3 --> C4 ~~~ C5 ~~~ C6
     end
 
     subgraph S4["STEP 4 · 4레이어 평가"]
@@ -60,8 +64,8 @@ flowchart LR
         D2[Layer 1-B\nDataset Statistics]
         D3[Layer 2\nRAG Triad]
         D4[Layer 3\nQuality Score]
-        D5[최종 점수\nsyntax·stats×0.1\nrag·quality×0.4]
-        D6[(qa_eval_results\nfinal_score · grade)]
+        D5[최종 점수\nsyntax·stats×0.1 / rag·quality×0.4]
+        D6[(qa_eval_results · grade)]
         D1 --> D2 --> D3 --> D4 --> D5 --> D6
     end
 
@@ -69,10 +73,24 @@ flowchart LR
         direction TB
         E1[GET /api/dashboard/metrics]
         E2[총 QA · 평균 점수\n등급 분포 · 추이]
-        E1 --> E2
+        E3[ ]
+        E4[ ]
+        E5[ ]
+        E6[ ]
+        E1 --> E2 ~~~ E3 ~~~ E4 ~~~ E5 ~~~ E6
     end
 
     UP --> S1 --> S2 --> S3 --> S4 --> S5
+
+    style A6 fill:none,stroke:none,color:transparent
+    style B5 fill:none,stroke:none,color:transparent
+    style B6 fill:none,stroke:none,color:transparent
+    style C5 fill:none,stroke:none,color:transparent
+    style C6 fill:none,stroke:none,color:transparent
+    style E3 fill:none,stroke:none,color:transparent
+    style E4 fill:none,stroke:none,color:transparent
+    style E5 fill:none,stroke:none,color:transparent
+    style E6 fill:none,stroke:none,color:transparent
 ```
 
 ---
