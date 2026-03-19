@@ -80,7 +80,7 @@ interface EvalReport {
       data_sufficiency: { score: number };
     };
     rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_clarity: number; avg_score: number } };
-    quality?: { pass_count: number; pass_rate: number; summary: { avg_factuality: number; avg_completeness: number; avg_groundedness: number; avg_quality: number } };
+    quality?: { pass_count: number; pass_rate: number; summary: { avg_factuality: number; avg_completeness: number; avg_specificity: number; avg_conciseness: number; avg_quality: number } };
   };
   summary: {
     syntax_pass_rate: number;
@@ -145,7 +145,8 @@ function buildChartData(report: EvalReport) {
   const llmQualityScores = [
     { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0 },
     { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
-    { name: '근거성', nameEn: 'Groundedness', score: qua?.summary?.avg_groundedness  ?? 0 },
+    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
+    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
     { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
     { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
   ];
@@ -182,7 +183,8 @@ function buildChartDataFromHistory(item: HistoryItem) {
   const llmQualityScores = [
     { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0 },
     { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
-    { name: '근거성', nameEn: 'Groundedness', score: qua?.summary?.avg_groundedness  ?? 0 },
+    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
+    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
     { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
     { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
   ];

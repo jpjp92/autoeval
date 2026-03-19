@@ -38,10 +38,11 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
   const chartData = (scoreTrend || []).map((item, idx) => {
     const d = item.date ? new Date(item.date) : null;
     const dateLabel = d
-      ? `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`
+      ? `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
       : `#${idx + 1}`;
     return {
       idx,
+      seqLabel: `#${idx + 1}`,
       dateLabel,
       score: item.score != null ? +(item.score * 100).toFixed(1) : 0,
       doc: item.doc || '',
@@ -85,7 +86,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 tickLine={false}
                 tick={{ fill: '#94a3b8', fontSize: 12 }}
                 dy={10}
-                tickFormatter={(idx) => chartData[idx]?.dateLabel ?? ''}
+                tickFormatter={(idx) => chartData[idx]?.seqLabel ?? ''}
               />
               <YAxis
                 axisLine={false}

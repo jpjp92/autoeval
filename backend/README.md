@@ -24,7 +24,7 @@ backend/
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
 │   ├── rag_triad.py             # Layer 2: RAG Triad (Relevance/Groundedness/Clarity)
-│   ├── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness)
+│   ├── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness/Specificity/Conciseness)
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository 패키지
@@ -136,7 +136,7 @@ API 문서: `http://localhost:8000/docs`
 Layer 1-A  Syntax Validation      구문 정확성 (answerable 필드, Q/A 길이 등)
 Layer 1-B  Dataset Statistics     다양성·중복률 (SequenceMatcher 기반)
 Layer 2    RAG Triad               Relevance / Groundedness / Clarity (TruLens + LangChain judge)
-Layer 3    Quality Score           Factuality / Completeness (LLM judge)
+Layer 3    Quality Score           Factuality / Completeness / Specificity / Conciseness (LLM judge, intent-aware)
 
 final_score = syntax*0.1 + stats*0.1 + rag*0.4 + quality*0.4
 등급: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)

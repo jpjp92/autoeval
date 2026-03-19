@@ -57,7 +57,7 @@ flowchart TD
     D1[Layer 1-A Syntax — 필드 · 길이 검사]
     D2[Layer 1-B Statistics — 다양성 · 중복률]
     D3[Layer 2 RAG Triad — 관련성 · 근거성 · 명확성]
-    D4[Layer 3 Quality — 사실성 · 완결성]
+    D4[Layer 3 Quality — 사실성 · 완전성 · 구체성 · 간결성]
     D5[최종 점수 집계 — 구문·통계 ×0.1 / RAG·품질 ×0.4]
     DB4[(DB 저장: qa_eval_results)]
 
@@ -133,7 +133,7 @@ flowchart TD
 | Layer 1-A Syntax | `syntax_validator.py` | 필드 존재·타입·길이 검사 | 10% |
 | Layer 1-B Statistics | `dataset_stats.py` | 다양성·중복률 통계 | 10% |
 | Layer 2 RAG Triad | `rag_triad.py` | 관련성 · 근거성 · 명확성 | 40% |
-| Layer 3 Quality | `qa_quality.py` | 사실성 · 완결성 | 40% |
+| Layer 3 Quality | `qa_quality.py` | 사실성 · 완전성 · 구체성 · 간결성 | 40% |
 
 ```
 final_score = syntax×0.1 + stats×0.1 + rag×0.4 + quality×0.4
@@ -375,6 +375,20 @@ docker compose logs server --tail=50 # server 로그
 docker compose logs client --tail=20 # client(nginx) 로그
 docker compose restart server        # server만 재시작
 docker compose build client          # client 이미지만 재빌드
+```
+
+```bash
+# 코드 변경 후 반영 방법
+# ⚠️  docker compose up -d 만으로는 변경사항이 반영되지 않음 (기존 이미지 재사용)
+
+# Python(백엔드) 변경 시
+docker compose restart server
+
+# React/TSX(프론트엔드) 변경 시 — nginx가 컴파일된 정적 파일을 서빙하므로 재빌드 필요
+docker compose build client && docker compose up -d client
+
+# 백엔드 + 프론트엔드 모두 변경 시
+docker compose up -d --build
 ```
 
 | 서비스 | 포트 | 설명 |
