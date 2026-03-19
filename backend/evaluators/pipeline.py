@@ -546,6 +546,11 @@ def run_evaluation(
                     "C":  "개선 필요한 품질 (50% 이상)",
                     "F":  "재작업 필요 (50% 미만)",
                 },
+                # RecommendationsResult 구조 반환:
+                #   dataset_level      List[str]          — 데이터셋 수준 ⚠️/✅ 메시지
+                #   dimension_analysis Dict[str, dict]    — 차원별 severity/pct_below/std_dev
+                #   failing_qa_items   List[dict]         — avg_score<0.70 QA, 최대 20개
+                #   top_issues         List[str]          — 문제 차원 빈도 순
                 "recommendations": generate_recommendations(
                     syntax_pass_rate, dataset_quality, rag_data, quality_data
                 ),

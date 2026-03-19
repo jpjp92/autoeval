@@ -1,8 +1,46 @@
 """
 Recommendations
 평가 결과에 따른 개선 권고사항 생성 (데이터셋 수준 + QA 아이템별 피드백)
+
+반환 구조:
+    RecommendationsResult = {
+        "dataset_level":      List[str]   — 데이터셋 수준 메시지 (⚠️/✅)
+        "dimension_analysis": Dict[str, DimensionInfo]
+                              — 각 차원별 severity("ok"|"warning"|"critical"),
+                                pct_below_threshold, std_dev, description
+        "failing_qa_items":   List[FailingQAItem]
+                              — avg_score < 0.70 인 QA, 점수 낮은 순 최대 20개
+                                각 항목: {qa_index, avg_score, issues[{dimension, score, advice}]}
+        "top_issues":         List[str]  — 문제 차원 빈도 순 이름 목록
+    }
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypedDict
+
+
+class DimensionInfo(TypedDict):
+    severity: str            # "ok" | "warning" | "critical"
+    pct_below_threshold: float
+    std_dev: float
+    description: str
+
+
+class FailingQAIssue(TypedDict):
+    dimension: str
+    score: float
+    advice: str
+
+
+class FailingQAItem(TypedDict):
+    qa_index: int
+    avg_score: float
+    issues: List[FailingQAIssue]
+
+
+class RecommendationsResult(TypedDict):
+    dataset_level: List[str]
+    dimension_analysis: Dict[str, DimensionInfo]
+    failing_qa_items: List[FailingQAItem]
+    top_issues: List[str]
 
 
 # 차원별 임계치 및 설명 (한국어)
@@ -25,7 +63,7 @@ def generate_recommendations(
     stats_score: float,
     rag_data: Optional[Dict],
     quality_data: Optional[Dict],
-) -> Dict:
+) -> RecommendationsResult:
     """
     평가 결과에 따른 개선 권고사항 생성.
 
