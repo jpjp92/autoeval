@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
-  FileJson, Code2, ChevronDown, Clock, History, Loader2,
+  Code2, ChevronDown, Clock, History, Loader2,
   ArrowLeft, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -645,18 +645,27 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
-                {(['xlsx', 'html', 'json'] as const).map((fmt) => (
+                {(['xlsx', 'html'] as const).map((fmt) => (
                   <button key={fmt} onClick={() => handleExport(fmt)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-slate-700 border-b border-slate-100 last:border-b-0">
                     {fmt === 'xlsx' && <FileText className="w-4 h-4 text-blue-600" />}
                     {fmt === 'html' && <Code2    className="w-4 h-4 text-green-600" />}
-                    {fmt === 'json' && <FileJson className="w-4 h-4 text-purple-600" />}
                     <div>
                       <div className="font-medium">{fmt.toUpperCase()}</div>
-                      <div className="text-xs text-slate-500">{fmt === 'xlsx' ? 'Spreadsheet' : fmt === 'html' ? 'Formatted doc' : 'Raw data'}</div>
+                      <div className="text-xs text-slate-500">{fmt === 'xlsx' ? 'Spreadsheet' : 'Formatted doc'}</div>
                     </div>
                   </button>
                 ))}
+                {/* JSON export — 추후 활성화
+                <button onClick={() => handleExport('json')}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-slate-700">
+                  <FileJson className="w-4 h-4 text-purple-600" />
+                  <div>
+                    <div className="font-medium">JSON</div>
+                    <div className="text-xs text-slate-500">Raw data</div>
+                  </div>
+                </button>
+                */}
               </div>
             )}
           </div>

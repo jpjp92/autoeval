@@ -813,3 +813,43 @@ def setup_generation_routes(app: FastAPI):
         except Exception as e:
             logger.error(f"Error cancelling job: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/generate/{job_id}/preview", tags=["generation"])
+    async def get_generation_preview(job_id: str, limit: int = 5) -> dict:
+        """
+        생성 완료된 job의 QA 미리보기 (최대 limit개)
+        qa_list에서 순차적으로 QA를 추출해 context snippet과 함께 반환.
+        """
+        job = job_manager.get_job(job_id)
+        if not job:
+            return {"success": False, "error": "Job not found"}
+        if not job.result_id:
+            return {"success": False, "error": "No result available yet"}
+
+        try:
+            from config.supabase_client import get_qa_generation_from_supabase
+            data = await get_qa_generation_from_supabase(job.result_id)
+            if not data:
+                return {"success": False, "error": "Generation data not found"}
+
+            preview = []
+            total = 0
+            for chunk in data.get("qa_list") or []:
+                chunk_qa_list = chunk.get("qa_list") or []
+                total += len(chunk_qa_list)
+                for qa in chunk_qa_list:
+                    if len(preview) >= limit:
+                        break
+                    preview.append({
+                        "context": (chunk.get("text") or "")[:200],
+                        "q": qa.get("q", ""),
+                        "a": qa.get("a", ""),
+                        "intent": qa.get("intent", ""),
+                    })
+                if len(preview) >= limit:
+                    break
+
+            return {"success": True, "preview": preview, "total": total}
+        except Exception as e:
+            logger.error(f"Failed to fetch generation preview: {e}")
+            return {"success": False, "error": str(e)}
