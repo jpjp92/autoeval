@@ -22,75 +22,53 @@ PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 4레�
 ## 전체 플로우
 
 ```mermaid
-flowchart LR
-    UP([📄 PDF / DOCX 업로드])
+%%{init: {"theme": "default", "themeVariables": {"fontSize": "13px", "rankSpacing": 35, "nodeSpacing": 25}}}%%
+flowchart TD
+    UP([PDF / DOCX 업로드])
 
     subgraph S1["STEP 1 · 데이터 규격화"]
-        direction TB
-        A1[PyMuPDF 파싱\nSection-First 청킹]
-        A2[normalize_text\n특수문자·줄바꿈 정리]
-        A3[content_hash\n중복 확인 · 신규만 처리]
-        A4[Gemini Embedding 2\n1536dim 벡터화]
+        A1[PyMuPDF 파싱]
+        A2[normalize_text]
+        A3{content_hash\n중복 확인}
+        A4[Gemini Embedding 2\n1536dim]
         A5[(doc_chunks)]
-        A6[ ]
-        A1 --> A2 --> A3 --> A4 --> A5 ~~~ A6
+        A1 --> A2 --> A3 --신규--> A4 --> A5
+        A3 --중복--> A5
     end
 
     subgraph S2["STEP 2 · 계층 태깅"]
-        direction TB
-        B1[Pass 1\nL1 master 확정]
-        B2[Pass 2\nL2/L3 master 생성]
-        B3[Pass 3\n청크별 태깅]
+        B1[Pass 1 — L1 master]
+        B2[Pass 2 — L2/L3 master]
+        B3[Pass 3 — 청크 태깅]
         B4[(metadata l1/l2/l3)]
-        B5[ ]
-        B6[ ]
-        B1 --> B2 --> B3 --> B4 ~~~ B5 ~~~ B6
+        B1 --> B2 --> B3 --> B4
     end
 
     subgraph S3["STEP 3 · QA 생성"]
-        direction TB
         C1[L1/L2 필터 조회]
-        C2[domain_profiler\ndomain_profile 생성]
-        C3[병렬 QA 생성\nThreadPoolExecutor]
+        C2[domain_profiler]
+        C3[병렬 QA 생성]
         C4[(qa_gen_results)]
-        C5[ ]
-        C6[ ]
-        C1 --> C2 --> C3 --> C4 ~~~ C5 ~~~ C6
+        C1 --> C2 --> C3 --> C4
     end
 
     subgraph S4["STEP 4 · 4레이어 평가"]
-        direction TB
-        D1[Layer 1-A\nSyntax Validation]
-        D2[Layer 1-B\nDataset Statistics]
-        D3[Layer 2\nRAG Triad]
-        D4[Layer 3\nQuality Score]
-        D5[최종 점수\nsyntax·stats×0.1 / rag·quality×0.4]
+        D1[Layer 1-A Syntax]
+        D2[Layer 1-B Statistics]
+        D3[Layer 2 RAG Triad]
+        D4[Layer 3 Quality]
+        D5[최종 점수 집계\n0.1·0.1·0.4·0.4]
         D6[(qa_eval_results · grade)]
         D1 --> D2 --> D3 --> D4 --> D5 --> D6
     end
 
     subgraph S5["STEP 5 · 대시보드"]
-        direction TB
         E1[GET /api/dashboard/metrics]
-        E2[총 QA · 평균 점수\n등급 분포 · 추이]
-        E3[ ]
-        E4[ ]
-        E5[ ]
-        E6[ ]
-        E1 --> E2 ~~~ E3 ~~~ E4 ~~~ E5 ~~~ E6
+        E2[QA · 점수 · 등급 · 추이]
+        E1 --> E2
     end
 
     UP --> S1 --> S2 --> S3 --> S4 --> S5
-
-    style A6 fill:none,stroke:none,color:transparent
-    style B5 fill:none,stroke:none,color:transparent
-    style B6 fill:none,stroke:none,color:transparent
-    style C5 fill:none,stroke:none,color:transparent
-    style C6 fill:none,stroke:none,color:transparent
-    style E3 fill:none,stroke:none,color:transparent
-    style E4 fill:none,stroke:none,color:transparent
-    style E5 fill:none,stroke:none,color:transparent
-    style E6 fill:none,stroke:none,color:transparent
 ```
 
 ---
