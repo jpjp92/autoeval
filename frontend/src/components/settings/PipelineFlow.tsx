@@ -129,21 +129,21 @@ const nodes: Node[] = [
   s('s1-parse',  0, 0, 'PDF / DOCX 파싱',       'Section-First 청킹',      0),
   s('s1-norm',   0, 1, 'normalize_text',         '특수문자·줄바꿈 정리',    0),
   s('s1-dedup',  0, 2, 'content_hash',           '중복 확인 · 신규만 처리', 0),
-  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '3072dim 벡터화',          0),
+  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '1536차원 벡터 변환',      0),
   d('db1',       0, 4, 'DB 저장: doc_chunks'),
 
   // ── S2: 계층 태깅 ── (4 nodes)
   g('g2', 1, 4, 'STEP 2  ·  계층 태깅', 1),
-  s('s2-p1', 1, 0, '단계 1 — L1 master',   'analyze-hierarchy',      1),
-  s('s2-p2', 1, 1, '단계 2 — L2/L3 master','analyze-l2-l3',          1),
-  s('s2-p3', 1, 2, '단계 3 — 청크 태깅',   'apply-granular-tagging', 1),
+  s('s2-p1', 1, 0, '단계 1 — L1 도출',    '대분류 카테고리 추출',    1),
+  s('s2-p2', 1, 1, '단계 2 — L2/L3 도출', '중·소분류 카테고리 추출', 1),
+  s('s2-p3', 1, 2, '단계 3 — 청크 태깅',  '청크별 계층 일괄 적용',   1),
   d('db2',   1, 3, 'DB 저장: doc_chuncks.metadata'),
 
   // ── S3: QA 생성 ── (4 nodes)
   g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
-  s('s3-filter', 2, 0, 'L1/L2 필터 조회', 'heading · colophon skip',  2),
-  s('s3-prof',   2, 1, 'domain_profiler',  'domain_profile (job당 1회)', 2),
-  s('s3-gen',    2, 2, '병렬 QA 생성',    'ThreadPoolExecutor · XML', 2),
+  s('s3-filter', 2, 0, 'L1/L2 필터 조회', '계층 기반 청크 선별',     2),
+  s('s3-prof',   2, 1, '도메인 분석',      '대상 도메인 · 의도 파악', 2),
+  s('s3-gen',    2, 2, '병렬 QA 생성',     '다중 모델 동시 생성',     2),
   d('db3',       2, 3, 'DB 저장: qa_gen_results'),
 
   // ── S4: 4레이어 평가 ── (6 nodes)
@@ -238,7 +238,10 @@ export function PipelineFlow() {
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
-        <Controls style={{ bottom: 12, right: 12, left: 'auto', top: 'auto' }} showInteractive={false} />
+        <Controls
+          style={{ bottom: 4, right: 10, left: 'auto', top: 'auto', transform: 'scale(0.75)', transformOrigin: 'bottom right' }}
+          showInteractive={false}
+        />
       </ReactFlow>
     </div>
   );
