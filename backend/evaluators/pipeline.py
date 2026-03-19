@@ -68,6 +68,24 @@ except ImportError:
         is_supabase_available = lambda: False
 
 
+# ============= 분포 통계 헬퍼 =============
+
+def _distribution_stats(scores: list, key: str, threshold: float = 0.70) -> dict:
+    """score 리스트에서 mean, std_dev, pct_below_threshold 계산"""
+    values = [s.get(key, 0.0) for s in scores if key in s]
+    n = max(len(values), 1)
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    std_dev = variance ** 0.5
+    pct_below = sum(1 for v in values if v < threshold) / n * 100
+    return {
+        "mean":                round(mean, 3),
+        "std_dev":             round(std_dev, 3),
+        "pct_below_threshold": round(pct_below, 2),
+        "threshold":           threshold,
+    }
+
+
 # ============= Worker 함수 =============
 
 def _syntax_worker(args):
@@ -89,7 +107,7 @@ def _rag_worker(args):
         # SQLite UNIQUE constraint 충돌 발생 (trulens_feedback_defs)
         # TruLens SQLite 기록은 TruLens 대시보드 전용이며 평가 스코어에 영향 없음
         # → 평가 메서드 직접 호출로 대체 (결과는 Supabase에 저장)
-        relevance    = rag_evaluator.evaluate_relevance(question, answer)
+        relevance    = rag_evaluator.evaluate_relevance(question, answer, context)
         groundedness = rag_evaluator.evaluate_groundedness(answer, context)
         clarity      = rag_evaluator.evaluate_clarity(question, answer)
 
@@ -107,24 +125,27 @@ def _rag_worker(args):
 
 
 def _quality_worker(args):
-    """Layer 3: 단일 QA Quality 평가 worker (3 calls → 1 call 통합)"""
+    """Layer 3: 단일 QA Quality 평가 worker (4 차원, 단일 LLM 호출)"""
     i, qa, quality_evaluator, job_id = args
     try:
         scores = quality_evaluator.evaluate_all(
             question=qa.get("q", ""),
             answer=qa.get("a", ""),
             context=qa.get("context", ""),
+            intent=qa.get("intent", ""),
         )
         factuality   = scores["factuality"]
         completeness = scores["completeness"]
-        groundedness = scores["groundedness"]
+        specificity  = scores["specificity"]
+        conciseness  = scores["conciseness"]
 
-        avg_quality = (factuality + completeness + groundedness) / 3
+        avg_quality = (factuality + completeness + specificity + conciseness) / 4
         return i, {
             "qa_index":     i,
             "factuality":   round(factuality, 3),
             "completeness": round(completeness, 3),
-            "groundedness": round(groundedness, 3),
+            "specificity":  round(specificity, 3),
+            "conciseness":  round(conciseness, 3),
             "avg_quality":  round(avg_quality, 3),
             "pass":         avg_quality >= 0.70,
         }
@@ -271,6 +292,12 @@ def run_full_evaluation_pipeline(
                 "avg_groundedness": round(sum(s.get("groundedness", 0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "avg_clarity":      round(sum(s.get("clarity",      0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "avg_score":        round(sum(s.get("avg_score",    0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "distribution": {
+                    "relevance":    _distribution_stats(rag_scores_list, "relevance"),
+                    "groundedness": _distribution_stats(rag_scores_list, "groundedness"),
+                    "clarity":      _distribution_stats(rag_scores_list, "clarity"),
+                    "overall":      _distribution_stats(rag_scores_list, "avg_score"),
+                },
             },
         }
 
@@ -285,7 +312,7 @@ def run_full_evaluation_pipeline(
         logger.info(f"[{job_id}] ⭐ Layer 3: Quality Evaluation starting (workers={max_api_workers})...")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
-            eval_manager.update_layer_status(job_id, "quality", "running", 5, f"사실성, 완전성, 근거성 CoT 평가 중... (0/{len(valid_qa)})")
+            eval_manager.update_layer_status(job_id, "quality", "running", 5, f"사실성, 완전성, 구체성, 간결성 CoT 평가 중... (0/{len(valid_qa)})")
 
         quality_evaluator = QAQualityEvaluator(evaluator_model)
         quality_scores: Dict[int, dict] = {}
@@ -329,8 +356,16 @@ def run_full_evaluation_pipeline(
             "summary": {
                 "avg_factuality":   round(sum(s.get("factuality",   0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
                 "avg_completeness": round(sum(s.get("completeness", 0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
-                "avg_groundedness": round(sum(s.get("groundedness", 0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
+                "avg_specificity":  round(sum(s.get("specificity",  0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
+                "avg_conciseness":  round(sum(s.get("conciseness",  0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
                 "avg_quality":      round(sum(valid_qs) / max(len(valid_qs), 1), 3),
+                "distribution": {
+                    "factuality":   _distribution_stats(quality_scores_list, "factuality"),
+                    "completeness": _distribution_stats(quality_scores_list, "completeness"),
+                    "specificity":  _distribution_stats(quality_scores_list, "specificity"),
+                    "conciseness":  _distribution_stats(quality_scores_list, "conciseness"),
+                    "overall":      _distribution_stats(quality_scores_list, "avg_quality"),
+                },
             },
         }
 
@@ -497,6 +532,10 @@ def run_evaluation(
                 "quality_pass_rate":     quality_pass_rate,
                 "final_score":           round(final_score, 3),
                 "grade":                 grade,
+                "avg_specificity":       round(quality_data["summary"].get("avg_specificity", 0.65), 3) if quality_data else None,
+                "avg_conciseness":       round(quality_data["summary"].get("avg_conciseness", 0.65), 3) if quality_data else None,
+                "rag_distribution":      rag_data["summary"].get("distribution", {}) if rag_data else {},
+                "quality_distribution":  quality_data["summary"].get("distribution", {}) if quality_data else {},
             },
             "interpretation": {
                 "grade_meaning": {
@@ -508,7 +547,7 @@ def run_evaluation(
                     "F":  "재작업 필요 (50% 미만)",
                 },
                 "recommendations": generate_recommendations(
-                    syntax_pass_rate, dataset_quality, rag_avg, quality_avg
+                    syntax_pass_rate, dataset_quality, rag_data, quality_data
                 ),
             },
         }

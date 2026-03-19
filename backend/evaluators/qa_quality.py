@@ -93,15 +93,15 @@ class QAQualityEvaluator:
         return "openai"
 
     def _call_llm_combined(self, prompt: str) -> str:
-        """3개 지표를 단일 호출로 평가 — JSON 응답"""
+        """4개 지표를 단일 호출로 평가 — JSON 응답"""
         sys_msg = """\
 <role>
 You are a strict but fair data quality auditor evaluating QA pairs.
-Evaluate all three dimensions objectively based solely on the provided context.
+Evaluate all four dimensions objectively based solely on the provided context.
 </role>
 <output_format>
 Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
-{"factuality": <int 0-10>, "completeness": <int 0-10>, "groundedness": <int 0-10>}
+{"factuality": <int 0-10>, "completeness": <int 0-10>, "specificity": <int 0-10>, "conciseness": <int 0-10>}
 </output_format>"""
         try:
             if self.provider == "openai" and self.client:
@@ -112,7 +112,7 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
                         {"role": "user",   "content": prompt},
                     ],
                     temperature=0,
-                    max_completion_tokens=300,
+                    max_completion_tokens=400,
                 )
                 if not response or not response.choices:
                     return "{}"
@@ -132,7 +132,7 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
         return "{}"
 
     def _parse_combined(self, raw: str) -> dict:
-        """JSON 응답에서 3개 점수 파싱 — 실패 시 0.5 fallback"""
+        """JSON 응답에서 4개 점수 파싱 — 실패 시 0.5 fallback"""
         # 마크다운 코드블록 제거
         text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
@@ -143,21 +143,23 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
             return {
                 "factuality":   _score("factuality"),
                 "completeness": _score("completeness"),
-                "groundedness": _score("groundedness"),
+                "specificity":  _score("specificity"),
+                "conciseness":  _score("conciseness"),
             }
         except Exception:
             logger.warning(f"Combined parse failed, raw: {raw[:200]}")
-            return {"factuality": 0.5, "completeness": 0.5, "groundedness": 0.5}
+            return {"factuality": 0.5, "completeness": 0.5, "specificity": 0.5, "conciseness": 0.5}
 
-    def evaluate_all(self, question: str, answer: str, context: str) -> dict:
-        """사실성·완전성·근거성을 단일 LLM 호출로 평가 (3 calls → 1 call)"""
+    def evaluate_all(self, question: str, answer: str, context: str, intent: str = "") -> dict:
+        """사실성·완전성·구체성·간결성을 단일 LLM 호출로 평가 (intent 타입 반영)"""
         clean_ctx = clean_markdown(context)
+        intent_tag = f"\n<intent_type>{intent}</intent_type>" if intent else ""
         prompt = f"""<context>
 {clean_ctx[:3500]}
 </context>
 
 <question>{question}</question>
-<answer>{answer}</answer>
+<answer>{answer}</answer>{intent_tag}
 
 <scoring_dimensions>
 1. factuality (0-10): Are the answer's claims factually consistent with the context?
@@ -165,24 +167,31 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
    - 6-7: Core claims match, minor gaps
    - 0-3: Claims contradict or cannot be derived from context
 
-2. completeness (0-10): Does the answer fully address the question?
-   - 10: Comprehensive, covers all aspects
-   - 6-7: Addresses main point, lacks some detail
-   - 0-3: Barely addresses the question
+2. completeness (0-10): Does the answer fully address the question given its intent type?
+   Intent-specific rubrics:
+   - list / procedure: 10 = all items/steps enumerated; 5 = partial list; 0 = single sentence
+   - boolean: 10 = clear yes/no + brief reason from context; 5 = yes/no only; 0 = hedged non-answer
+   - numeric: 10 = exact figure cited with unit; 5 = approximate; 0 = no figure present
+   - factoid / definition / how / why / (other): 10 = comprehensive; 6-7 = main point covered; 0-3 = barely addresses
 
-3. groundedness (0-10): Can the answer be derived/inferred from the context?
-   - 10: All claims clearly derivable from context
-   - 6-7: Core claims derivable, minor unsupported details
-   - 0-3: Most claims cannot be traced to context
+3. specificity (0-10): Is the answer precise rather than vague or generic?
+   - 10: Concrete, uses specific entities/numbers/procedures from context
+   - 5-6: Partially specific, some vague phrases
+   - 0-3: Generic filler language ("it depends", "various methods", "as appropriate")
+
+4. conciseness (0-10): Is the answer appropriately sized for the question type?
+   - list / procedure: 10 = enumerated items without padding; 5 = correct but verbose
+   - boolean: 10 = answer within 3 sentences; 5 = over-explained; 0 = key answer buried
+   - others: 10 = complete in ≤5 sentences without repetition; 5 = some padding; 0 = excessive
 </scoring_dimensions>
 
 <task>
-Evaluate the QA pair on all three dimensions. Score each 0-10.
+Evaluate the QA pair on all four dimensions. Score each 0-10.
 Return ONLY valid JSON:
-{{"factuality": <0-10>, "completeness": <0-10>, "groundedness": <0-10>}}
+{{"factuality": <0-10>, "completeness": <0-10>, "specificity": <0-10>, "conciseness": <0-10>}}
 </task>"""
         try:
             raw = self._call_llm_combined(prompt)
             return self._parse_combined(raw)
         except Exception:
-            return {"factuality": 0.5, "completeness": 0.5, "groundedness": 0.5}
+            return {"factuality": 0.5, "completeness": 0.5, "specificity": 0.5, "conciseness": 0.5}
