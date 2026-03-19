@@ -8,7 +8,7 @@ const sections = [
   { id: 'api-keys',      label: 'API Keys',      icon: Key       },
   { id: 'pipeline',      label: 'Pipeline',      icon: GitBranch },
   { id: 'notifications', label: 'Notifications', icon: Bell      },
-  { id: 'security',      label: 'Security',      icon: Shield    },
+  // { id: 'security',      label: 'Security',      icon: Shield    },
 ];
 
 interface ApiKeyRowProps {

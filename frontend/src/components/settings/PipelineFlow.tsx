@@ -126,40 +126,41 @@ const nodes: Node[] = [
 
   // ── S1: 데이터 규격화 ── (5 nodes)
   g('g1', 0, 5, 'STEP 1  ·  데이터 규격화', 0),
-  s('s1-parse',  0, 0, 'PyMuPDF 파싱',         'Section-First 청킹',      0),
+  s('s1-parse',  0, 0, 'PDF / DOCX 파싱',       'Section-First 청킹',      0),
   s('s1-norm',   0, 1, 'normalize_text',         '특수문자·줄바꿈 정리',    0),
   s('s1-dedup',  0, 2, 'content_hash',           '중복 확인 · 신규만 처리', 0),
-  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '1536dim 벡터화',          0),
-  d('db1',       0, 4, 'doc_chunks'),
+  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '3072dim 벡터화',          0),
+  d('db1',       0, 4, 'DB 저장: doc_chunks'),
 
   // ── S2: 계층 태깅 ── (4 nodes)
   g('g2', 1, 4, 'STEP 2  ·  계층 태깅', 1),
-  s('s2-p1', 1, 0, 'Pass 1 — L1 master',   'analyze-hierarchy',      1),
-  s('s2-p2', 1, 1, 'Pass 2 — L2/L3 master','analyze-l2-l3',          1),
-  s('s2-p3', 1, 2, 'Pass 3 — 청크 태깅',   'apply-granular-tagging', 1),
-  d('db2',   1, 3, 'metadata  l1 / l2 / l3'),
+  s('s2-p1', 1, 0, '단계 1 — L1 master',   'analyze-hierarchy',      1),
+  s('s2-p2', 1, 1, '단계 2 — L2/L3 master','analyze-l2-l3',          1),
+  s('s2-p3', 1, 2, '단계 3 — 청크 태깅',   'apply-granular-tagging', 1),
+  d('db2',   1, 3, 'DB 저장: doc_chuncks.metadata'),
 
   // ── S3: QA 생성 ── (4 nodes)
   g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
   s('s3-filter', 2, 0, 'L1/L2 필터 조회', 'heading · colophon skip',  2),
   s('s3-prof',   2, 1, 'domain_profiler',  'domain_profile (job당 1회)', 2),
   s('s3-gen',    2, 2, '병렬 QA 생성',    'ThreadPoolExecutor · XML', 2),
-  d('db3',       2, 3, 'qa_gen_results'),
+  d('db3',       2, 3, 'DB 저장: qa_gen_results'),
 
   // ── S4: 4레이어 평가 ── (6 nodes)
-  g('g4', 3, 6, 'STEP 4  ·  4레이어 평가', 3),
-  s('s4-l1a',   3, 0, 'Layer 1-A  Syntax',     'Validation',                      3),
+  g('g4', 3, 6, 'STEP 4  ·  QA 평가', 3),
+  s('s4-l1a',   3, 0, 'Layer 1-A  Syntax',     '필드 · 길이 검사',                3),
   s('s4-l1b',   3, 1, 'Layer 1-B  Statistics', '다양성 · 중복률',                 3),
-  s('s4-l2',    3, 2, 'Layer 2  RAG Triad',    'Relevance · Groundedness',         3),
-  s('s4-l3',    3, 3, 'Layer 3  Quality',      'Factuality · Completeness',        3),
-  s('s4-score', 3, 4, '최종 점수 집계',        'syntax·stats ×0.1 / rag·quality ×0.4', 3,
+  s('s4-l2',    3, 2, 'Layer 2  RAG Triad',    '관련성 · 근거성 · 명확성',         3),
+  s('s4-l3',    3, 3, 'Layer 3  Quality',      '사실성 · 완결성',                  3),
+  s('s4-score', 3, 4, '최종 점수 집계',        '구문·통계 ×0.1 / RAG·품질 ×0.4',  3,
     { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
-  d('db4', 3, 5, 'qa_eval_results  ·  grade'),
+  d('db4', 3, 5, 'DB 저장: qa_eval_results'),
 
-  // ── S5: 대시보드 ── (2 nodes)
-  g('g5', 4, 2, 'STEP 5  ·  대시보드', 4),
-  s('s5-api',  4, 0, 'GET /dashboard/metrics', 'Supabase 집계',                 4),
-  s('s5-view', 4, 1, '대시보드 뷰',            'QA · 점수 · 등급 분포 · 추이', 4,
+  // ── S5: 결과 확인 ── (3 nodes)
+  g('g5', 4, 3, 'STEP 5  ·  결과 확인', 4),
+  s('s5-eval',   4, 0, '평가 결과 확인',   'QA 상세 · 레이어별 점수',       4),
+  s('s5-export', 4, 1, '리포트 내보내기',  'CSV / JSON 다운로드',           4),
+  s('s5-dash',   4, 2, '대시보드',         '집계 지표 · 점수 추이 · 등급 분포', 4,
     { color: '#e0e7ff', tx: '#3730a3', bd: '#6366f1' }),
 ];
 
@@ -210,12 +211,13 @@ const edges: Edge[] = [
   { id: 'e-4e',    source: 's4-score', target: 'db4',       style: iv },
 
   // S4 → S5 (cross)
-  { id: 'e-x45',   source: 'db4',    target: 's5-api',
+  { id: 'e-x45',   source: 'db4',      target: 's5-eval',
     sourceHandle: 'right', targetHandle: 'left',
     type: 'smoothstep', animated: true, style: xv },
 
   // S5 내부
-  { id: 'e-5a',    source: 's5-api',   target: 's5-view',   style: iv },
+  { id: 'e-5a',    source: 's5-eval',   target: 's5-export', style: iv },
+  { id: 'e-5b',    source: 's5-export', target: 's5-dash',   style: iv },
 ];
 
 // ── 컴포넌트 ─────────────────────────────────────────────────
