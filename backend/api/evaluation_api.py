@@ -73,7 +73,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
         Request = Any
         BackgroundTasks = Any
 
-    @app.post("/api/evaluate")
+    @app.post("/api/evaluate", tags=["evaluation"])
     async def evaluate_qa(request: Request, background_tasks: BackgroundTasks) -> dict:
         """
         Start QA evaluation (4-layer pipeline)
@@ -131,7 +131,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             logger.error(f"Evaluation start failed: {e}")
             return {"success": False, "error": str(e)}
 
-    @app.get("/api/evaluate/{job_id}/status")
+    @app.get("/api/evaluate/{job_id}/status", tags=["evaluation"])
     async def get_eval_status(job_id: str) -> dict:
         """Get evaluation job status with 4-layer details"""
         job = eval_manager.get_job(job_id)
@@ -150,7 +150,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             "layers":      job.layers_status,
         }
 
-    @app.get("/api/evaluate/list")
+    @app.get("/api/evaluate/list", tags=["evaluation"])
     async def list_eval_jobs() -> dict:
         """현재 서버 세션의 평가 Job 목록 반환 (최신순)"""
         jobs = sorted(eval_manager.jobs.values(), key=lambda j: j.timestamp, reverse=True)
@@ -170,7 +170,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             ],
         }
 
-    @app.get("/api/evaluate/history")
+    @app.get("/api/evaluate/history", tags=["evaluation"])
     async def get_eval_history() -> dict:
         """Supabase qa_eval_results 테이블에서 과거 평가 기록 조회 (영구 보존)"""
         try:
@@ -289,7 +289,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             })
         return detail
 
-    @app.get("/api/evaluate/{job_id}/export")
+    @app.get("/api/evaluate/{job_id}/export", tags=["evaluation"])
     async def export_eval_by_job(job_id: str) -> dict:
         """현재 세션 job의 전체 QA + 평가 점수 조인 (generation_id → Supabase qa_gen_results)"""
         import asyncio
@@ -321,7 +321,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             "timestamp": (job.eval_report or {}).get("timestamp"),
         }
 
-    @app.get("/api/evaluate/export-by-id/{eval_id}")
+    @app.get("/api/evaluate/export-by-id/{eval_id}", tags=["evaluation"])
     async def export_eval_by_id(eval_id: str) -> dict:
         """Supabase eval_id 기반 export (히스토리 항목용) — linked generation에서 QA 조회"""
         try:

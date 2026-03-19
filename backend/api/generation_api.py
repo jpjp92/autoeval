@@ -638,7 +638,7 @@ async def run_qa_generation_simulation(
 def setup_generation_routes(app: FastAPI):
     """Setup QA generation endpoints"""
 
-    @app.post("/api/generate")
+    @app.post("/api/generate", tags=["generation"])
     async def generate_qa(
         request: GenerateRequest,
         background_tasks: BackgroundTasks
@@ -691,7 +691,7 @@ def setup_generation_routes(app: FastAPI):
             logger.error(f"Error creating generation job: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/api/generate/{job_id}/status")
+    @app.get("/api/generate/{job_id}/status", tags=["generation"])
     async def get_generation_status(job_id: str) -> dict:
         """
         Get generation job status
@@ -734,7 +734,7 @@ def setup_generation_routes(app: FastAPI):
             logger.error(f"Error getting job status: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/api/generate/jobs")
+    @app.get("/api/generate/jobs", tags=["generation"])
     async def list_generation_jobs(
         status: Optional[str] = None,
         limit: int = 100
@@ -780,7 +780,7 @@ def setup_generation_routes(app: FastAPI):
             logger.error(f"Error listing jobs: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.delete("/api/generate/{job_id}")
+    @app.delete("/api/generate/{job_id}", tags=["generation"])
     async def cancel_generation(job_id: str) -> dict:
         """
         Cancel a running generation job
