@@ -15,7 +15,6 @@ backend/
 │   ├── generation_api.py        # POST /api/generate — 생성 job 관리 + 2단계 흐름
 │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
 ├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
-│   ├── __init__.py
 │   └── parsers.py               # 파싱·정규화·필터·청킹 전 함수 (extract_text_by_page 등)
 ├── generators/                  # QA 생성 핵심 로직
 │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
@@ -25,12 +24,22 @@ backend/
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
 │   ├── rag_triad.py             # Layer 2: RAG Triad (Relevance/Groundedness/Clarity)
-│   └── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness)
+│   ├── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness)
+│   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
+│   └── job_manager.py           # in-memory 평가 job 관리
+├── db/                          # Supabase Repository 패키지
+│   ├── base_client.py           # 클라이언트 초기화, require_client(), health_check()
+│   ├── qa_generation_repo.py    # QA 생성 결과 저장/조회
+│   ├── evaluation_repo.py       # 평가 결과 저장/조회
+│   ├── generation_eval_link.py  # 생성-평가 연결 (linked_evaluation_id)
+│   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색
+│   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
+│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs, grade_dist)
 ├── config/
-│   ├── supabase_client.py       # Supabase 클라이언트 + 저장/조회 함수
+│   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
 │   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더 (build_system_prompt 등)
 │   ├── models.py                # 모델 alias → model_id, cost, provider 매핑
-│   └── constants.py             # 경로, worker 수 등 기본 상수
+│   └── constants.py             # worker 수 등 기본 상수
 ├── scripts/
 │   ├── setup_vector_db.sql      # doc_chunks 테이블 + match_doc_chunks RPC
 │   └── setup_qa_eval_tables.sql # qa_eval_results, qa_gen_results, 뷰 2개
@@ -47,7 +56,7 @@ GOOGLE_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 SUPABASE_URL=...
-SUPABASE_KEY=...
+SUPABASE_API_KEY=...   # service_role 키
 ```
 
 ## 실행
@@ -55,11 +64,11 @@ SUPABASE_KEY=...
 ```bash
 # uv (권장)
 uv sync
-uv run main.py
+python -m uvicorn backend.main:app --reload
 
 # 또는 pip
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python -m uvicorn backend.main:app --reload --port 8000
 ```
 
 API 문서: `http://localhost:8000/docs`

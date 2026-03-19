@@ -1,49 +1,35 @@
 """
-[Deprecated] backend/db/ 패키지로 이전됨.
-하위 호환성을 위해 기존 import 경로를 유지하는 re-export wrapper.
+DB package — Supabase repository 모음
+모든 DB 접근은 이 패키지를 통해 이루어진다.
 """
-
-# 클라이언트 및 유틸
-from backend.db.base_client import supabase as supabase_client, require_client, is_supabase_available, health_check
-
-# QA 생성
-from backend.db.qa_generation_repo import (
+from .base_client import supabase, is_supabase_available, require_client, health_check
+from .qa_generation_repo import (
     save_qa_generation_to_supabase,
     get_qa_generation_from_supabase,
     get_generation_result,
     get_generations_by_chunk,
     get_generations_by_source_doc,
 )
-
-# 평가
-from backend.db.evaluation_repo import (
+from .evaluation_repo import (
     save_evaluation_to_supabase,
     get_evaluation_result,
     get_evaluation_qa_joined,
 )
-
-# 생성-평가 링크
-from backend.db.generation_eval_link import link_generation_to_evaluation
-
-# 문서 청크
-from backend.db.doc_chunk_repo import (
+from .generation_eval_link import link_generation_to_evaluation
+from .doc_chunk_repo import (
     save_doc_chunk,
     update_chunk_metadata,
     search_doc_chunks,
     get_doc_chunks_by_filter,
     get_document_chunks,
 )
-
-# 계층 구조
-from backend.db.hierarchy_repo import get_hierarchy_list, update_document_hierarchy
-
-# 대시보드
-from backend.db.dashboard_repo import get_dashboard_metrics
+from .hierarchy_repo import get_hierarchy_list, update_document_hierarchy
+from .dashboard_repo import get_dashboard_metrics
 
 __all__ = [
-    "supabase_client",
-    "require_client",
+    "supabase",
     "is_supabase_available",
+    "require_client",
     "health_check",
     "save_qa_generation_to_supabase",
     "get_qa_generation_from_supabase",

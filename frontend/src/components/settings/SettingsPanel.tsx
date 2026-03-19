@@ -67,10 +67,9 @@ export function SettingsPanel() {
   const [activeSection, setActiveSection] = useState('profile');
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden flex min-h-[600px] h-[calc(100vh-140px)]">
+    <div className="bg-white/60 backdrop-blur-sm overflow-hidden flex h-full border-t border-slate-200/40">
       {/* 좌측 내비 */}
-      <div className="w-56 bg-slate-50/80 border-r border-slate-200/60 p-5 flex flex-col shrink-0">
-        <h2 className="text-base font-semibold text-slate-800 mb-5">Settings</h2>
+      <div className="w-64 bg-slate-50/80 border-r border-slate-200/60 p-6 flex flex-col shrink-0">
         <nav className="space-y-1 flex-1">
           {sections.map((s) => (
             <button
@@ -184,7 +183,7 @@ export function SettingsPanel() {
           <div className="h-full animate-in fade-in duration-300 -m-8">
             <div className="px-8 pt-8 pb-4">
               <h3 className="text-lg font-semibold text-slate-800 mb-1">Pipeline</h3>
-              <p className="text-sm text-slate-500">AutoEval 전체 데이터 처리 파이프라인 구조입니다. 드래그·줌으로 탐색하세요.</p>
+              <p className="text-sm text-slate-500">전체 데이터 처리 파이프라인 구조입니다.</p>
             </div>
             <div style={{ height: 'calc(100% - 88px)' }}>
               <PipelineFlow />

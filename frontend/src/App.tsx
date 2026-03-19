@@ -39,7 +39,7 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={getHeaderTitle()} />
 
-        <main className="flex-1 overflow-y-scroll p-8">
+        <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden" : "overflow-y-scroll p-8"}`}>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
             <DashboardOverview setActiveTab={setActiveTab} isActive={activeTab === "overview"} />
@@ -70,7 +70,7 @@ function App() {
             <ChatPlayground />
           </div>
 
-          <div className={activeTab === "settings" ? "max-w-7xl mx-auto" : "hidden"}>
+          <div className={activeTab === "settings" ? "h-full" : "hidden"}>
             <SettingsPanel />
           </div>
         </main>
