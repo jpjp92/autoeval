@@ -74,7 +74,7 @@ export function exportToCSV(data: EvaluationData): void {
   data.summaryStats.forEach((s) => statsRows.push([s.label, s.value]));
   statsRows.push([]);
 
-  statsRows.push(['[ 데이터셋 통계 (0-10) ]', '']);
+  statsRows.push(['[ 데이터 통계 (0-10) ]', '']);
   statsRows.push(['지표', '점수']);
   data.layer1Stats.forEach((s) => statsRows.push([s.subject, +s.A.toFixed(3)]));
   statsRows.push([]);
@@ -316,7 +316,7 @@ export function exportToHTML(data: EvaluationData): void {
         td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background: #f8fafc; }
-        .intent-badge { display: inline-block; padding: 3px 8px; border-radius: 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; border: 1px solid; }
+        .intent-badge { display: inline-block; padding: 3px 0; border-radius: 5px; font-size: 11px; font-weight: 700; border: 1px solid; min-width: 52px; text-align: center; }
         .score-pass { color: #059669; font-weight: 600; font-family: monospace; }
         .score-fail { color: #dc2626; font-weight: 700; font-family: monospace; }
         .status-pass { display: inline-block; padding: 3px 10px; background: #d1fae5; color: #047857; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #a7f3d0; }
@@ -354,12 +354,12 @@ export function exportToHTML(data: EvaluationData): void {
         <h2>📊 시각화 차트</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
             <div class="chart-card">
-                <div class="chart-title">의도 분류</div>
+                <div class="chart-title">🗂️ 의도 분류</div>
                 <div class="chart-sub">질문 유형 분포</div>
                 <div class="chart-card-inner">${donutSVG}</div>
             </div>
             <div class="chart-card">
-                <div class="chart-title">⚡ 데이터셋 통계</div>
+                <div class="chart-title">⚡ 데이터 통계</div>
                 <div class="chart-sub">구조적·통계적 검증 (0–10)</div>
                 <div class="chart-card-inner">${radarSVG}</div> 
             </div>
@@ -372,7 +372,7 @@ export function exportToHTML(data: EvaluationData): void {
     </section>
 
     <section>
-        <h2>🎯 데이터셋 통계 (0–10)</h2>
+        <h2>🎯 데이터 통계 (0–10)</h2>
         <table>
             <thead><tr><th>지표</th><th>점수</th><th>비율</th></tr></thead>
             <tbody>
@@ -408,7 +408,7 @@ export function exportToHTML(data: EvaluationData): void {
                   const statusCls   = qFail && rFail ? 'status-fail' : (qFail || rFail) ? 'status-hold' : 'status-pass';
                   return `<tr>
                     <td><strong>${qa.id}</strong></td>
-                    <td><div class="intent-badge" style="background:${intentColorsMap[qa.intent] || '#4f46e5'}18;border-color:${intentColorsMap[qa.intent] || '#4f46e5'}35;color:${intentColorsMap[qa.intent] || '#4f46e5'}">${qa.intent}</div></td>
+                    <td><div class="intent-badge" style="background:${intentColorsMap[qa.intent] || '#4f46e5'}18;border-color:${intentColorsMap[qa.intent] || '#4f46e5'}35;color:${intentColorsMap[qa.intent] || '#4f46e5'}">${INTENT_KR[qa.intent] ?? qa.intent}</div></td>
                     <td style="max-width:280px">${qa.q}</td>
                     <td style="max-width:240px;color:#475569">${qa.a ?? '-'}</td>
                     <td><span class="${qFail ? 'score-fail' : 'score-pass'}">${qa.l2_avg.toFixed(3)}</span></td>

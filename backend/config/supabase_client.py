@@ -615,16 +615,16 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
             scores = [e["final_score"] for e in eval_rows if e.get("final_score") is not None]
             if scores:
                 avg_score = round(sum(scores) / len(scores), 3)
-            total_valid = sum(e.get("valid_qa", 0) for e in eval_rows)
-            total_eval_qa = sum(e.get("total_qa", 0) for e in eval_rows)
-            if total_eval_qa > 0:
-                pass_rate = round(total_valid / total_eval_qa * 100, 1)
+            # A+/A 등급 비율 (실질 품질 기준)
+            high_grade = sum(1 for e in eval_rows if e.get("final_grade") in ("A+", "A"))
+            if eval_rows:
+                pass_rate = round(high_grade / len(eval_rows) * 100, 1)
 
         summary = {
             "total_qa": total_qa,
             "avg_final_score": avg_score,
             "total_documents": len(doc_names),
-            "pass_rate": pass_rate,
+            "total_evaluations": len(eval_rows),
         }
 
         # --- recent_jobs (최근 10건 gen + eval 합쳐서) ---

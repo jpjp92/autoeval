@@ -10,14 +10,39 @@ interface ScoreTrendProps {
   loading?: boolean;
 }
 
+function CustomTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  return (
+    <div style={{
+      backgroundColor: '#fff',
+      borderRadius: '8px',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+      padding: '8px 12px',
+      fontSize: '13px',
+    }}>
+      <p style={{ color: '#64748b', marginBottom: 4, fontWeight: 500 }}>{point.dateLabel}</p>
+      {point.doc && (
+        <p style={{ color: '#475569', marginBottom: 4, maxWidth: 220, wordBreak: 'break-all' }}>
+          {point.doc}
+        </p>
+      )}
+      <p style={{ color: '#6366f1', fontWeight: 700 }}>{point.score}%</p>
+    </div>
+  );
+}
+
 export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
   const chartData = (scoreTrend || []).map((item, idx) => {
     const d = item.date ? new Date(item.date) : null;
-    const label = d
+    const dateLabel = d
       ? `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`
       : `#${idx + 1}`;
     return {
-      name: label,
+      idx,
+      dateLabel,
       score: item.score != null ? +(item.score * 100).toFixed(1) : 0,
       doc: item.doc || '',
       grade: item.grade || '',
@@ -31,7 +56,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">평가 점수 추이</h3>
-          <p className="text-sm text-slate-500">Final Score (%) per evaluation</p>
+          <p className="text-sm text-slate-500">최종 점수 비율 (%)</p>
         </div>
       </div>
 
@@ -55,11 +80,12 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 </linearGradient>
               </defs>
               <XAxis
-                dataKey="name"
+                dataKey="idx"
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: '#94a3b8', fontSize: 12 }}
                 dy={10}
+                tickFormatter={(idx) => chartData[idx]?.dateLabel ?? ''}
               />
               <YAxis
                 axisLine={false}
@@ -69,19 +95,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 tickFormatter={(v) => `${v}%`}
               />
               <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="4 4" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                }}
-                formatter={(value: number) => [`${value}%`, 'Score']}
-                labelFormatter={(label) => {
-                  const item = chartData.find((d) => d.name === label);
-                  return item?.doc ? `${label} — ${item.doc}` : label;
-                }}
-              />
+              <Tooltip content={<CustomTooltip />} />
               <Area
                 type="monotone"
                 dataKey="score"

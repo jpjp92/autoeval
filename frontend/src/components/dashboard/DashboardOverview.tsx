@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import { StatsGrid } from "./StatsCards";
 import { ActivityChart } from "./ActivityChart";
 import { getDashboardMetrics } from "@/src/lib/api";
-import { Play, FileText, ArrowRight, Database, BarChart3 } from "lucide-react";
+import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+
+const JOBS_PAGE_SIZE = 5;
 
 interface DashboardData {
   summary: {
     total_qa: number;
     avg_final_score: number;
     total_documents: number;
-    pass_rate: number;
+    total_evaluations: number;
   };
   recent_jobs: Array<{
     job_id: string;
@@ -55,12 +57,15 @@ const GRADE_COLORS: Record<string, string> = {
   "F": "bg-rose-100 text-rose-700 border-rose-200",
 };
 
-export function DashboardOverview({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
+export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (tab: string) => void; isActive: boolean }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [jobPage, setJobPage] = useState(0);
 
   useEffect(() => {
+    if (!isActive) return;
     let cancelled = false;
+    setJobPage(0);
     async function load() {
       setLoading(true);
       const res = await getDashboardMetrics();
@@ -71,7 +76,7 @@ export function DashboardOverview({ setActiveTab }: { setActiveTab: (tab: string
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [isActive]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -84,7 +89,7 @@ export function DashboardOverview({ setActiveTab }: { setActiveTab: (tab: string
           <div className="p-6 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-800">최근 파이프라인 실행</h3>
-              <p className="text-sm text-slate-500">Supabase 생성·평가 기록</p>
+              <p className="text-sm text-slate-500">DB 생성·평가 기록</p>
             </div>
             <button
               onClick={() => setActiveTab("evaluation")}
@@ -93,65 +98,98 @@ export function DashboardOverview({ setActiveTab }: { setActiveTab: (tab: string
               전체 보기 <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">작업 ID</th>
-                  <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">유형</th>
-                  <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">문서</th>
-                  <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">모델</th>
-                  <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">QA 수</th>
-                  <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">시간</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? (
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>
-                      {Array.from({ length: 6 }).map((_, j) => (
-                        <td key={j} className="px-4 py-2.5">
-                          <div className="h-4 bg-slate-100 rounded animate-pulse w-20" />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : !data?.recent_jobs?.length ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-sm">
-                      아직 실행 기록이 없습니다
-                    </td>
-                  </tr>
-                ) : (
-                  data.recent_jobs.map((job) => (
-                    <tr key={job.job_id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
-                        {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <span className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border",
-                          job.type === "generation"
-                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        )}>
-                          {job.type === "generation" ? "생성" : "평가"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600 text-xs max-w-[160px] truncate" title={job.source_doc}>
-                        {job.source_doc || "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{job.model || "—"}</td>
-                      <td className="px-4 py-2.5 text-right font-medium text-slate-700 text-xs whitespace-nowrap">{job.total_qa}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">
-                        {formatRelativeTime(job.created_at)}
-                      </td>
-                    </tr>
-                  ))
+          {(() => {
+            const jobs = data?.recent_jobs ?? [];
+            const totalPages = Math.max(1, Math.ceil(jobs.length / JOBS_PAGE_SIZE));
+            const pagedJobs = jobs.slice(jobPage * JOBS_PAGE_SIZE, (jobPage + 1) * JOBS_PAGE_SIZE);
+            return (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">작업 ID</th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">유형</th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">문서</th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">모델</th>
+                        <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">QA 수</th>
+                        <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">시간</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loading ? (
+                        Array.from({ length: JOBS_PAGE_SIZE }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: 6 }).map((_, j) => (
+                              <td key={j} className="px-4 py-2.5">
+                                <div className="h-4 bg-slate-100 rounded animate-pulse w-20" />
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : !jobs.length ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-sm">
+                            아직 실행 기록이 없습니다
+                          </td>
+                        </tr>
+                      ) : (
+                        pagedJobs.map((job) => (
+                          <tr key={job.job_id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
+                              {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
+                            </td>
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border",
+                                job.type === "generation"
+                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              )}>
+                                {job.type === "generation" ? "생성" : "평가"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-slate-600 text-xs max-w-[160px] truncate" title={job.source_doc}>
+                              {job.source_doc || "—"}
+                            </td>
+                            <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{job.model || "—"}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-slate-700 text-xs whitespace-nowrap">{job.total_qa}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">
+                              {formatRelativeTime(job.created_at)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {totalPages > 1 && (
+                  <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">
+                      {jobPage * JOBS_PAGE_SIZE + 1}–{Math.min((jobPage + 1) * JOBS_PAGE_SIZE, jobs.length)} / {jobs.length}건
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setJobPage(p => Math.max(0, p - 1))}
+                        disabled={jobPage === 0}
+                        className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-slate-600" />
+                      </button>
+                      <span className="text-xs font-mono text-slate-600 px-1">{jobPage + 1} / {totalPages}</span>
+                      <button
+                        onClick={() => setJobPage(p => Math.min(totalPages - 1, p + 1))}
+                        disabled={jobPage === totalPages - 1}
+                        className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Quick Actions */}

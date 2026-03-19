@@ -107,6 +107,12 @@ interface HistoryItem {
   pipeline_results?: Record<string, any>;
 }
 
+// ─── 시간 포맷 (KST) ─────────────────────────────────────────────────────────
+function formatKST(dateStr: string): string {
+  if (!dateStr) return '-';
+  return new Date(dateStr).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+}
+
 // ─── 데이터 변환 ──────────────────────────────────────────────────────────────
 function buildChartData(report: EvalReport) {
   const s   = report.pipeline_results?.stats;
@@ -415,6 +421,8 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
   const [report, setReport]                   = useState<EvalReport | null>(null);
   const [historyList, setHistoryList]         = useState<HistoryItem[]>([]);
   const [historyReport, setHistoryReport]     = useState<{ summaryStats: any[]; layer1Stats: any[]; intentDistribution: any[]; llmQualityScores: any[]; item: HistoryItem } | null>(null);
+  const [historyQaPreview, setHistoryQaPreview] = useState<QAPreviewItem[]>([]);
+  const [historyQaLoading, setHistoryQaLoading] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [qaPage, setQaPage]                   = useState(0);
   const [selectedQA, setSelectedQA]           = useState<QAPreviewItem | null>(null);
@@ -458,13 +466,24 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
   }, []);
 
   // 히스토리 항목 선택
-  const selectHistory = (item: HistoryItem) => {
+  const selectHistory = async (item: HistoryItem) => {
     setSelectedHistoryId(item.id);
     setReport(null);
     setHistoryReport({ ...buildChartDataFromHistory(item), item });
+    setHistoryQaPreview([]);
     setShowHistoryMenu(false);
     setQaPage(0);
     setSelectedQA(null);
+
+    setHistoryQaLoading(true);
+    try {
+      const res = await getEvalExportById(item.id) as any;
+      if (res.success && Array.isArray(res.detail)) {
+        setHistoryQaPreview(res.detail as QAPreviewItem[]);
+      }
+    } finally {
+      setHistoryQaLoading(false);
+    }
   };
 
   // 현재 표시할 차트 데이터
@@ -476,7 +495,8 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
 
   const activeReport = report;
   const activeItem   = historyReport?.item;
-  const qaPreview    = report?.qa_preview ?? [];
+  const qaPreview    = report?.qa_preview ?? historyQaPreview;
+  const qaListLoading = historyQaLoading;
   const totalPages   = Math.max(1, Math.ceil(qaPreview.length / QA_PAGE_SIZE));
   const pagedQA      = qaPreview.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
 
@@ -537,9 +557,9 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
 
   const grade   = activeReport?.summary?.grade ?? activeItem?.final_grade ?? null;
   const metaStr = activeReport
-    ? `평가 모델: ${activeReport.metadata.evaluator_model} | ${new Date(activeReport.timestamp).toLocaleString('ko-KR')}`
+    ? `평가 모델: ${activeReport.metadata.evaluator_model} | ${formatKST(activeReport.timestamp)}`
     : activeItem
-      ? `평가 모델: ${activeItem.metadata?.evaluator_model ?? '-'} | ${new Date(activeItem.created_at).toLocaleString('ko-KR')}`
+      ? `평가 모델: ${activeItem.metadata?.evaluator_model ?? '-'} | ${formatKST(activeItem.created_at)}`
       : '';
 
   // ─── Empty state ───────────────────────────────────────────────────────────
@@ -662,7 +682,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
         {/* Intent Distribution */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
           <div className="mb-2">
-            <h3 className="text-base font-semibold text-slate-800">의도 분류</h3>
+            <h3 className="text-base font-semibold text-slate-800"> 🗂️ 의도 분류</h3>
             <p className="text-xs text-slate-500">질문 유형 분포</p>
           </div>
           {intentDistribution.length === 0 ? (
@@ -698,7 +718,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
           <div className="mb-2">
             <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-500" /> 데이터셋 통계
+              <Zap className="w-4 h-4 text-amber-500" /> 데이터 통계
             </h3>
             <p className="text-xs text-slate-500">구조적·통계적 검증 (0–10)</p>
           </div>
@@ -784,7 +804,17 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {pagedQA.map((row) => {
+                  {qaListLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        {Array.from({ length: 7 }).map((_, j) => (
+                          <td key={j} className="px-4 py-3.5">
+                            <div className="h-3 bg-slate-100 rounded animate-pulse w-full" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : pagedQA.map((row) => {
                     const st = getQAStatus(row.quality_avg, row.rag_avg);
                     const cfg = STATUS_CONFIG[st];
                     return (
@@ -920,10 +950,10 @@ function HistoryDropdown({
                     <span className="text-xs text-slate-400">{item.total_qa} QA</span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 truncate">
-                    {item.metadata?.generation_model ?? '-'} · {item.metadata?.lang ?? '-'}
+                    {item.metadata?.generation_model ?? '-'}
                   </p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    {new Date(item.created_at).toLocaleString('ko-KR')}
+                    {formatKST(item.created_at)}
                   </p>
                 </div>
               </button>

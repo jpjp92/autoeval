@@ -115,13 +115,13 @@ flowchart TD
 
 | 레이어 | 모듈 | 평가 항목 | 가중치 |
 |--------|------|----------|--------|
-| Layer 1-A | `syntax_validator.py` | 필드 존재·길이·포맷 구문 검증 | 20% |
-| Layer 1-B | `dataset_stats.py` | 의도 다양성, 중복률, 청크 분포 | 20% |
-| Layer 2 | `rag_triad.py` | Context Relevance · Groundedness · Answer Relevance | 30% |
-| Layer 3 | `qa_quality.py` | Factuality · Completeness · Groundedness | 30% |
+| Layer 1-A | `syntax_validator.py` | 필드 존재·길이·포맷 구문 검증 | 10% |
+| Layer 1-B | `dataset_stats.py` | 의도 다양성, 중복률, 청크 분포 | 10% |
+| Layer 2 | `rag_triad.py` | Context Relevance · Groundedness · Answer Relevance | 40% |
+| Layer 3 | `qa_quality.py` | Factuality · Completeness · Groundedness | 40% |
 
 ```
-final_score = syntax×0.2 + stats×0.2 + rag×0.3 + quality×0.3
+final_score = syntax×0.1 + stats×0.1 + rag×0.4 + quality×0.4
 
 A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 ```
@@ -258,7 +258,7 @@ qa_gen_results.linked_evaluation_id
 ### 최종 등급 체계
 
 ```
-final_score = syntax×0.2 + stats×0.2 + rag×0.3 + quality×0.3
+final_score = syntax×0.1 + stats×0.1 + rag×0.4 + quality×0.4
 
 A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 ```

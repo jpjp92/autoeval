@@ -217,7 +217,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
         if (data.layers) {
           setEvalLayers(data.layers);
           const LAYER_NAMES: Record<string, string> = {
-            syntax: "Layer 1-A 구문 검증", stats: "Layer 1-B 데이터셋 통계",
+            syntax: "Layer 1-A 구문 검증", stats: "Layer 1-B 데이터 통계",
             rag: "Layer 2 RAG Triad", quality: "Layer 3 품질 평가",
           };
           Object.entries(data.layers).forEach(([layer, info]: [string, any]) => {
@@ -502,7 +502,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">평가 파이프라인</p>
                 {(["syntax", "stats", "rag", "quality"] as const).map(layer => {
                   const info = evalLayers[layer];
-                  const label = { syntax: "Layer 1-A · Syntax Validation", stats: "Layer 1-B · Dataset Statistics", rag: "Layer 2 · RAG Triad", quality: "Layer 3 · Quality Score" }[layer];
+                  const label = { syntax: "Layer 1-A · Syntax Validation", stats: "Layer 1-B · Data Statistics", rag: "Layer 2 · RAG Triad", quality: "Layer 3 · Quality Score" }[layer];
                   return (
                     <div key={layer} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">

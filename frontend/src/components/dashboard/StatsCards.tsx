@@ -1,4 +1,4 @@
-import { Database, Activity, FileText, CheckCircle2 } from "lucide-react";
+import { Database, Activity, FileText, ClipboardList } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface StatCardProps {
@@ -44,7 +44,7 @@ interface StatsGridProps {
     total_qa: number;
     avg_final_score: number;
     total_documents: number;
-    pass_rate: number;
+    total_evaluations: number;
   };
   loading?: boolean;
 }
@@ -54,7 +54,7 @@ export function StatsGrid({ summary, loading }: StatsGridProps) {
     {
       title: "Total QA Generated",
       value: summary ? summary.total_qa.toLocaleString() : "—",
-      subtitle: "Supabase 누적 생성 수",
+      subtitle: "누적 생성 데이터 수",
       icon: Database,
       accentColor: "border-l-indigo-500",
       iconBg: "bg-indigo-50",
@@ -79,10 +79,10 @@ export function StatsGrid({ summary, loading }: StatsGridProps) {
       iconColor: "text-amber-600",
     },
     {
-      title: "Quality Pass Rate",
-      value: summary ? `${summary.pass_rate}%` : "—",
-      subtitle: "valid_qa / total_qa",
-      icon: CheckCircle2,
+      title: "Total Evaluations",
+      value: summary?.total_evaluations != null ? String(summary.total_evaluations) : "—",
+      subtitle: "누적 평가 실행 건수",
+      icon: ClipboardList,
       accentColor: "border-l-rose-500",
       iconBg: "bg-rose-50",
       iconColor: "text-rose-600",

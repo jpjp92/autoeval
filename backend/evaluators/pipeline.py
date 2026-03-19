@@ -462,10 +462,10 @@ def run_evaluation(
         quality_pass_rate = quality_data["pass_rate"]                 if quality_data  else 0
 
         final_score = (
-            (syntax_pass_rate / 100) * 0.2
-            + (min(dataset_quality, 10) / 10) * 0.2
-            + rag_avg     * 0.3
-            + quality_avg * 0.3
+            (syntax_pass_rate / 100) * 0.1
+            + (min(dataset_quality, 10) / 10) * 0.1
+            + rag_avg     * 0.4
+            + quality_avg * 0.4
         )
 
         if   final_score >= 0.95: grade = "A+"

@@ -42,7 +42,7 @@ function App() {
         <main className="flex-1 overflow-y-scroll p-8">
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
-            <DashboardOverview setActiveTab={setActiveTab} />
+            <DashboardOverview setActiveTab={setActiveTab} isActive={activeTab === "overview"} />
           </div>
 
           <div className={activeTab === "standardization" ? "max-w-7xl mx-auto" : "hidden"}>
