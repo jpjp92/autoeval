@@ -922,7 +922,7 @@ function HistoryDropdown({
         className="flex items-center justify-center gap-2 w-32 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
       >
         <History className="w-4 h-4" />
-        히스토리
+        History
         <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showMenu && 'rotate-180')} />
       </button>
       {showMenu && (
