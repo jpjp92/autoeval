@@ -55,9 +55,10 @@ const STATUS_CONFIG: Record<QAStatus, { label: string; className: string; dotCol
 
 // ─── Failure Type ─────────────────────────────────────────────────────────────
 const FAILURE_CONFIG: Record<string, { label: string; className: string }> = {
-  hallucination:      { label: '환각',   className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  retrieval_miss:     { label: '검색미스', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  ambiguous_question: { label: '모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  hallucination:      { label: '환각',    className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  faithfulness_error: { label: '충실도오류', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  retrieval_miss:     { label: '검색미스',  className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  ambiguous_question: { label: '모호',    className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
   bad_chunk:          { label: '불량청크', className: 'bg-slate-100 text-slate-600 border-slate-200' },
   evaluation_error:   { label: '평가오류', className: 'bg-purple-50 text-purple-700 border-purple-200' },
 };

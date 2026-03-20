@@ -17,6 +17,7 @@ const INTENT_KR: Record<string, string> = {
 
 const FAILURE_KR: Record<string, string> = {
   hallucination:      '환각',
+  faithfulness_error: '충실도오류',
   retrieval_miss:     '검색미스',
   ambiguous_question: '모호',
   bad_chunk:          '불량청크',
@@ -336,6 +337,7 @@ export function exportToHTML(data: EvaluationData): void {
         .status-hold { display: inline-block; padding: 3px 10px; background: #fef3c7; color: #92400e; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fde68a; }
         .status-fail { display: inline-block; padding: 3px 10px; background: #fee2e2; color: #991b1b; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; }
         .failure-hallucination      { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; background: #fff1f2; color: #be123c; }
+        .failure-faithfulness_error { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; }
         .failure-retrieval_miss     { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; }
         .failure-ambiguous_question { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fef08a; background: #fefce8; color: #854d0e; }
         .failure-bad_chunk          { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }

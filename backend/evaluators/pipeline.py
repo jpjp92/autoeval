@@ -97,12 +97,23 @@ def _syntax_worker(args):
 
 def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict:
     """차원 점수 기반 failure_type 분류 (복수값 + primary_failure 우선순위)"""
-    PRIORITY = ["hallucination", "retrieval_miss", "ambiguous_question", "bad_chunk", "evaluation_error"]
+    PRIORITY = ["hallucination", "faithfulness_error", "retrieval_miss", "ambiguous_question", "bad_chunk", "evaluation_error"]
     failure_types = []
+
+    groundedness = rag.get("groundedness", 1.0)
+    relevance    = rag.get("relevance",    1.0)
 
     if quality.get("factuality", 1.0) < 0.6:
         failure_types.append("hallucination")
-    if rag.get("groundedness", 1.0) < 0.6 or rag.get("relevance", 1.0) < 0.6:
+    # groundedness 낮고 relevance 괜찮으면 → 컨텍스트 오해석(faithfulness_error)
+    # relevance 낮으면 → 컨텍스트 자체가 안 검색됨(retrieval_miss)
+    if groundedness < 0.6 and relevance >= 0.6:
+        failure_types.append("faithfulness_error")
+    elif relevance < 0.6:
+        failure_types.append("retrieval_miss")
+    elif groundedness < 0.6:
+        # relevance 경계값(0.6)이고 groundedness도 낮으면 둘 다 추가
+        failure_types.append("faithfulness_error")
         failure_types.append("retrieval_miss")
     if rag.get("clarity", 1.0) < 0.6:
         failure_types.append("ambiguous_question")
@@ -120,7 +131,8 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
 
     reason_map = {
         "hallucination":      quality.get("factuality_reason", ""),
-        "retrieval_miss":     rag.get("groundedness_reason", "") or rag.get("relevance_reason", ""),
+        "faithfulness_error": rag.get("groundedness_reason", ""),
+        "retrieval_miss":     rag.get("relevance_reason", "") or rag.get("groundedness_reason", ""),
         "ambiguous_question": rag.get("clarity_reason", ""),
         "bad_chunk":          f"컨텍스트 길이 {ctx_len}자 — 재생성 불가" if ctx_len < 100 else "",
         "evaluation_error":   quality.get("error", "") or rag.get("error", ""),
