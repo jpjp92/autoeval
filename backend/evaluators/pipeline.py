@@ -95,29 +95,63 @@ def _syntax_worker(args):
     return i, is_valid, errors
 
 
+def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict:
+    """차원 점수 기반 failure_type 분류 (복수값 + primary_failure 우선순위)"""
+    PRIORITY = ["hallucination", "retrieval_miss", "ambiguous_question", "bad_chunk", "evaluation_error"]
+    failure_types = []
+
+    if quality.get("factuality", 1.0) < 0.6:
+        failure_types.append("hallucination")
+    if rag.get("groundedness", 1.0) < 0.6 or rag.get("relevance", 1.0) < 0.6:
+        failure_types.append("retrieval_miss")
+    if rag.get("clarity", 1.0) < 0.6:
+        failure_types.append("ambiguous_question")
+    ctx_len = len(context.strip()) if context else 0
+    if ctx_len < 100:
+        failure_types.append("bad_chunk")
+    if "error" in quality or "error" in rag:
+        failure_types.append("evaluation_error")
+
+    if not failure_types:
+        return {"failure_types": [], "primary_failure": None, "failure_reason": "", "confidence": None}
+
+    # 우선순위 기반 primary 선택
+    primary = next((p for p in PRIORITY if p in failure_types), failure_types[0])
+
+    reason_map = {
+        "hallucination":      quality.get("factuality_reason", ""),
+        "retrieval_miss":     rag.get("groundedness_reason", "") or rag.get("relevance_reason", ""),
+        "ambiguous_question": rag.get("clarity_reason", ""),
+        "bad_chunk":          f"컨텍스트 길이 {ctx_len}자 — 재생성 불가" if ctx_len < 100 else "",
+        "evaluation_error":   quality.get("error", "") or rag.get("error", ""),
+    }
+    return {
+        "failure_types":   failure_types,
+        "primary_failure": primary,
+        "failure_reason":  reason_map.get(primary, ""),
+        "confidence":      None,  # 추후 LLM classifier로 보강
+    }
+
+
 def _rag_worker(args):
-    """Layer 2: 단일 QA RAG Triad 평가 worker"""
+    """Layer 2: 단일 QA RAG Triad 평가 worker — score + reason 반환"""
     i, qa, rag_evaluator, job_id = args
     question = qa.get("q", "")
     answer   = qa.get("a", "")
     context  = qa.get("context", "")
 
     try:
-        # TruApp wrapping 제거: 병렬 workers에서 동시에 TruApp 생성 시
-        # SQLite UNIQUE constraint 충돌 발생 (trulens_feedback_defs)
-        # TruLens SQLite 기록은 TruLens 대시보드 전용이며 평가 스코어에 영향 없음
-        # → 평가 메서드 직접 호출로 대체 (결과는 Supabase에 저장)
-        relevance    = rag_evaluator.evaluate_relevance(question, answer, context)
-        groundedness = rag_evaluator.evaluate_groundedness(answer, context)
-        clarity      = rag_evaluator.evaluate_clarity(question, answer)
-
-        avg_score = (relevance + groundedness + clarity) / 3
+        result = rag_evaluator.evaluate_all_with_reasons(question, answer, context)
+        avg_score = (result["relevance"] + result["groundedness"] + result["clarity"]) / 3
         return i, {
-            "qa_index":    i,
-            "relevance":   round(relevance, 3),
-            "groundedness": round(groundedness, 3),
-            "clarity":     round(clarity, 3),
-            "avg_score":   round(avg_score, 3),
+            "qa_index":            i,
+            "relevance":           round(result["relevance"], 3),
+            "relevance_reason":    result.get("relevance_reason", ""),
+            "groundedness":        round(result["groundedness"], 3),
+            "groundedness_reason": result.get("groundedness_reason", ""),
+            "clarity":             round(result["clarity"], 3),
+            "clarity_reason":      result.get("clarity_reason", ""),
+            "avg_score":           round(avg_score, 3),
         }
     except Exception as e:
         logger.warning(f"[{job_id}] RAG evaluation error at index {i}: {e}")
@@ -141,13 +175,17 @@ def _quality_worker(args):
 
         avg_quality = (factuality + completeness + specificity + conciseness) / 4
         return i, {
-            "qa_index":     i,
-            "factuality":   round(factuality, 3),
-            "completeness": round(completeness, 3),
-            "specificity":  round(specificity, 3),
-            "conciseness":  round(conciseness, 3),
-            "avg_quality":  round(avg_quality, 3),
-            "pass":         avg_quality >= 0.70,
+            "qa_index":            i,
+            "factuality":          round(factuality, 3),
+            "factuality_reason":   scores.get("factuality_reason", ""),
+            "completeness":        round(completeness, 3),
+            "completeness_reason": scores.get("completeness_reason", ""),
+            "specificity":         round(specificity, 3),
+            "specificity_reason":  scores.get("specificity_reason", ""),
+            "conciseness":         round(conciseness, 3),
+            "conciseness_reason":  scores.get("conciseness_reason", ""),
+            "avg_quality":         round(avg_quality, 3),
+            "pass":                avg_quality >= 0.70,
         }
     except Exception as e:
         logger.warning(f"[{job_id}] Quality evaluation error at index {i}: {e}")
@@ -488,15 +526,27 @@ def run_evaluation(
         for i, qa in enumerate(qa_list[:100]):
             r = rag_by_idx.get(i, {})
             q = quality_by_idx.get(i, {})
+            failure_info = _classify_failure_types(r, q, qa.get("context", ""))
             qa_preview.append({
-                "qa_index":    i,
-                "q":           qa.get("q", "")[:300],
-                "a":           qa.get("a", "")[:500],
-                "context":     qa.get("context", "")[:1000],
-                "intent":      qa.get("intent", ""),
-                "rag_avg":     r.get("avg_score"),
-                "quality_avg": q.get("avg_quality"),
-                "pass":        q.get("pass", False),
+                "qa_index":            i,
+                "q":                   qa.get("q", "")[:300],
+                "a":                   qa.get("a", "")[:500],
+                "context":             qa.get("context", "")[:1000],
+                "intent":              qa.get("intent", ""),
+                "rag_avg":             r.get("avg_score"),
+                "quality_avg":         q.get("avg_quality"),
+                "pass":                q.get("pass", False),
+                # RAG reason
+                "relevance_reason":    r.get("relevance_reason", ""),
+                "groundedness_reason": r.get("groundedness_reason", ""),
+                "clarity_reason":      r.get("clarity_reason", ""),
+                # Quality reason
+                "factuality_reason":   q.get("factuality_reason", ""),
+                "completeness_reason": q.get("completeness_reason", ""),
+                "specificity_reason":  q.get("specificity_reason", ""),
+                "conciseness_reason":  q.get("conciseness_reason", ""),
+                # Failure classification
+                **failure_info,
             })
 
         # 평가 모델 model_id 변환 (키명 → 실제 버전)

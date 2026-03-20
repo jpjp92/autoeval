@@ -23,9 +23,10 @@ backend/
 │   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 + Supabase 저장
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
-│   ├── rag_triad.py             # Layer 2: RAG Triad (Relevance/Groundedness/Clarity)
-│   ├── qa_quality.py            # Layer 3: Quality Score (Factuality/Completeness/Specificity/Conciseness)
+│   ├── rag_triad.py             # Layer 2: RAG Triad — evaluate_all_with_reasons() 단일 호출 (score + reason 반환), TruLens 싱글톤
+│   ├── qa_quality.py            # Layer 3: Quality Score — factuality/completeness/specificity/conciseness + reason 반환
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
+│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 — _classify_failure_types() + reason/failure 필드 qa_preview 빌드
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository 패키지
 │   ├── base_client.py           # 클라이언트 초기화, require_client(), health_check()
@@ -42,7 +43,7 @@ backend/
 │   └── constants.py             # worker 수 등 기본 상수
 ├── scripts/
 │   ├── setup_vector_db.sql      # doc_chunks 테이블 + match_doc_chunks RPC
-│   └── setup_qa_eval_tables.sql # qa_eval_results, qa_gen_results, 뷰 2개
+│   └── setup_qa_eval_tables.sql # qa_eval_results, qa_gen_results + get_eval_qa_scores RPC
 └── requirements.txt
 ```
 
@@ -105,8 +106,8 @@ API 문서: `http://localhost:8000/docs`
 | `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
 | `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory) |
 | `GET`  | `/api/evaluate/history` | Supabase 저장된 평가 이력 |
-| `GET`  | `/api/evaluate/{job_id}/export` | 현재 세션 job QA+점수 상세 내보내기 |
-| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 |
+| `GET`  | `/api/evaluate/{job_id}/export` | 현재 세션 job QA+점수 상세 내보내기 (reason + failure 필드 포함) |
+| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 (RPC `get_eval_qa_scores` 사용) |
 
 ### System
 
@@ -135,8 +136,9 @@ API 문서: `http://localhost:8000/docs`
 ```
 Layer 1-A  Syntax Validation      구문 정확성 (answerable 필드, Q/A 길이 등)
 Layer 1-B  Dataset Statistics     다양성·중복률 (SequenceMatcher 기반)
-Layer 2    RAG Triad               Relevance / Groundedness / Clarity (TruLens + LangChain judge)
-Layer 3    Quality Score           Factuality / Completeness / Specificity / Conciseness (LLM judge, intent-aware)
+Layer 2    RAG Triad               Relevance / Groundedness / Clarity — 단일 LLM 호출로 score + reason 반환
+Layer 3    Quality Score           Factuality / Completeness / Specificity / Conciseness — intent-aware, score + reason 반환
+           failure 분류             _classify_failure_types() — 차원 점수 기반 failure_types[] + primary_failure 자동 결정
 
 final_score = syntax*0.1 + stats*0.1 + rag*0.4 + quality*0.4
 등급: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)

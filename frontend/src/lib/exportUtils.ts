@@ -15,6 +15,14 @@ const INTENT_KR: Record<string, string> = {
   boolean:   '확인형',
 };
 
+const FAILURE_KR: Record<string, string> = {
+  hallucination:      '환각',
+  retrieval_miss:     '검색미스',
+  ambiguous_question: '모호',
+  bad_chunk:          '불량청크',
+  evaluation_error:   '평가오류',
+};
+
 export interface EvaluationData {
   summaryStats: Array<{ label: string; value: string; icon?: any; color?: string; bg?: string }>;
   layer1Stats: Array<{ subject: string; A: number; fullMark: number }>;
@@ -29,6 +37,8 @@ export interface EvaluationData {
     l2_avg: number;
     triad_avg: number;
     pass: boolean;
+    primary_failure?: string | null;
+    failure_types?: string[];
   }>;
   metadata?: {
     qa_model?:  string;  // QA 생성 모델
@@ -99,11 +109,12 @@ export function exportToCSV(data: EvaluationData): void {
   XLSX.utils.book_append_sheet(wb, wsStats, 'Stats');
 
   // ── Detail 시트 ─────────────────────────────────────────────────────────────
-  const detailHeader = ['ID', '의도', 'Context', 'Question', 'Answer', '품질 점수', 'Triad 점수', '상태', '평가일시 (KST)'];
+  const detailHeader = ['ID', '의도', 'Context', 'Question', 'Answer', '품질 점수', 'Triad 점수', '상태', '실패유형', '평가일시 (KST)'];
   const detailRows = data.detailedQA.map((qa) => {
     const qFail = qa.l2_avg    < 0.7;
     const rFail = qa.triad_avg < 0.7;
     const status = qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공';
+    const failureLabel = qa.primary_failure ? (FAILURE_KR[qa.primary_failure] ?? qa.primary_failure) : '-';
     return [
       qa.id,
       INTENT_KR[qa.intent] ?? qa.intent,
@@ -113,6 +124,7 @@ export function exportToCSV(data: EvaluationData): void {
       +qa.l2_avg.toFixed(4),
       +qa.triad_avg.toFixed(4),
       status,
+      failureLabel,
       evalDate,
     ];
   });
@@ -127,6 +139,7 @@ export function exportToCSV(data: EvaluationData): void {
     { wch: 12 },  // 품질 점수
     { wch: 12 },  // Triad 점수
     { wch: 8  },  // 상태
+    { wch: 12 },  // 실패유형
     { wch: 22 },  // 평가일시
   ];
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail');
@@ -322,6 +335,12 @@ export function exportToHTML(data: EvaluationData): void {
         .status-pass { display: inline-block; padding: 3px 10px; background: #d1fae5; color: #047857; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #a7f3d0; }
         .status-hold { display: inline-block; padding: 3px 10px; background: #fef3c7; color: #92400e; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fde68a; }
         .status-fail { display: inline-block; padding: 3px 10px; background: #fee2e2; color: #991b1b; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; }
+        .failure-hallucination      { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; background: #fff1f2; color: #be123c; }
+        .failure-retrieval_miss     { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; }
+        .failure-ambiguous_question { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fef08a; background: #fefce8; color: #854d0e; }
+        .failure-bad_chunk          { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }
+        .failure-evaluation_error   { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e9d5ff; background: #faf5ff; color: #7e22ce; }
+        .failure-none { color: #cbd5e1; font-size: 12px; }
         footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px; }
         @media print { body { background: white; } section { page-break-inside: avoid; } }
         .chart-card { background: white; padding: 20px 20px 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; align-items: flex-start; }
@@ -399,13 +418,17 @@ export function exportToHTML(data: EvaluationData): void {
     <section>
         <h2>📋 QA 상세 평가 결과</h2>
         <table>
-            <thead><tr><th>ID</th><th>의도</th><th>질문</th><th>답변</th><th>품질</th><th>Triad</th><th>상태</th></tr></thead>
+            <thead><tr><th>ID</th><th>의도</th><th>질문</th><th>답변</th><th>품질</th><th>Triad</th><th>상태</th><th>실패유형</th></tr></thead>
             <tbody>
                 ${data.detailedQA.map((qa) => {
                   const qFail = qa.l2_avg < 0.7;
                   const rFail = qa.triad_avg < 0.7;
                   const statusLabel = qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공';
                   const statusCls   = qFail && rFail ? 'status-fail' : (qFail || rFail) ? 'status-hold' : 'status-pass';
+                  const failureKey  = qa.primary_failure ?? null;
+                  const failureBadge = failureKey
+                    ? `<span class="failure-${failureKey}">${FAILURE_KR[failureKey] ?? failureKey}</span>`
+                    : `<span class="failure-none">-</span>`;
                   return `<tr>
                     <td><strong>${qa.id}</strong></td>
                     <td><div class="intent-badge" style="background:${intentColorsMap[qa.intent] || '#4f46e5'}18;border-color:${intentColorsMap[qa.intent] || '#4f46e5'}35;color:${intentColorsMap[qa.intent] || '#4f46e5'}">${INTENT_KR[qa.intent] ?? qa.intent}</div></td>
@@ -414,6 +437,7 @@ export function exportToHTML(data: EvaluationData): void {
                     <td><span class="${qFail ? 'score-fail' : 'score-pass'}">${qa.l2_avg.toFixed(3)}</span></td>
                     <td><span class="${rFail ? 'score-fail' : 'score-pass'}">${qa.triad_avg.toFixed(3)}</span></td>
                     <td><span class="${statusCls}">${statusLabel}</span></td>
+                    <td>${failureBadge}</td>
                   </tr>`;
                 }).join('')}
             </tbody>

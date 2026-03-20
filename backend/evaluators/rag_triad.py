@@ -3,6 +3,7 @@ RAG Triad Evaluator
 RAG Triad 평가 로직 + clean_markdown helper (Layer 2)
 TruLens 기반, 멀티 프로바이더 지원 (OpenAI / Gemini / Anthropic)
 """
+import json
 import logging
 import os
 import re
@@ -10,12 +11,18 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
-# TruLens
+# TruLens — 모듈 레벨 싱글톤 (재생성 시 SQLAlchemy 중복 테이블 오류 방지)
+_TRU_SESSION = None
 try:
     from trulens.core import TruSession
     from trulens.core import Metric, Selector
     from trulens.apps.app import TruApp
     TRULENS_AVAILABLE = True
+    try:
+        _TRU_SESSION = TruSession()
+    except Exception as _e:
+        logger.warning(f"TruSession init failed at import time: {_e}")
+        TRULENS_AVAILABLE = False
 except ImportError:
     TRULENS_AVAILABLE = False
 
@@ -51,7 +58,7 @@ class RAGTriadEvaluator:
     def __init__(self, evaluator_model: str = "gemini-2.5-flash"):
         self.judge_model = None
         self.evaluator_model = self._get_model_id(evaluator_model)
-        self.tru_session = TruSession() if TRULENS_AVAILABLE else None
+        self.tru_session = _TRU_SESSION  # 모듈 싱글톤 재사용
         self.feedbacks: List = []
 
         if TRULENS_AVAILABLE:
@@ -264,3 +271,76 @@ Rate clarity on a 0-10 scale:
         except Exception as e:
             logger.warning(f"Clarity evaluation error: {e}")
             return 0.65
+
+    def _parse_rag_json(self, raw: str) -> dict:
+        """RAG Triad JSON 응답 파싱 — 실패 시 fallback 0.65"""
+        text = re.sub(r"```(?:json)?|```", "", raw).strip()
+        try:
+            data = json.loads(text)
+            def _score(key: str) -> float:
+                val = data.get(key, 6)
+                return min(10, max(0, int(val))) / 10.0
+            return {
+                "relevance":           _score("relevance"),
+                "relevance_reason":    str(data.get("relevance_reason", "")),
+                "groundedness":        _score("groundedness"),
+                "groundedness_reason": str(data.get("groundedness_reason", "")),
+                "clarity":             _score("clarity"),
+                "clarity_reason":      str(data.get("clarity_reason", "")),
+            }
+        except Exception:
+            logger.warning(f"RAG JSON parse failed, raw: {raw[:200]}")
+            return {
+                "relevance": 0.65, "relevance_reason": "",
+                "groundedness": 0.65, "groundedness_reason": "",
+                "clarity": 0.65, "clarity_reason": "",
+            }
+
+    def evaluate_all_with_reasons(self, question: str, answer: str, context: str) -> dict:
+        """RAG Triad 3개 차원을 단일 LLM 호출로 평가 + reason 반환"""
+        if not self.judge_model:
+            return {
+                "relevance": 0.65, "relevance_reason": "",
+                "groundedness": 0.65, "groundedness_reason": "",
+                "clarity": 0.65, "clarity_reason": "",
+            }
+        try:
+            import json as _json
+            ctx = clean_markdown(context)[:8000] if context else ""
+            prompt = f"""<role>
+You are a strict QA data quality auditor. Evaluate the QA pair on three RAG Triad dimensions
+based solely on the provided context.
+</role>
+
+<context>
+{ctx}
+</context>
+
+<question>{question}</question>
+<answer>{answer}</answer>
+
+<scoring_dimensions>
+1. relevance (0-10): Does the answer directly address what the question asks, within the domain?
+   - 10: Perfectly on-point / 6-7: Mostly relevant, minor drift / 0-3: Off-topic or ignores question
+
+2. groundedness (0-10): Are all answer claims supported by the context? (use flexible matching)
+   - 10: All claims traceable to context / 7-9: Mostly supported / 5-6: Partial / 0-4: Hallucinated
+
+3. clarity (0-10): Is the Q-A pair well-formed and unambiguous?
+   - 10: Question precise + answer clearly structured / 5-6: Somewhat vague / 0-3: Confusing or ambiguous
+</scoring_dimensions>
+
+<task>
+Evaluate all three dimensions. For each reason, write exactly 1 concise sentence explaining the score.
+Return ONLY valid JSON:
+{{"relevance": <0-10>, "relevance_reason": "<1 sentence>", "groundedness": <0-10>, "groundedness_reason": "<1 sentence>", "clarity": <0-10>, "clarity_reason": "<1 sentence>"}}
+</task>"""
+            response = self.judge_model.invoke(prompt)
+            return self._parse_rag_json(response.content or "")
+        except Exception as e:
+            logger.warning(f"RAG evaluate_all_with_reasons error: {e}")
+            return {
+                "relevance": 0.65, "relevance_reason": "",
+                "groundedness": 0.65, "groundedness_reason": "",
+                "clarity": 0.65, "clarity_reason": "",
+            }
