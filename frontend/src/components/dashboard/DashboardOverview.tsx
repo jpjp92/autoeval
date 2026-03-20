@@ -93,7 +93,7 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
         <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">최근 파이프라인 로그</h3>
+              <h3 className="text-lg font-semibold text-slate-800">파이프라인 로그</h3>
               <p className="text-sm text-slate-500">DB 생성·평가 기록</p>
             </div>
             <button

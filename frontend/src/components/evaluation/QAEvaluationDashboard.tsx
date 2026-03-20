@@ -143,12 +143,13 @@ function buildChartData(report: EvalReport) {
   }));
 
   const llmQualityScores = [
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0 },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0 },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
+    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0 },
     { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
     { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
     { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -181,12 +182,13 @@ function buildChartDataFromHistory(item: HistoryItem) {
   }));
 
   const llmQualityScores = [
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0 },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0 },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
+    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0 },
     { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
     { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
     { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -755,9 +757,9 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
           <div className="mb-3">
             <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <Target className="w-4 h-4 text-indigo-500" /> 품질 점수
+              <Target className="w-4 h-4 text-indigo-500" /> RAG Triad + 품질 평가 점수
             </h3>
-            <p className="text-xs text-slate-500">LLM 기반 품질 평가 (0–1)</p>
+            <p className="text-xs text-slate-500">RAG Triad + 품질 평가 통합 점수</p>
           </div>
           <div className="flex-1">
             <QualityScoreChart data={llmQualityScores} />

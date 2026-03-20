@@ -87,7 +87,7 @@ export function exportToCSV(data: EvaluationData): void {
   });
   statsRows.push([]);
 
-  statsRows.push(['[ 품질 점수 (0-1) ]', '']);
+  statsRows.push(['[ RAG Triad + 품질 평가 점수 (0-1) ]', '']);
   statsRows.push(['지표', '점수']);
   data.llmQualityScores.forEach((s) => {
     const displayName = s.nameEn ? `${s.name}(${s.nameEn})` : s.name;
@@ -364,8 +364,8 @@ export function exportToHTML(data: EvaluationData): void {
                 <div class="chart-card-inner">${radarSVG}</div> 
             </div>
             <div class="chart-card">
-                <div class="chart-title">🎯 품질 점수</div>
-                <div class="chart-sub">LLM 기반 품질 평가 (0–1)</div>
+                <div class="chart-title">🎯 RAG Triad + 품질 평가 점수</div>
+                <div class="chart-sub">RAG Triad + 품질 평가 통합 점수</div>
                 <div class="chart-card-inner">${barsSVG}</div>
             </div>
         </div>
@@ -382,7 +382,7 @@ export function exportToHTML(data: EvaluationData): void {
     </section>
 
     <section>
-        <h2>⭐ 품질 점수 (0–1)</h2>
+        <h2>⭐ RAG Triad + 품질 평가 점수 (0–1)</h2>
         <table>
             <thead><tr><th>지표</th><th>점수</th><th>평가</th></tr></thead>
             <tbody>

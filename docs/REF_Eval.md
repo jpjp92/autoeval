@@ -3,10 +3,10 @@
 ## 최종 점수 계산
 
 ```
-final_score = 0.20 × syntax_score
-            + 0.20 × stats_score
-            + 0.30 × rag_score
-            + 0.30 × quality_score
+final_score = 0.10 × syntax_score
+            + 0.10 × stats_score
+            + 0.40 × rag_score
+            + 0.40 × quality_score
 ```
 
 ## 등급 기준
