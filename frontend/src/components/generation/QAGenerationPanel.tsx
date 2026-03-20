@@ -174,36 +174,36 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
     quality: { status: "pending", progress: 0, message: "" },
   });
 
-  const [hierarchyL1List, setHierarchyL1List]   = useState<string[]>([]);
-  const [hierarchyL2Map, setHierarchyL2Map]     = useState<Record<string, string[]>>({});
-  const [hierarchyL3Map, setHierarchyL3Map]     = useState<Record<string, string[]>>({});
-  const [selectedL1, setSelectedL1]             = useState("");
-  const [selectedL2, setSelectedL2]             = useState("");
-  const [selectedL3, setSelectedL3]             = useState("");
+  const [hierarchyH1List, setHierarchyH1List]   = useState<string[]>([]);
+  const [hierarchyH2Map, setHierarchyH2Map]     = useState<Record<string, string[]>>({});
+  const [hierarchyH3Map, setHierarchyH3Map]     = useState<Record<string, string[]>>({});
+  const [selectedH1, setSelectedH1]             = useState("");
+  const [selectedH2, setSelectedH2]             = useState("");
+  const [selectedH3, setSelectedH3]             = useState("");
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded]   = useState(false);
 
   useEffect(() => { loadHierarchyList(); }, [currentFilename, taggingVersion]);
 
   const loadHierarchyList = async () => {
-    setSelectedL1(""); setSelectedL2(""); setSelectedL3("");
+    setSelectedH1(""); setSelectedH2(""); setSelectedH3("");
     if (!currentFilename) {
-      setHierarchyL1List([]); setHierarchyL2Map({}); setHierarchyL3Map({});
+      setHierarchyH1List([]); setHierarchyH2Map({}); setHierarchyH3Map({});
       setHierarchyLoaded(false); return;
     }
     setIsLoadingHierarchy(true);
     const result = await getHierarchyList(currentFilename);
     if (result.success) {
-      setHierarchyL1List(result.l1_list);
-      setHierarchyL2Map(result.l2_by_l1);
-      setHierarchyL3Map(result.l3_by_l1_l2 ?? {});
+      setHierarchyH1List(result.h1_list);
+      setHierarchyH2Map(result.h2_by_h1);
+      setHierarchyH3Map(result.h3_by_h1_h2 ?? {});
       setHierarchyLoaded(true);
     }
     setIsLoadingHierarchy(false);
   };
 
-  const handleL1Change = (l1: string) => { setSelectedL1(l1); setSelectedL2(""); setSelectedL3(""); };
-  const handleL2Change = (l2: string) => { setSelectedL2(l2); setSelectedL3(""); };
+  const handleH1Change = (h1: string) => { setSelectedH1(h1); setSelectedH2(""); setSelectedH3(""); };
+  const handleH2Change = (h2: string) => { setSelectedH2(h2); setSelectedH3(""); };
 
   // 생성 폴링
   useEffect(() => {
@@ -326,9 +326,9 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
         model: formValues.model, lang: formValues.lang, samples: formValues.samples,
         prompt_version: formValues.promptVersion,
         ...(currentFilename && { filename: currentFilename }),
-        ...(selectedL1 && { hierarchy_l1: selectedL1 }),
-        ...(selectedL2 && { hierarchy_l2: selectedL2 }),
-        ...(selectedL3 && { hierarchy_l3: selectedL3 }),
+        ...(selectedH1 && { hierarchy_h1: selectedH1 }),
+        ...(selectedH2 && { hierarchy_h2: selectedH2 }),
+        ...(selectedH3 && { hierarchy_h3: selectedH3 }),
       }) as any;
       if (!response.success || !response.job_id) throw new Error(response.error || "Failed to start generation");
       setJobId(response.job_id);
@@ -463,34 +463,34 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L1 카테고리</label>
-                  <select value={selectedL1} onChange={e => handleL1Change(e.target.value)} disabled={isGenerating} className={selectCls(isGenerating)}>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H1 카테고리</label>
+                  <select value={selectedH1} onChange={e => handleH1Change(e.target.value)} disabled={isGenerating} className={selectCls(isGenerating)}>
                     <option value="">전체</option>
-                    {hierarchyL1List.map(l1 => <option key={l1} value={l1}>{l1}</option>)}
+                    {hierarchyH1List.map(h1 => <option key={h1} value={h1}>{h1}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L2 섹션</label>
-                  <select value={selectedL2} onChange={e => handleL2Change(e.target.value)} disabled={isGenerating || !selectedL1} className={selectCls(isGenerating || !selectedL1)}>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H2 섹션</label>
+                  <select value={selectedH2} onChange={e => handleH2Change(e.target.value)} disabled={isGenerating || !selectedH1} className={selectCls(isGenerating || !selectedH1)}>
                     <option value="">전체</option>
-                    {(hierarchyL2Map[selectedL1] || []).map(l2 => <option key={l2} value={l2}>{l2}</option>)}
+                    {(hierarchyH2Map[selectedH1] || []).map(h2 => <option key={h2} value={h2}>{h2}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">L3 항목</label>
-                  <select value={selectedL3} onChange={e => setSelectedL3(e.target.value)} disabled={isGenerating || !selectedL2} className={selectCls(isGenerating || !selectedL2)}>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H3 항목</label>
+                  <select value={selectedH3} onChange={e => setSelectedH3(e.target.value)} disabled={isGenerating || !selectedH2} className={selectCls(isGenerating || !selectedH2)}>
                     <option value="">전체</option>
-                    {(hierarchyL3Map[`${selectedL1}__${selectedL2}`] || []).map(l3 => <option key={l3} value={l3}>{l3}</option>)}
+                    {(hierarchyH3Map[`${selectedH1}__${selectedH2}`] || []).map(h3 => <option key={h3} value={h3}>{h3}</option>)}
                   </select>
                 </div>
               </div>
             )}
 
-            {hierarchyLoaded && selectedL1 && (
+            {hierarchyLoaded && selectedH1 && (
               <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-medium px-1">
-                <ChevronRight className="w-3 h-3" />{selectedL1}
-                {selectedL2 && <><ChevronRight className="w-3 h-3 text-slate-300" /><span className="text-indigo-400">{selectedL2}</span></>}
-                {selectedL3 && <><ChevronRight className="w-3 h-3 text-slate-300" /><span className="text-indigo-300">{selectedL3}</span></>}
+                <ChevronRight className="w-3 h-3" />{selectedH1}
+                {selectedH2 && <><ChevronRight className="w-3 h-3 text-slate-300" /><span className="text-indigo-400">{selectedH2}</span></>}
+                {selectedH3 && <><ChevronRight className="w-3 h-3 text-slate-300" /><span className="text-indigo-300">{selectedH3}</span></>}
               </div>
             )}
           </div>

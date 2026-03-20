@@ -2,15 +2,15 @@
 Ingestion API  —  POST /api/ingestion/*
 
 문서(PDF/DOCX) 업로드 → 청킹 → Gemini Embedding 2 벡터화 → Supabase doc_chunks 저장
-및 hierarchy(L1/L2/L3) 분석·태깅 엔드포인트를 제공한다.
+및 hierarchy(H1/H2/H3) 분석·태깅 엔드포인트를 제공한다.
 
 엔드포인트
   POST /api/ingestion/upload                파일 수신 → extract_text_by_page → process_and_ingest
-  POST /api/ingestion/analyze-hierarchy     L1 후보 도출 (Gemini)
-  POST /api/ingestion/analyze-l2-l3        L2/L3 master 생성
+  POST /api/ingestion/analyze-hierarchy     H1 후보 도출 (Gemini)
+  POST /api/ingestion/analyze-h2-h3        H2/H3 master 생성
   POST /api/ingestion/analyze-tagging-samples  태깅 샘플 미리보기
   POST /api/ingestion/apply-granular-tagging   청크별 hierarchy 일괄 적용
-  GET  /api/ingestion/hierarchy-list        L1/L2/L3 고유 목록
+  GET  /api/ingestion/hierarchy-list        H1/H2/H3 고유 목록
 """
 
 from __future__ import annotations
@@ -79,24 +79,24 @@ class HierarchyAnalysisRequest(BaseModel):
 
 class HierarchyAnalysisResponse(BaseModel):
     domain_analysis: str
-    l1_candidates: List[str]
+    h1_candidates: List[str]
     suggested_hierarchy: Dict[str, str]
     validation: str
 
 
 class GranularTaggingRequest(BaseModel):
     filename: str
-    selected_l1_list: List[str]
-    l2_l3_master: Optional[Dict[str, Dict[str, List[str]]]] = None
+    selected_h1_list: List[str]
+    h2_h3_master: Optional[Dict[str, Dict[str, List[str]]]] = None
 
 
-class L2L3AnalysisRequest(BaseModel):
+class H2H3AnalysisRequest(BaseModel):
     filename: str
-    selected_l1_list: List[str]
+    selected_h1_list: List[str]
 
 
-class L2L3AnalysisResponse(BaseModel):
-    l2_l3_master: Dict[str, Any]
+class H2H3AnalysisResponse(BaseModel):
+    h2_h3_master: Dict[str, Any]
 
 
 class TaggingSample(BaseModel):
@@ -267,7 +267,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "ingested_at": ingested_at,
                     "embedding_model": "gemini-embedding-2-preview",
                 }
-                for old_key in ["hierarchy_l1", "hierarchy_l2", "hierarchy_l3"]:
+                for old_key in ["hierarchy_h1", "hierarchy_h2", "hierarchy_h3"]:
                     chunk_metadata.pop(old_key, None)
 
                 await save_doc_chunk(c["raw_text"], normalized_embedding, chunk_metadata)
@@ -288,9 +288,9 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    hierarchy_l1: Optional[str] = Form(None),
-    hierarchy_l2: Optional[str] = Form(None),
-    hierarchy_l3: Optional[str] = Form(None),
+    hierarchy_h1: Optional[str] = Form(None),
+    hierarchy_h2: Optional[str] = Form(None),
+    hierarchy_h3: Optional[str] = Form(None),
 ):
     """문서 업로드 및 벡터화 인제스션 시작."""
     if not is_supabase_available():
@@ -321,9 +321,9 @@ async def upload_document(
                 raise HTTPException(status_code=400, detail="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
 
         metadata = {
-            "hierarchy_l1": hierarchy_l1,
-            "hierarchy_l2": hierarchy_l2,
-            "hierarchy_l3": hierarchy_l3,
+            "hierarchy_h1": hierarchy_h1,
+            "hierarchy_h2": hierarchy_h2,
+            "hierarchy_h3": hierarchy_h3,
             "filename": file.filename,
         }
         background_tasks.add_task(process_and_ingest, file.filename, pages, metadata)
@@ -345,7 +345,7 @@ async def upload_document(
 
 @router.post("/analyze-hierarchy", response_model=HierarchyAnalysisResponse)
 async def analyze_hierarchy(request: HierarchyAnalysisRequest):
-    """Pass 1: 문서 샘플 → L1 master 후보 도출."""
+    """Pass 1: 문서 샘플 → H1 master 후보 도출."""
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
@@ -357,14 +357,14 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
 
     prompt = f"""
 <role>
-You are an expert document classifier. Discover the Master Schema (L1 categories) for the provided document.
+You are an expert document classifier. Discover the Master Schema (H1 categories) for the provided document.
 </role>
 
 <constraints>
-- Identify exactly 3~5 distinct L1 domain categories that cover the full document.
-- L1 names must be in Korean (한국어), under 15 characters each.
-- L1 must represent content themes or domains — NOT section titles or headings.
-- Provide one concrete L1/L2/L3 example from the document.
+- Identify exactly 3~5 distinct H1 domain categories that cover the full document.
+- H1 names must be in Korean (한국어), under 15 characters each.
+- H1 must represent content themes or domains — NOT section titles or headings.
+- Provide one concrete H1/H2/H3 example from the document.
 </constraints>
 
 <context>
@@ -375,8 +375,8 @@ You are an expert document classifier. Discover the Master Schema (L1 categories
 Return a JSON object with this exact structure:
 {{
   "domain_analysis": "한 문장으로 문서 전체 성격 요약",
-  "l1_candidates": ["카테고리1", "카테고리2", "카테고리3"],
-  "suggested_hierarchy": {{ "l1": "L1명", "l2": "L2명", "l3": "L3명" }},
+  "h1_candidates": ["카테고리1", "카테고리2", "카테고리3"],
+  "suggested_hierarchy": {{ "h1": "H1명", "h2": "H2명", "h3": "H3명" }},
   "validation": "이 분류 방식이 적합한 이유 한 문장"
 }}
 </task>
@@ -395,9 +395,9 @@ Return a JSON object with this exact structure:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-@router.post("/analyze-l2-l3", response_model=L2L3AnalysisResponse)
-async def analyze_l2_l3(request: L2L3AnalysisRequest):
-    """Pass 2: L1 master → L2/L3 master 동시 생성."""
+@router.post("/analyze-h2-h3", response_model=H2H3AnalysisResponse)
+async def analyze_h2_h3(request: H2H3AnalysisRequest):
+    """Pass 2: H1 master → H2/H3 master 동시 생성."""
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
@@ -410,18 +410,18 @@ async def analyze_l2_l3(request: L2L3AnalysisRequest):
     prompt = f"""
 <role>
 You are an expert document classifier building a strict hierarchical taxonomy.
-Generate L2 sub-categories and L3 leaf labels for the given L1 master list.
+Generate H2 sub-categories and H3 leaf labels for the given H1 master list.
 </role>
 
 <constraints>
-- For each L1, create 2~5 L2 sub-categories covering distinct content themes.
-- For each L2, create 2~4 specific L3 labels.
+- For each H1, create 2~5 H2 sub-categories covering distinct content themes.
+- For each H2, create 2~4 specific H3 labels.
 - All names in Korean (한국어), under 15 characters each.
 </constraints>
 
-<l1_master>
-{json.dumps(request.selected_l1_list, ensure_ascii=False)}
-</l1_master>
+<h1_master>
+{json.dumps(request.selected_h1_list, ensure_ascii=False)}
+</h1_master>
 
 <context>
 {sample_text[:12000]}
@@ -430,9 +430,9 @@ Generate L2 sub-categories and L3 leaf labels for the given L1 master list.
 <task>
 Return a JSON object:
 {{
-  "L1명": {{
-    "L2명A": ["L3명1", "L3명2"],
-    "L2명B": ["L3명1", "L3명2"]
+  "H1명": {{
+    "H2명A": ["H3명1", "H3명2"],
+    "H2명B": ["H3명1", "H3명2"]
   }}
 }}
 </task>
@@ -444,20 +444,20 @@ Return a JSON object:
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
         )
-        l2_l3_master = json.loads(res.text)
+        h2_h3_master = json.loads(res.text)
         # LLM이 간혹 dict 대신 list of dict를 반환하는 경우 병합
-        if isinstance(l2_l3_master, list):
+        if isinstance(h2_h3_master, list):
             merged: Dict[str, Any] = {}
-            for item in l2_l3_master:
+            for item in h2_h3_master:
                 if isinstance(item, dict):
                     merged.update(item)
-            l2_l3_master = merged
-        if not isinstance(l2_l3_master, dict):
-            raise ValueError(f"Unexpected LLM response type: {type(l2_l3_master)}")
-        return L2L3AnalysisResponse(l2_l3_master=l2_l3_master)
+            h2_h3_master = merged
+        if not isinstance(h2_h3_master, dict):
+            raise ValueError(f"Unexpected LLM response type: {type(h2_h3_master)}")
+        return H2H3AnalysisResponse(h2_h3_master=h2_h3_master)
     except Exception as e:
-        logger.error(f"❌ L2/L3 analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"L2/L3 analysis failed: {str(e)}")
+        logger.error(f"❌ H2/H3 analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"H2/H3 analysis failed: {str(e)}")
 
 
 @router.post("/analyze-tagging-samples", response_model=TaggingPreviewResponse)
@@ -475,10 +475,10 @@ async def analyze_tagging_samples(request: GranularTaggingRequest):
     chunks_data = [{"id": s["id"], "content": s["content"][:800]} for s in samples]
 
     prompt = f"""
-Analyze these text chunks and assign the most appropriate [L1, L2, L3] hierarchy for each.
+Analyze these text chunks and assign the most appropriate [H1, H2, H3] hierarchy for each.
 
-### Master L1 List:
-{request.selected_l1_list}
+### Master H1 List:
+{request.selected_h1_list}
 
 ### Requirements:
 - Korean term, under 15 characters.
@@ -488,7 +488,7 @@ Analyze these text chunks and assign the most appropriate [L1, L2, L3] hierarchy
 {json.dumps(chunks_data, ensure_ascii=False)}
 
 ### JSON Structure:
-[{{ "id": "chunk_uuid", "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }} }}]
+[{{ "id": "chunk_uuid", "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
 """
 
     try:
@@ -529,21 +529,21 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
         completed = 0
 
         def _build_prompt(chunks_data: list) -> str:
-            if request.l2_l3_master:
+            if request.h2_h3_master:
                 return f"""
 <role>
 You are a strict document taxonomy classifier.
-Select L1, L2, L3 values EXCLUSIVELY from master_hierarchy. Do NOT generate new values.
+Select H1, H2, H3 values EXCLUSIVELY from master_hierarchy. Do NOT generate new values.
 </role>
 
 <constraints>
-- L1: select ONE from top-level keys of master_hierarchy
-- L2: select ONE from L2 keys under selected L1
-- L3: select ONE from L3 list under selected L2
+- H1: select ONE from top-level keys of master_hierarchy
+- H2: select ONE from H2 keys under selected H1
+- H3: select ONE from H3 list under selected H2
 </constraints>
 
 <master_hierarchy>
-{json.dumps(request.l2_l3_master, ensure_ascii=False, indent=2)}
+{json.dumps(request.h2_h3_master, ensure_ascii=False, indent=2)}
 </master_hierarchy>
 
 <chunks>
@@ -552,7 +552,7 @@ Select L1, L2, L3 values EXCLUSIVELY from master_hierarchy. Do NOT generate new 
 
 <task>
 Return ONLY a JSON array — no explanation:
-[{{ "idx": 0, "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }} }}]
+[{{ "idx": 0, "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
 </task>
 """
             else:
@@ -560,13 +560,13 @@ Return ONLY a JSON array — no explanation:
 <role>You are a document taxonomy classifier.</role>
 
 <constraints>
-- L1: select ONE from l1_master
-- L2/L3: Korean, under 15 characters each
+- H1: select ONE from h1_master
+- H2/H3: Korean, under 15 characters each
 </constraints>
 
-<l1_master>
-{json.dumps(request.selected_l1_list, ensure_ascii=False)}
-</l1_master>
+<h1_master>
+{json.dumps(request.selected_h1_list, ensure_ascii=False)}
+</h1_master>
 
 <chunks>
 {json.dumps(chunks_data, ensure_ascii=False)}
@@ -574,7 +574,7 @@ Return ONLY a JSON array — no explanation:
 
 <task>
 Return ONLY a JSON array — no explanation:
-[{{ "idx": 0, "hierarchy": {{ "l1": "...", "l2": "...", "l3": "..." }} }}]
+[{{ "idx": 0, "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
 </task>
 """
 
@@ -600,9 +600,9 @@ Return ONLY a JSON array — no explanation:
                         target = batch[idx]
                         meta = {
                             **target.get("metadata", {}),
-                            "hierarchy_l1": h.get("l1"),
-                            "hierarchy_l2": h.get("l2"),
-                            "hierarchy_l3": h.get("l3"),
+                            "hierarchy_h1": h.get("h1"),
+                            "hierarchy_h2": h.get("h2"),
+                            "hierarchy_h3": h.get("h3"),
                         }
                         update_tasks.append(update_chunk_metadata(target["id"], meta))
                         matched += 1
@@ -624,9 +624,9 @@ Return ONLY a JSON array — no explanation:
 
 @router.get("/hierarchy-list")
 async def get_hierarchy_list_endpoint(filename: str = None):
-    """doc_chunks L1/L2/L3 고유 목록 (프론트엔드 드롭다운용)."""
+    """doc_chunks H1/H2/H3 고유 목록 (프론트엔드 드롭다운용)."""
     if not is_supabase_available():
-        return {"success": False, "l1_list": [], "l2_by_l1": {}, "message": "Supabase not available"}
+        return {"success": False, "h1_list": [], "h2_by_h1": {}, "message": "Supabase not available"}
     result = await get_hierarchy_list(filename=filename)
     return {"success": True, **result}
 

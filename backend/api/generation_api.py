@@ -96,9 +96,9 @@ class GenerateRequest(BaseModel):
     filename: Optional[str] = None
 
     # Hierarchy filters for vector search
-    hierarchy_l1: Optional[str] = None
-    hierarchy_l2: Optional[str] = None
-    hierarchy_l3: Optional[str] = None
+    hierarchy_h1: Optional[str] = None
+    hierarchy_h2: Optional[str] = None
+    hierarchy_h3: Optional[str] = None
     retrieval_query: Optional[str] = None
 
 class GenerationStatus(BaseModel):
@@ -260,9 +260,9 @@ async def run_qa_generation_real(
     # 1. 결정: Vector DB에서 가져올지, 로컬 JSON에서 가져올지
     # hierarchy 필터가 하나라도 있으면 Vector DB 검색 시도
     config = job_manager.get_job(job_id).config or {}
-    h1 = config.get("hierarchy_l1")
-    h2 = config.get("hierarchy_l2")
-    h3 = config.get("hierarchy_l3")
+    h1 = config.get("hierarchy_h1")
+    h2 = config.get("hierarchy_h2")
+    h3 = config.get("hierarchy_h3")
     r_query = config.get("retrieval_query")
     doc_filename = config.get("filename")
 
@@ -278,9 +278,9 @@ async def run_qa_generation_real(
 
         # 필터 구성
         filter_dict = {}
-        if h1: filter_dict["hierarchy_l1"] = h1
-        if h2: filter_dict["hierarchy_l2"] = h2
-        if h3: filter_dict["hierarchy_l3"] = h3
+        if h1: filter_dict["hierarchy_h1"] = h1
+        if h2: filter_dict["hierarchy_h2"] = h2
+        if h3: filter_dict["hierarchy_h3"] = h3
 
         # 쿼리 임베딩 생성 (유사도 검색 필요시)
         query_vector = None
@@ -313,9 +313,9 @@ async def run_qa_generation_real(
         else:
             # r_query 없음 → metadata 필터만 필요, 직접 select (zero vector 불필요)
             chunks = await get_doc_chunks_by_filter(
-                hierarchy_l1=h1,
-                hierarchy_l2=h2,
-                hierarchy_l3=h3,
+                hierarchy_h1=h1,
+                hierarchy_h2=h2,
+                hierarchy_h3=h3,
                 filename=doc_filename,
                 limit=max(samples * 3, 30),  # 여유있게 가져와서 skip 후에도 충분히 확보
             )
@@ -343,7 +343,7 @@ async def run_qa_generation_real(
             meta = c.get("metadata", {})
             items.append({
                 "docId": c.get("id"),
-                "hierarchy": [meta.get("hierarchy_l1"), meta.get("hierarchy_l2"), meta.get("hierarchy_l3")],
+                "hierarchy": [meta.get("hierarchy_h1"), meta.get("hierarchy_h2"), meta.get("hierarchy_h3")],
                 "text": c.get("content"),
                 "metadata": meta
             })
@@ -356,7 +356,7 @@ async def run_qa_generation_real(
             raise ValueError(
                 "QA 생성에 필요한 문서 청크를 찾을 수 없습니다. "
                 "데이터 규격화 페이지에서 문서를 먼저 업로드·인제스션한 후 "
-                "L1/L2 계층을 선택하고 다시 시도하세요."
+                "H1/H2 계층을 선택하고 다시 시도하세요."
             )
         # Supabase 미사용 환경: 로컬 JSON 폴백
         logger.info(f"[{job_id}] Supabase unavailable — trying local JSON fallback")
@@ -389,7 +389,7 @@ async def run_qa_generation_real(
 
     job_manager.update_job(job_id, progress=12, message="Analyzing document domain...")
     domain_profile = await analyze_domain(
-        hierarchy_l1=h1, hierarchy_l2=h2, hierarchy_l3=h3, model=model
+        hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3, model=model
     )
     logger.info(
         f"[{job_id}] Domain profile: '{domain_profile.get('domain', '?')}' | "

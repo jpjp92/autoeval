@@ -3,7 +3,7 @@ Domain Profiler
 doc_chunks 샘플 기반 도메인 자동 분석 (P3 적응형 프롬프트 1단계)
 
 흐름:
-  doc_chunks에서 L1별 분산 샘플 최대 10개 조회
+  doc_chunks에서 H1별 분산 샘플 최대 10개 조회
     → LLM이 도메인/독자/주요용어/chunk_type 분포 파악
       → domain_profile JSON 반환 (job 내 캐시, 1회만 실행)
   실패 시 GENERIC_DOMAIN_PROFILE 반환 (생성 중단 없음)
@@ -52,8 +52,8 @@ def _build_analysis_prompt(samples: list) -> str:
         content = s.get("content", "")[:400]
         lines.append(
             f"[Chunk {i}] "
-            f"L1={meta.get('hierarchy_l1', '?')} / "
-            f"L2={meta.get('hierarchy_l2', '?')} / "
+            f"H1={meta.get('hierarchy_h1', '?')} / "
+            f"H2={meta.get('hierarchy_h2', '?')} / "
             f"type={meta.get('chunk_type', '?')}\n"
             f"{content}\n"
         )
@@ -137,9 +137,9 @@ def _call_llm(model: str, user_prompt: str) -> str:
 # ============= Main Entry Point =============
 
 async def analyze_domain(
-    hierarchy_l1: Optional[str] = None,
-    hierarchy_l2: Optional[str] = None,
-    hierarchy_l3: Optional[str] = None,
+    hierarchy_h1: Optional[str] = None,
+    hierarchy_h2: Optional[str] = None,
+    hierarchy_h3: Optional[str] = None,
     model: str = "gpt-5.1",
 ) -> dict:
     """
@@ -147,7 +147,7 @@ async def analyze_domain(
     실패 시 GENERIC_DOMAIN_PROFILE을 반환 (생성 파이프라인 중단 없음).
 
     Args:
-        hierarchy_l1/l2/l3: 현재 job의 hierarchy 필터 (필터된 범위 내에서 샘플링)
+        hierarchy_h1/h2/h3: 현재 job의 hierarchy 필터 (필터된 범위 내에서 샘플링)
         model: 도메인 분석에 사용할 LLM
     Returns:
         domain_profile dict
@@ -162,9 +162,9 @@ async def analyze_domain(
         # 현재 job의 필터 범위 내에서 최대 10개 조회
         # 필터 없으면 전체 doc_chunks에서 샘플링
         samples = await get_doc_chunks_by_filter(
-            hierarchy_l1=hierarchy_l1,
-            hierarchy_l2=hierarchy_l2,
-            hierarchy_l3=hierarchy_l3,
+            hierarchy_h1=hierarchy_h1,
+            hierarchy_h2=hierarchy_h2,
+            hierarchy_h3=hierarchy_h3,
             limit=10,
         )
 

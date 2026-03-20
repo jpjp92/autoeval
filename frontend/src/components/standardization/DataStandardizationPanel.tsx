@@ -3,11 +3,11 @@ import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkle
 import { cn } from "@/src/lib/utils";
 import { API_BASE, getHierarchyList } from "@/src/lib/api";
 
-interface HierarchyData { l1: string; l2: string; l3: string; }
+interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
 interface AnalysisResult {
   domain_analysis: string;
-  l1_candidates: string[];
+  h1_candidates: string[];
   suggested_hierarchy: HierarchyData;
   validation: string;
 }
@@ -27,13 +27,13 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [isTagging, setIsTagging] = useState(false);
   const [isAnalyzingSamples, setIsAnalyzingSamples] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [selectedL1s, setSelectedL1s] = useState<string[]>([]);
-  const [l2l3Master, setL2l3Master] = useState<Record<string, Record<string, string[]>> | null>(null);
+  const [selectedH1s, setSelectedH1s] = useState<string[]>([]);
+  const [h2h3Master, setH2h3Master] = useState<Record<string, Record<string, string[]>> | null>(null);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
-  const [hierarchyTree, setHierarchyTree] = useState<{ l1_list: string[]; l2_by_l1: Record<string, string[]>; l3_by_l1_l2: Record<string, string[]> } | null>(null);
-  const [expandedL1, setExpandedL1] = useState<Record<string, boolean>>({});
-  const [expandedL2, setExpandedL2] = useState<Record<string, boolean>>({});
+  const [hierarchyTree, setHierarchyTree] = useState<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null>(null);
+  const [expandedH1, setExpandedH1] = useState<Record<string, boolean>>({});
+  const [expandedH2, setExpandedH2] = useState<Record<string, boolean>>({});
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setFile(e.target.files[0]);
@@ -70,9 +70,9 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setHierarchyMessage(null);
     setAnalysis(null);
     setTaggingSamples([]);
-    setL2l3Master(null);
+    setH2h3Master(null);
     try {
-      // 1단계: L1 master 생성
+      // 1단계: H1 master 생성
       const res = await fetch(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -81,24 +81,24 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       if (!res.ok) throw new Error((await res.json()).detail || "분석 실패");
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
-      setSelectedL1s(data.l1_candidates);
+      setSelectedH1s(data.h1_candidates);
       setIsAnalyzing(false);
 
-      // 2단계: L2/L3 master 생성
+      // 2단계: H2/H3 master 생성
       setIsAnalyzingL2L3(true);
-      const l2l3Res = await fetch(`${API_BASE}/api/ingestion/analyze-l2-l3`, {
+      const h2h3Res = await fetch(`${API_BASE}/api/ingestion/analyze-h2-h3`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: uploadedFilename, selected_l1_list: data.l1_candidates }),
+        body: JSON.stringify({ filename: uploadedFilename, selected_h1_list: data.h1_candidates }),
       });
-      if (!l2l3Res.ok) throw new Error((await l2l3Res.json()).detail || "L2/L3 분석 실패");
-      const l2l3Data = await l2l3Res.json();
-      const master = l2l3Data.l2_l3_master;
-      setL2l3Master(master);
+      if (!h2h3Res.ok) throw new Error((await h2h3Res.json()).detail || "H2/H3 분석 실패");
+      const h2h3Data = await h2h3Res.json();
+      const master = h2h3Data.h2_h3_master;
+      setH2h3Master(master);
       setIsAnalyzingL2L3(false);
 
       // 3단계: 태깅 적용
-      runTagging(uploadedFilename, data.l1_candidates, master);
+      runTagging(uploadedFilename, data.h1_candidates, master);
     } catch (e: any) {
       setHierarchyMessage({ text: e.message, type: "error" });
       setIsAnalyzing(false);
@@ -106,7 +106,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     }
   };
 
-  const runTagging = async (filename: string, l1s: string[], master: Record<string, Record<string, string[]>>) => {
+  const runTagging = async (filename: string, h1s: string[], master: Record<string, Record<string, string[]>>) => {
     setIsAnalyzingSamples(true);
     setIsTagging(true);
     setHierarchyTree(null);
@@ -114,11 +114,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const [samplesRes, taggingRes] = await Promise.all([
         fetch(`${API_BASE}/api/ingestion/analyze-tagging-samples`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_l1_list: l1s, l2_l3_master: master }),
+          body: JSON.stringify({ filename, selected_h1_list: h1s, h2_h3_master: master }),
         }),
         fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_l1_list: l1s, l2_l3_master: master }),
+          body: JSON.stringify({ filename, selected_h1_list: h1s, h2_h3_master: master }),
         }),
       ]);
       if (samplesRes.ok) {
@@ -129,16 +129,16 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const treeRes = await getHierarchyList(filename);
       if (treeRes.success) {
         setHierarchyTree(treeRes);
-        const expandedL1Init: Record<string, boolean> = {};
-        const expandedL2Init: Record<string, boolean> = {};
-        treeRes.l1_list.forEach((l1: string) => {
-          expandedL1Init[l1] = true;
-          (treeRes.l2_by_l1[l1] ?? []).forEach((l2: string) => {
-            expandedL2Init[`${l1}__${l2}`] = false;
+        const expandedH1Init: Record<string, boolean> = {};
+        const expandedH2Init: Record<string, boolean> = {};
+        treeRes.h1_list.forEach((h1: string) => {
+          expandedH1Init[h1] = true;
+          (treeRes.h2_by_h1[h1] ?? []).forEach((h2: string) => {
+            expandedH2Init[`${h1}__${h2}`] = false;
           });
         });
-        setExpandedL1(expandedL1Init);
-        setExpandedL2(expandedL2Init);
+        setExpandedH1(expandedH1Init);
+        setExpandedH2(expandedH2Init);
       }
       onTaggingComplete?.();
     } catch (e: any) {
@@ -149,8 +149,8 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     }
   };
 
-  const toggleL1 = (l1: string) =>
-    setSelectedL1s(prev => prev.includes(l1) ? prev.filter(s => s !== l1) : [...prev, l1]);
+  const toggleH1 = (h1: string) =>
+    setSelectedH1s(prev => prev.includes(h1) ? prev.filter(s => s !== h1) : [...prev, h1]);
 
   const uploadDone = !!uploadedFilename && uploadMessage?.type === "success";
   const hierarchyDone = !isTagging && !isAnalyzingSamples && taggingSamples.length > 0;
@@ -251,7 +251,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       <StepCard
         step={2}
         title="컨텍스트 분석"
-        subtitle="LLM이 문서를 분석해 L1/L2/L3 계층 구조를 자동으로 태깅합니다."
+        subtitle="LLM이 문서를 분석해 H1/H2/H3 계층 구조를 자동으로 태깅합니다."
         icon={<Sparkles className="w-4 h-4" />}
         status={!uploadDone ? "pending" : hierarchyDone ? "done" : "active"}
         isLast={true}
@@ -282,7 +282,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                 )}
               >
                 {(isAnalyzing || isAnalyzingL2L3 || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {isAnalyzing ? "L1 분석 중..." : isAnalyzingL2L3 ? "L2/L3 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
+                {isAnalyzing ? "H1 분석 중..." : isAnalyzingL2L3 ? "H2/H3 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
               </button>
             </div>
 
@@ -299,28 +299,28 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
                 <p className="text-sm text-indigo-700">
-                  {isAnalyzing ? "1단계: L1 도메인 분석 중..." : isAnalyzingL2L3 ? "2단계: L2/L3 분류 체계 생성 중..." : "3단계: 청크 태깅 적용 중..."}
+                  {isAnalyzing ? "1단계: H1 도메인 분석 중..." : isAnalyzingL2L3 ? "2단계: H2/H3 분류 체계 생성 중..." : "3단계: 청크 태깅 적용 중..."}
                 </p>
               </div>
             )}
 
-            {/* L1 후보 */}
+            {/* H1 후보 */}
             {analysis && (
               <div className="space-y-2 animate-in fade-in duration-300">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">L1 도메인 후보</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">H1 도메인 후보</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {analysis.l1_candidates.map(l1 => (
+                  {analysis.h1_candidates.map(h1 => (
                     <button
-                      key={l1}
-                      onClick={() => toggleL1(l1)}
+                      key={h1}
+                      onClick={() => toggleH1(h1)}
                       className={cn(
                         "px-3 py-1 rounded-full text-xs font-medium border transition-all",
-                        selectedL1s.includes(l1)
+                        selectedH1s.includes(h1)
                           ? "bg-indigo-100 border-indigo-300 text-indigo-700"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200"
                       )}
                     >
-                      {l1}
+                      {h1}
                     </button>
                   ))}
                 </div>
@@ -336,11 +336,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                     <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                       <p className="flex-1 text-xs text-slate-600 leading-relaxed line-clamp-2 min-w-0">{s.content_preview}</p>
                       <div className="flex items-center gap-1 flex-shrink-0 text-[10px] font-medium">
-                        <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded">{s.hierarchy.l1}</span>
+                        <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded">{s.hierarchy.h1}</span>
                         <ChevronRight className="w-3 h-3 text-slate-300" />
-                        <span className="px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded">{s.hierarchy.l2}</span>
+                        <span className="px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded">{s.hierarchy.h2}</span>
                         <ChevronRight className="w-3 h-3 text-slate-300" />
-                        <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">{s.hierarchy.l3}</span>
+                        <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">{s.hierarchy.h3}</span>
                       </div>
                     </div>
                   ))}
@@ -349,91 +349,91 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             )}
 
             {/* 계층 트리 */}
-            {hierarchyTree && hierarchyTree.l1_list.length > 0 && (() => {
-              const totalL2 = (Object.values(hierarchyTree.l2_by_l1) as string[][]).reduce((s, arr) => s + arr.length, 0);
-              const totalL3 = (Object.values(hierarchyTree.l3_by_l1_l2) as string[][]).reduce((s, arr) => s + arr.length, 0);
-              const L1_DOT_COLORS = ["bg-violet-400", "bg-blue-400", "bg-emerald-500", "bg-amber-400"];
+            {hierarchyTree && hierarchyTree.h1_list.length > 0 && (() => {
+              const totalH2 = (Object.values(hierarchyTree.h2_by_h1) as string[][]).reduce((s, arr) => s + arr.length, 0);
+              const totalH3 = (Object.values(hierarchyTree.h3_by_h1_h2) as string[][]).reduce((s, arr) => s + arr.length, 0);
+              const H1_DOT_COLORS = ["bg-violet-400", "bg-blue-400", "bg-emerald-500", "bg-amber-400"];
               return (
                 <div className="space-y-2 animate-in fade-in duration-400">
                   {/* 헤더: 제목 + 레벨 칩 */}
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">계층 구조</p>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium">
-                      <span className="px-2.5 py-0.5 bg-violet-50 text-violet-600 border border-violet-200 rounded-full">L1 · {hierarchyTree.l1_list.length}</span>
-                      <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-full">L2 · {totalL2}</span>
-                      <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">L3 · {totalL3}</span>
+                      <span className="px-2.5 py-0.5 bg-violet-50 text-violet-600 border border-violet-200 rounded-full">H1 · {hierarchyTree.h1_list.length}</span>
+                      <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-full">H2 · {totalH2}</span>
+                      <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">H3 · {totalH3}</span>
                     </div>
                   </div>
 
                   {/* 트리 */}
                   <div className="rounded-xl border border-slate-100 bg-white overflow-hidden">
-                    {hierarchyTree.l1_list.map((l1: string, l1Idx: number) => {
-                      const l2s = hierarchyTree.l2_by_l1[l1] ?? [];
-                      const isL1Open = expandedL1[l1] ?? true;
-                      const dotColor = L1_DOT_COLORS[l1Idx % L1_DOT_COLORS.length];
+                    {hierarchyTree.h1_list.map((h1: string, h1Idx: number) => {
+                      const h2s = hierarchyTree.h2_by_h1[h1] ?? [];
+                      const isH1Open = expandedH1[h1] ?? true;
+                      const dotColor = H1_DOT_COLORS[h1Idx % H1_DOT_COLORS.length];
 
                       return (
-                        <div key={l1}>
-                          {l1Idx > 0 && <div className="h-px bg-slate-50 mx-4" />}
+                        <div key={h1}>
+                          {h1Idx > 0 && <div className="h-px bg-slate-50 mx-4" />}
 
-                          {/* L1 행 */}
+                          {/* H1 행 */}
                           <button
-                            onClick={() => setExpandedL1(prev => ({ ...prev, [l1]: !isL1Open }))}
+                            onClick={() => setExpandedH1(prev => ({ ...prev, [h1]: !isH1Open }))}
                             className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-slate-50/80 transition-colors text-left"
                           >
-                            <ChevronRight className={cn("w-3.5 h-3.5 text-slate-300 transition-transform flex-shrink-0", isL1Open && "rotate-90")} />
+                            <ChevronRight className={cn("w-3.5 h-3.5 text-slate-300 transition-transform flex-shrink-0", isH1Open && "rotate-90")} />
                             <span className={cn("w-2 h-2 rounded-full flex-shrink-0", dotColor)} />
-                            <span className="text-sm font-semibold text-slate-800 flex-1">{l1}</span>
-                            <span className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">{l2s.length} L2</span>
+                            <span className="text-sm font-semibold text-slate-800 flex-1">{h1}</span>
+                            <span className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">{h2s.length} H2</span>
                           </button>
 
-                          {/* L2 목록 */}
-                          {isL1Open && l2s.length > 0 && (
+                          {/* H2 목록 */}
+                          {isH1Open && h2s.length > 0 && (
                             <div className="relative pl-10 pr-4 pb-2">
-                              {/* L1 세로 가이드라인 */}
+                              {/* H1 세로 가이드라인 */}
                               <div className="absolute left-[21px] top-0 bottom-6 w-px bg-violet-200" />
 
-                              {l2s.map((l2: string) => {
-                                const l3Key = `${l1}__${l2}`;
-                                const l3s = hierarchyTree.l3_by_l1_l2[l3Key] ?? [];
-                                const isL2Open = expandedL2[l3Key] ?? false;
+                              {h2s.map((h2: string) => {
+                                const h3Key = `${h1}__${h2}`;
+                                const h3s = hierarchyTree.h3_by_h1_h2[h3Key] ?? [];
+                                const isH2Open = expandedH2[h3Key] ?? false;
 
                                 return (
-                                  <div key={l2} className="relative mb-0.5">
-                                    {/* L2 가로 브랜치 */}
+                                  <div key={h2} className="relative mb-0.5">
+                                    {/* H2 가로 브랜치 */}
                                     <div className="absolute left-[-13px] top-[18px] w-3 h-px bg-violet-200" />
 
-                                    {/* L2 행 */}
+                                    {/* H2 행 */}
                                     <button
-                                      onClick={() => l3s.length > 0 && setExpandedL2((prev: Record<string, boolean>) => ({ ...prev, [l3Key]: !isL2Open }))}
+                                      onClick={() => h3s.length > 0 && setExpandedH2((prev: Record<string, boolean>) => ({ ...prev, [h3Key]: !isH2Open }))}
                                       className={cn(
                                         "w-full flex items-center gap-2 py-2 px-2.5 rounded-lg transition-colors text-left",
-                                        l3s.length > 0 ? "hover:bg-indigo-50/60 cursor-pointer" : "cursor-default"
+                                        h3s.length > 0 ? "hover:bg-indigo-50/60 cursor-pointer" : "cursor-default"
                                       )}
                                     >
                                       <ChevronRight className={cn(
                                         "w-3 h-3 flex-shrink-0 transition-transform",
-                                        l3s.length > 0 ? "text-slate-300" : "text-transparent",
-                                        isL2Open && "rotate-90"
+                                        h3s.length > 0 ? "text-slate-300" : "text-transparent",
+                                        isH2Open && "rotate-90"
                                       )} />
-                                      <span className="text-sm text-indigo-600 flex-1">{l2}</span>
-                                      {l3s.length > 0 && (
-                                        <span className="text-[10px] text-slate-400">{l3s.length} L3</span>
+                                      <span className="text-sm text-indigo-600 flex-1">{h2}</span>
+                                      {h3s.length > 0 && (
+                                        <span className="text-[10px] text-slate-400">{h3s.length} H3</span>
                                       )}
                                     </button>
 
-                                    {/* L3 목록 */}
-                                    {isL2Open && l3s.length > 0 && (
+                                    {/* H3 목록 */}
+                                    {isH2Open && h3s.length > 0 && (
                                       <div className="relative pl-6 mb-1">
-                                        {/* L2 세로 가이드라인 */}
+                                        {/* H2 세로 가이드라인 */}
                                         <div className="absolute left-[10px] top-0 bottom-4 w-px bg-emerald-200" />
 
-                                        {l3s.map((l3: string) => (
-                                          <div key={l3} className="relative flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-emerald-50/50 transition-colors">
-                                            {/* L3 가로 브랜치 */}
+                                        {h3s.map((h3: string) => (
+                                          <div key={h3} className="relative flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-emerald-50/50 transition-colors">
+                                            {/* H3 가로 브랜치 */}
                                             <div className="absolute left-[-14px] top-1/2 -translate-y-1/2 w-3 h-px bg-emerald-200" />
                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                                            <span className="text-xs text-emerald-700">{l3}</span>
+                                            <span className="text-xs text-emerald-700">{h3}</span>
                                           </div>
                                         ))}
                                       </div>

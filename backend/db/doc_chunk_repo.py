@@ -90,9 +90,9 @@ async def search_doc_chunks(
 
 
 async def get_doc_chunks_by_filter(
-    hierarchy_l1: Optional[str] = None,
-    hierarchy_l2: Optional[str] = None,
-    hierarchy_l3: Optional[str] = None,
+    hierarchy_h1: Optional[str] = None,
+    hierarchy_h2: Optional[str] = None,
+    hierarchy_h3: Optional[str] = None,
     filename: Optional[str] = None,
     limit: int = 20,
 ) -> list:
@@ -103,12 +103,12 @@ async def get_doc_chunks_by_filter(
         query = supabase.table("doc_chunks").select("id, content, metadata")
         if filename:
             query = query.eq("metadata->>filename", filename)
-        if hierarchy_l1:
-            query = query.eq("metadata->>hierarchy_l1", hierarchy_l1)
-        if hierarchy_l2:
-            query = query.eq("metadata->>hierarchy_l2", hierarchy_l2)
-        if hierarchy_l3:
-            query = query.eq("metadata->>hierarchy_l3", hierarchy_l3)
+        if hierarchy_h1:
+            query = query.eq("metadata->>hierarchy_h1", hierarchy_h1)
+        if hierarchy_h2:
+            query = query.eq("metadata->>hierarchy_h2", hierarchy_h2)
+        if hierarchy_h3:
+            query = query.eq("metadata->>hierarchy_h3", hierarchy_h3)
         response = query.limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
