@@ -654,7 +654,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
                     {fmt === 'html' && <Code2    className="w-4 h-4 text-green-600" />}
                     <div>
                       <div className="font-medium">{fmt.toUpperCase()}</div>
-                      <div className="text-xs text-slate-500">{fmt === 'xlsx' ? 'Spreadsheet' : 'Formatted doc'}</div>
+                      <div className="text-xs text-slate-500">{fmt === 'xlsx' ? 'Spreadsheet' : 'HTML Report'}</div>
                     </div>
                   </button>
                 ))}
