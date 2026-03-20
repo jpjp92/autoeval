@@ -54,9 +54,6 @@ logging.root.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
 logger = logging.getLogger("autoeval.main")
 
-# TruLens 내부 경고 억제
-logging.getLogger("trulens").setLevel(logging.ERROR)
-logging.getLogger("trulens.core").setLevel(logging.ERROR)
 
 UVICORN_LOG_CONFIG = {
     "version": 1,
