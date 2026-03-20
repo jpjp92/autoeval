@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface ScoreTrendProps {
@@ -40,15 +41,34 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
     const dateLabel = d
       ? `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
       : `#${idx + 1}`;
+    const dayKey = d
+      ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      : null;
     return {
       idx,
-      seqLabel: `#${idx + 1}`,
+      dayKey,
       dateLabel,
       score: item.score != null ? +(item.score * 100).toFixed(1) : 0,
       doc: item.doc || '',
       grade: item.grade || '',
     };
   });
+
+  // 날짜별 첫 번째 항목만 x축 레이블 표시 (idx → label 사전 계산)
+  const xTickMap = useMemo(() => {
+    const map = new Map<number, string>();
+    const seen = new Set<string>();
+    chartData.forEach((point) => {
+      if (!point.dayKey) return;
+      if (seen.has(point.dayKey)) return;
+      seen.add(point.dayKey);
+      const d = new Date(scoreTrend![point.idx].date);
+      map.set(point.idx, `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`);
+    });
+    return map;
+  }, [chartData, scoreTrend]);
+
+  const xTickFormatter = (idx: number) => xTickMap.get(idx) ?? '';
 
   const isEmpty = chartData.length === 0;
 
@@ -86,7 +106,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 tickLine={false}
                 tick={{ fill: '#94a3b8', fontSize: 12 }}
                 dy={10}
-                tickFormatter={(idx) => chartData[idx]?.seqLabel ?? ''}
+                tickFormatter={xTickFormatter}
               />
               <YAxis
                 axisLine={false}
