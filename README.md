@@ -261,15 +261,13 @@ autoeval/
 
 ## DB 스키마
 
-Supabase (autoeval 프로젝트) — 3개 테이블 + 2개 뷰
+Supabase (autoeval 프로젝트) — 3개 테이블
 
 | 객체 | 유형 | 설명 |
 |------|------|------|
 | `doc_chunks` | 테이블 | 문서 청크 + vector(1536) + metadata JSONB |
 | `qa_gen_results` | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[]) |
 | `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade |
-| `qa_pairs_view` | 뷰 | qa_gen_results.qa_list flat 전개 |
-| `evaluation_qa_joined` | 뷰 | qa_eval_results ↔ qa_gen_results 조인 |
 
 ### 테이블 연계
 
@@ -332,7 +330,8 @@ Supabase SQL Editor에서 순서대로 실행:
 
 ```
 backend/scripts/setup_vector_db.sql       # doc_chunks + match_doc_chunks RPC
-backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results, 뷰 2개
+backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results
+-- + get_eval_qa_scores RPC (pipeline_results에서 qa_scores만 추출)
 ```
 
 #### 4. 서버 실행

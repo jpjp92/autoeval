@@ -18,6 +18,7 @@ RUN uv sync --frozen --no-dev
 COPY backend/ ./backend/
 
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 

@@ -19,7 +19,6 @@ from db.qa_generation_repo import (
 from db.evaluation_repo import (
     save_evaluation_to_supabase,
     get_evaluation_result,
-    get_evaluation_qa_joined,
 )
 
 # 생성-평가 링크
@@ -52,7 +51,6 @@ __all__ = [
     "get_generations_by_source_doc",
     "save_evaluation_to_supabase",
     "get_evaluation_result",
-    "get_evaluation_qa_joined",
     "link_generation_to_evaluation",
     "save_doc_chunk",
     "update_chunk_metadata",

@@ -133,30 +133,26 @@
 
 ---
 
-## Views
+## RPC Functions
 
-### `qa_pairs_view` — QA 쌍 평탄화
+### `get_eval_qa_scores(p_eval_id uuid)` — export 최적화
 
-```sql
-SELECT qg.job_id, qg.created_at,
-  doc->>'docId'          AS doc_id,
-  doc->'hierarchy'       AS hierarchy,
-  qa->>'q'               AS question,
-  qa->>'a'               AS answer,
-  qa->>'intent'          AS intent,
-  (qa->>'answerable')::boolean AS answerable
-FROM qa_gen_results qg,
-  jsonb_array_elements(qg.qa_list)           AS doc,
-  jsonb_array_elements(doc->'qa_list')       AS qa;
-```
-
-### `evaluation_qa_joined` — 생성 ↔ 평가 조인
+`pipeline_results` JSONB 전체 전송 없이 `qa_scores`만 추출 반환.
+`export-by-id` 엔드포인트에서 사용.
 
 ```sql
-SELECT e.id AS evaluation_id, e.final_score, e.final_grade, e.created_at AS evaluated_at,
-       q.id AS generation_id, q.metadata, q.stats, q.qa_list, q.created_at AS generated_at
-FROM qa_eval_results e
-LEFT JOIN qa_gen_results q ON q.linked_evaluation_id = e.id;
+CREATE OR REPLACE FUNCTION get_eval_qa_scores(p_eval_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT jsonb_build_object(
+    'rag_qa_scores',     COALESCE(pipeline_results->'layers'->'rag'->'qa_scores',     '[]'::jsonb),
+    'quality_qa_scores', COALESCE(pipeline_results->'layers'->'quality'->'qa_scores', '[]'::jsonb)
+  )
+  FROM qa_eval_results
+  WHERE id = p_eval_id;
+$$;
 ```
 
 ---

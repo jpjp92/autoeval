@@ -13,7 +13,6 @@ from .qa_generation_repo import (
 from .evaluation_repo import (
     save_evaluation_to_supabase,
     get_evaluation_result,
-    get_evaluation_qa_joined,
 )
 from .generation_eval_link import link_generation_to_evaluation
 from .doc_chunk_repo import (
@@ -38,7 +37,6 @@ __all__ = [
     "get_generations_by_source_doc",
     "save_evaluation_to_supabase",
     "get_evaluation_result",
-    "get_evaluation_qa_joined",
     "link_generation_to_evaluation",
     "save_doc_chunk",
     "update_chunk_metadata",

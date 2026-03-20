@@ -277,15 +277,28 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             r = rag_by_idx.get(i, {})
             q = quality_by_idx.get(i, {})
             detail.append({
-                "qa_index":    i,
-                "q":           qa["q"],
-                "a":           qa["a"],
-                "context":     qa["context"],
-                "intent":      qa["intent"],
-                "docId":       qa["docId"],
-                "rag_avg":     r.get("avg_score"),
-                "quality_avg": q.get("avg_quality"),
-                "pass":        q.get("pass", False),
+                "qa_index":            i,
+                "q":                   qa["q"],
+                "a":                   qa["a"],
+                "context":             qa["context"],
+                "intent":              qa["intent"],
+                "docId":               qa["docId"],
+                "rag_avg":             r.get("avg_score"),
+                "quality_avg":         q.get("avg_quality"),
+                "pass":                q.get("pass", False),
+                # RAG reason
+                "relevance_reason":    r.get("relevance_reason", ""),
+                "groundedness_reason": r.get("groundedness_reason", ""),
+                "clarity_reason":      r.get("clarity_reason", ""),
+                # Quality reason
+                "factuality_reason":   q.get("factuality_reason", ""),
+                "completeness_reason": q.get("completeness_reason", ""),
+                "specificity_reason":  q.get("specificity_reason", ""),
+                "conciseness_reason":  q.get("conciseness_reason", ""),
+                # Failure classification
+                "failure_types":       q.get("failure_types")   or r.get("failure_types", []),
+                "primary_failure":     q.get("primary_failure") or r.get("primary_failure"),
+                "failure_reason":      q.get("failure_reason")  or r.get("failure_reason", ""),
             })
         return detail
 
@@ -333,15 +346,15 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             return {"success": False, "error": "Supabase not available"}
 
         try:
-            # 1. 평가 레코드 조회
+            # 1. 평가 메타데이터 조회 (pipeline_results 제외 — RPC로 qa_scores만 별도 조회)
             eval_resp = supabase_client.table("qa_eval_results").select(
-                "id, job_id, metadata, pipeline_results, created_at"
+                "id, job_id, metadata, created_at"
             ).eq("id", eval_id).single().execute()
             eval_row = eval_resp.data
             if not eval_row:
                 return {"success": False, "error": f"Eval record {eval_id} not found"}
 
-            # 2. linked_evaluation_id = eval_id 인 gen_results 조회
+            # 2. linked gen_results 조회 (qa_list만)
             gen_resp = supabase_client.table("qa_gen_results").select(
                 "qa_list, metadata"
             ).eq("linked_evaluation_id", eval_id).limit(1).execute()
@@ -350,8 +363,20 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 return {"success": False, "error": "Linked generation not found for this evaluation"}
 
             gen_row = gen_resp.data[0]
-            pipeline = eval_row.get("pipeline_results", {})
-            detail = _build_export_detail(gen_row.get("qa_list", []), pipeline)
+
+            # 3. RPC로 qa_scores만 추출 (pipeline_results 전체 전송 방지)
+            scores_resp = supabase_client.rpc(
+                "get_eval_qa_scores", {"p_eval_id": eval_id}
+            ).execute()
+            scores_data = scores_resp.data or {}
+            pipeline_slim = {
+                "layers": {
+                    "rag":     {"qa_scores": scores_data.get("rag_qa_scores")     or []},
+                    "quality": {"qa_scores": scores_data.get("quality_qa_scores") or []},
+                }
+            }
+
+            detail = _build_export_detail(gen_row.get("qa_list", []), pipeline_slim)
 
             return {
                 "success":   True,

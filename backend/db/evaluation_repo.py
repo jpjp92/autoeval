@@ -67,18 +67,3 @@ async def get_evaluation_result(evaluation_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def get_evaluation_qa_joined(evaluation_id: str) -> Optional[Dict[str, Any]]:
-    """평가 결과와 생성 결과를 함께 조회 (evaluation_qa_joined 뷰)"""
-    if not supabase:
-        return None
-    try:
-        response = (
-            supabase.table("evaluation_qa_joined")
-            .select("*")
-            .eq("evaluation_id", evaluation_id)
-            .execute()
-        )
-        return response.data[0] if response.data else None
-    except Exception as e:
-        logger.warning(f"evaluation_qa_joined view not available yet: {e}")
-        return None

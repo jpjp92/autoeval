@@ -53,16 +53,38 @@ const STATUS_CONFIG: Record<QAStatus, { label: string; className: string; dotCol
   fail:    { label: '실패', className: 'bg-rose-50 text-rose-700 border-rose-200',          dotColor: 'bg-rose-500'   },
 };
 
+// ─── Failure Type ─────────────────────────────────────────────────────────────
+const FAILURE_CONFIG: Record<string, { label: string; className: string }> = {
+  hallucination:      { label: '환각',   className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  retrieval_miss:     { label: '검색미스', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  ambiguous_question: { label: '모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  bad_chunk:          { label: '불량청크', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+  evaluation_error:   { label: '평가오류', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+};
+
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 interface QAPreviewItem {
-  qa_index:    number;
-  q:           string;
-  a?:          string;
-  context?:    string;
-  intent:      string;
-  rag_avg?:    number;
+  qa_index:     number;
+  q:            string;
+  a?:           string;
+  context?:     string;
+  intent:       string;
+  rag_avg?:     number;
   quality_avg?: number;
-  pass:        boolean;
+  pass:         boolean;
+  // failure
+  failure_types?:   string[];
+  primary_failure?: string | null;
+  failure_reason?:  string;
+  // reason — RAG
+  relevance_reason?:    string;
+  groundedness_reason?: string;
+  clarity_reason?:      string;
+  // reason — Quality
+  factuality_reason?:   string;
+  completeness_reason?: string;
+  specificity_reason?:  string;
+  conciseness_reason?:  string;
 }
 
 interface EvalReport {
@@ -399,6 +421,64 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
           )}
         </div>
       </div>
+
+      {/* 평가 근거 */}
+      {(() => {
+        const ragReasons = [
+          { label: '문맥 관련성',  score: undefined as number | undefined, reason: qa.relevance_reason },
+          { label: '충실도',       score: undefined as number | undefined, reason: qa.groundedness_reason },
+          { label: '질문 명확성',  score: undefined as number | undefined, reason: qa.clarity_reason },
+        ].filter(r => r.reason);
+        const qualityReasons = [
+          { label: '사실성',  reason: qa.factuality_reason },
+          { label: '완전성',  reason: qa.completeness_reason },
+          { label: '구체성',  reason: qa.specificity_reason },
+          { label: '간결성',  reason: qa.conciseness_reason },
+        ].filter(r => r.reason);
+        const hasReasons = ragReasons.length > 0 || qualityReasons.length > 0;
+        if (!hasReasons) return null;
+        return (
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">평가 근거</p>
+            {ragReasons.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">RAG Triad</p>
+                {ragReasons.map(({ label, reason }) => (
+                  <div key={label} className="flex gap-2 text-xs">
+                    <span className="shrink-0 font-semibold text-slate-500 w-20">{label}</span>
+                    <span className="text-slate-600 leading-relaxed">{reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {qualityReasons.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">품질 평가</p>
+                {qualityReasons.map(({ label, reason }) => (
+                  <div key={label} className="flex gap-2 text-xs">
+                    <span className="shrink-0 font-semibold text-slate-500 w-20">{label}</span>
+                    <span className="text-slate-600 leading-relaxed">{reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {qa.primary_failure && (
+              <div className={cn('rounded-xl p-4 border text-xs space-y-1',
+                FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 border-slate-200'
+              )}>
+                <p className="font-bold text-[10px] uppercase tracking-widest">주요 실패 유형</p>
+                <p className="font-semibold">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
+                {qa.failure_reason && <p className="opacity-80 leading-relaxed">{qa.failure_reason}</p>}
+                {(qa.failure_types?.length ?? 0) > 1 && (
+                  <p className="opacity-60 text-[10px]">
+                    전체: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -510,7 +590,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass })),
+    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types })),
     metadata: {
       qa_model: (() => {
         const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
@@ -546,6 +626,7 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
           detailedQA: res.detail.map((r: any, i: number) => ({
             id: i + 1, q: r.q, a: r.a ?? '', context: r.context ?? '',
             intent: r.intent, l2_avg: r.quality_avg ?? 0, triad_avg: r.rag_avg ?? 0, pass: r.pass,
+            primary_failure: r.primary_failure ?? null, failure_types: r.failure_types ?? [],
           })),
           metadata: { ...evaluationData.metadata, timestamp: res.timestamp ?? evaluationData.metadata?.timestamp },
         });
@@ -814,13 +895,14 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
                     <th className="px-4 py-3 font-medium text-center w-24">품질 점수</th>
                     <th className="px-4 py-3 font-medium text-center w-24">Triad 점수</th>
                     <th className="px-4 py-3 font-medium text-center w-20">상태</th>
+                    <th className="px-4 py-3 font-medium text-center w-24">실패유형</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {qaListLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
-                        {Array.from({ length: 7 }).map((_, j) => (
+                        {Array.from({ length: 8 }).map((_, j) => (
                           <td key={j} className="px-4 py-3.5">
                             <div className="h-3 bg-slate-100 rounded animate-pulse w-full" />
                           </td>
@@ -871,6 +953,15 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
                           <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border', cfg.className)}>
                             {cfg.label}
                           </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {row.primary_failure && FAILURE_CONFIG[row.primary_failure] ? (
+                            <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border', FAILURE_CONFIG[row.primary_failure].className)}>
+                              {FAILURE_CONFIG[row.primary_failure].label}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 text-xs">-</span>
+                          )}
                         </td>
                       </tr>
                     );

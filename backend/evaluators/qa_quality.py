@@ -93,7 +93,7 @@ class QAQualityEvaluator:
         return "openai"
 
     def _call_llm_combined(self, prompt: str) -> str:
-        """4개 지표를 단일 호출로 평가 — JSON 응답"""
+        """4개 지표를 단일 호출로 평가 — JSON 응답 (score + reason)"""
         sys_msg = """\
 <role>
 You are a strict but fair data quality auditor evaluating QA pairs.
@@ -101,7 +101,8 @@ Evaluate all four dimensions objectively based solely on the provided context.
 </role>
 <output_format>
 Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
-{"factuality": <int 0-10>, "completeness": <int 0-10>, "specificity": <int 0-10>, "conciseness": <int 0-10>}
+For each reason, write exactly 1 concise sentence explaining the score.
+{"factuality": <int 0-10>, "factuality_reason": "<1 sentence>", "completeness": <int 0-10>, "completeness_reason": "<1 sentence>", "specificity": <int 0-10>, "specificity_reason": "<1 sentence>", "conciseness": <int 0-10>, "conciseness_reason": "<1 sentence>"}
 </output_format>"""
         try:
             if self.provider == "openai" and self.client:
@@ -112,7 +113,7 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
                         {"role": "user",   "content": prompt},
                     ],
                     temperature=0,
-                    max_completion_tokens=400,
+                    max_completion_tokens=600,
                 )
                 if not response or not response.choices:
                     return "{}"
@@ -132,8 +133,7 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
         return "{}"
 
     def _parse_combined(self, raw: str) -> dict:
-        """JSON 응답에서 4개 점수 파싱 — 실패 시 0.5 fallback"""
-        # 마크다운 코드블록 제거
+        """JSON 응답에서 4개 점수 + reason 파싱 — 실패 시 0.5 fallback"""
         text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             data = json.loads(text)
@@ -141,14 +141,23 @@ Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
                 val = data.get(key, 5)
                 return min(10, max(0, int(val))) / 10.0
             return {
-                "factuality":   _score("factuality"),
-                "completeness": _score("completeness"),
-                "specificity":  _score("specificity"),
-                "conciseness":  _score("conciseness"),
+                "factuality":          _score("factuality"),
+                "factuality_reason":   str(data.get("factuality_reason", "")),
+                "completeness":        _score("completeness"),
+                "completeness_reason": str(data.get("completeness_reason", "")),
+                "specificity":         _score("specificity"),
+                "specificity_reason":  str(data.get("specificity_reason", "")),
+                "conciseness":         _score("conciseness"),
+                "conciseness_reason":  str(data.get("conciseness_reason", "")),
             }
         except Exception:
             logger.warning(f"Combined parse failed, raw: {raw[:200]}")
-            return {"factuality": 0.5, "completeness": 0.5, "specificity": 0.5, "conciseness": 0.5}
+            return {
+                "factuality": 0.5, "factuality_reason": "",
+                "completeness": 0.5, "completeness_reason": "",
+                "specificity": 0.5, "specificity_reason": "",
+                "conciseness": 0.5, "conciseness_reason": "",
+            }
 
     def evaluate_all(self, question: str, answer: str, context: str, intent: str = "") -> dict:
         """사실성·완전성·구체성·간결성을 단일 LLM 호출로 평가 (intent 타입 반영)"""
