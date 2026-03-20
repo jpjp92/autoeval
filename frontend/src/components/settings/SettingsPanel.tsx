@@ -151,7 +151,7 @@ export function SettingsPanel() {
               <ApiKeyRow
                 label="Google API Key"
                 provider="GOOGLE_API_KEY"
-                placeholder="AIza..."
+                placeholder="AI..."
                 description="Gemini Embedding, Gemini Flash 생성 및 평가에 사용"
               />
               <ApiKeyRow
@@ -163,7 +163,7 @@ export function SettingsPanel() {
               <ApiKeyRow
                 label="Anthropic API Key"
                 provider="ANTHROPIC_API_KEY"
-                placeholder="sk-ant-..."
+                placeholder="sk-..."
                 description="Claude 계열 QA 생성 및 평가에 사용"
               />
             </div>
