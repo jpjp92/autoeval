@@ -37,6 +37,15 @@ def _get_main_generate_qa():
         MAIN_PY_AVAILABLE = False
         return None
 
+
+def _get_fatal_error_classes():
+    """APIQuotaExceededError, APIAuthError 클래스 반환 (지연 import)"""
+    try:
+        from generators.qa_generator import APIQuotaExceededError, APIAuthError
+        return APIQuotaExceededError, APIAuthError
+    except ImportError:
+        return None, None
+
 # FastAPI 세트업
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -407,8 +416,13 @@ async def run_qa_generation_real(
     completed_count = 0
     progress_lock = Lock()
 
+    APIQuotaExceededError, APIAuthError = _get_fatal_error_classes()
+    fatal_error: list = []  # [error_message] — 첫 fatal 에러 저장
+
     def _generate_one(args):
         idx, item = args
+        if fatal_error:  # 이미 fatal 에러 발생 시 스킵
+            return idx, None, "aborted"
         try:
             logger.info(f"[{job_id}] Generating QA for document {idx+1}/{len(items)}: {item.get('docId', 'unknown')}")
             chunk_type = item.get("metadata", {}).get("chunk_type", "body")
@@ -423,6 +437,16 @@ async def run_qa_generation_real(
                 result["qa_list"] = result["qa_list"][:qa_per_doc]
             return idx, result, None
         except Exception as e:
+            if APIQuotaExceededError and isinstance(e, APIQuotaExceededError):
+                logger.error(f"[{job_id}] API 한도 초과 — job 중단: {e}")
+                if not fatal_error:
+                    fatal_error.append(str(e))
+                return idx, None, str(e)
+            if APIAuthError and isinstance(e, APIAuthError):
+                logger.error(f"[{job_id}] API 인증 실패 — job 중단: {e}")
+                if not fatal_error:
+                    fatal_error.append(str(e))
+                return idx, None, str(e)
             logger.warning(f"[{job_id}] Failed to generate QA for document {idx+1}: {e}")
             return idx, None, str(e)
 
@@ -433,6 +457,12 @@ async def run_qa_generation_real(
         }
         for future in as_completed(futures):
             idx, result, error = future.result()
+
+            # fatal 에러 발생 시 즉시 job 실패 처리
+            if fatal_error:
+                executor.shutdown(wait=False, cancel_futures=True)
+                job_manager.update_job(job_id, status="failed", progress=0, message=fatal_error[0])
+                return
 
             with progress_lock:
                 completed_count += 1
