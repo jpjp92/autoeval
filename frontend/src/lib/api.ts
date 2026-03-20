@@ -19,17 +19,17 @@ interface GenerateRequest {
   prompt_version: string;
   doc_ids?: string[];
   filename?: string;
-  hierarchy_l1?: string;
-  hierarchy_l2?: string;
-  hierarchy_l3?: string;
+  hierarchy_h1?: string;
+  hierarchy_h2?: string;
+  hierarchy_h3?: string;
 }
 
 interface EvaluateRequest {
   result_filename: string;
   evaluator_model?: string;
   generation_id?: string;
-  include_l1?: boolean;
-  include_l2?: boolean;
+  include_h1?: boolean;
+  include_h2?: boolean;
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -47,9 +47,9 @@ export async function getDashboardMetrics(): Promise<ApiResponse> {
 // ── Ingestion ──────────────────────────────────────────────────────────────
 
 export async function getHierarchyList(filename?: string): Promise<{
-  l1_list: string[];
-  l2_by_l1: Record<string, string[]>;
-  l3_by_l1_l2: Record<string, string[]>;
+  h1_list: string[];
+  h2_by_h1: Record<string, string[]>;
+  h3_by_h1_h2: Record<string, string[]>;
   success: boolean;
 }> {
   try {
@@ -58,7 +58,7 @@ export async function getHierarchyList(filename?: string): Promise<{
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch {
-    return { success: false, l1_list: [], l2_by_l1: {}, l3_by_l1_l2: {} };
+    return { success: false, h1_list: [], h2_by_h1: {}, h3_by_h1_h2: {} };
   }
 }
 

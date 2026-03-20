@@ -82,11 +82,11 @@ API 문서: `http://localhost:8000/docs`
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/analyze-hierarchy` | Pass 1 — doc_chunks 샘플 → L1 master 3~5개 도출 |
-| `POST` | `/analyze-l2-l3` | Pass 2 — L1 기반 L2/L3 master 동시 생성 |
+| `POST` | `/analyze-hierarchy` | Pass 1 — doc_chunks 샘플 → H1 master 3~5개 도출 |
+| `POST` | `/analyze-h2-h3` | Pass 2 — H1 기반 H2/H3 master 동시 생성 |
 | `POST` | `/analyze-tagging-samples` | 태깅 적용 전 3~5개 청크 미리보기 |
 | `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
-| `GET`  | `/hierarchy-list` | DB L1/L2/L3 고유 목록 반환 (드롭다운용) |
+| `GET`  | `/hierarchy-list` | DB H1/H2/H3 고유 목록 반환 (드롭다운용) |
 
 ### Generation  `/api/generate`
 

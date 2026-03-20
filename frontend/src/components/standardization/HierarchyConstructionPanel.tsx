@@ -1,13 +1,11 @@
 import React, { useState } from "react";
-import { 
-  Layers, 
-  Search, 
-  Sparkles, 
-  CheckCircle2, 
-  Loader2, 
-  AlertCircle, 
-  Save, 
-  ArrowRight,
+import {
+  Layers,
+  Search,
+  Sparkles,
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
   Info,
   ChevronRight
 } from "lucide-react";
@@ -15,9 +13,9 @@ import { cn } from "@/src/lib/utils";
 import { API_BASE } from "@/src/lib/api";
 
 interface HierarchyData {
-  l1: string;
-  l2: string;
-  l3: string;
+  h1: string;
+  h2: string;
+  h3: string;
 }
 
 interface TaggingSample {
@@ -28,7 +26,7 @@ interface TaggingSample {
 
 interface AnalysisResult {
   domain_analysis: string;
-  l1_candidates: string[];
+  h1_candidates: string[];
   suggested_hierarchy: HierarchyData;
   validation: string;
 }
@@ -36,13 +34,11 @@ interface AnalysisResult {
 export function HierarchyConstructionPanel() {
   const [filename, setFilename] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isTagging, setIsTagging] = useState(false);
   const [isAnalyzingSamples, setIsAnalyzingSamples] = useState(false);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [selectedL1s, setSelectedL1s] = useState<string[]>([]);
-  const [editedHierarchy, setEditedHierarchy] = useState<HierarchyData>({ l1: "", l2: "", l3: "" });
+  const [selectedH1s, setSelectedH1s] = useState<string[]>([]);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const handleAnalyze = async () => {
@@ -66,12 +62,11 @@ export function HierarchyConstructionPanel() {
 
       const data: AnalysisResult = await response.json();
       setAnalysis(data);
-      setEditedHierarchy(data.suggested_hierarchy);
-      setSelectedL1s(data.l1_candidates);
+      setSelectedH1s(data.h1_candidates);
       
       // 자동 연계 분석 및 태깅 시작
-      handleAnalyzeSamples(filename, data.l1_candidates);
-      handleApplyGranularTagging(filename, data.l1_candidates);
+      handleAnalyzeSamples(filename, data.h1_candidates);
+      handleApplyGranularTagging(filename, data.h1_candidates);
     } catch (err: any) {
       setMessage({ text: err.message, type: "error" });
     } finally {
@@ -79,41 +74,10 @@ export function HierarchyConstructionPanel() {
     }
   };
 
-  const handleSave = async () => {
-    if (!filename || !editedHierarchy.l1) return;
-
-    setIsSaving(true);
-    setMessage(null);
-
-    const formData = new FormData();
-    formData.append("filename", filename);
-    formData.append("l1", editedHierarchy.l1);
-    formData.append("l2", editedHierarchy.l2);
-    formData.append("l3", editedHierarchy.l3);
-
-    try {
-      const response = await fetch(`${API_BASE}/api/ingestion/update-hierarchy`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (response.ok) {
-        setMessage({ text: "계층 구조가 성공적으로 업데이트되었습니다.", type: "success" });
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "저장에 실패했습니다.");
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: "error" });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleApplyGranularTagging = async (overrideFile?: string, overrideL1s?: string[]) => {
+  const handleApplyGranularTagging = async (overrideFile?: string, overrideH1s?: string[]) => {
     const targetFile = overrideFile || filename;
-    const targetL1s = overrideL1s || selectedL1s;
-    if (!targetFile || targetL1s.length === 0) return;
+    const targetH1s = overrideH1s || selectedH1s;
+    if (!targetFile || targetH1s.length === 0) return;
 
     setIsTagging(true);
     setMessage(null);
@@ -122,16 +86,16 @@ export function HierarchyConstructionPanel() {
       const response = await fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          filename: targetFile, 
-          selected_l1_list: targetL1s 
+        body: JSON.stringify({
+          filename: targetFile,
+          selected_h1_list: targetH1s
         }),
       });
 
       if (response.ok) {
         // Success message removed per user request to keep UI cleaner
         // Also refresh samples to show the latest result
-        handleAnalyzeSamples(targetFile, targetL1s);
+        handleAnalyzeSamples(targetFile, targetH1s);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || "태깅 시작에 실패했습니다.");
@@ -145,7 +109,7 @@ export function HierarchyConstructionPanel() {
 
   const handleAnalyzeSamples = async (overrideFile?: string, overrideL1s?: string[]) => {
     const targetFile = overrideFile || filename;
-    const targetL1s = overrideL1s || selectedL1s;
+    const targetL1s = overrideL1s || selectedH1s;
     if (!targetFile || targetL1s.length === 0) return;
 
     setIsAnalyzingSamples(true);
@@ -157,7 +121,7 @@ export function HierarchyConstructionPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           filename: targetFile, 
-          selected_l1_list: targetL1s 
+          selected_h1_list: targetL1s
         }),
       });
 
@@ -175,11 +139,11 @@ export function HierarchyConstructionPanel() {
     }
   };
 
-  const toggleL1 = (l1: string) => {
-    if (selectedL1s.includes(l1)) {
-      setSelectedL1s(selectedL1s.filter(s => s !== l1));
+  const toggleH1 = (h1: string) => {
+    if (selectedH1s.includes(h1)) {
+      setSelectedH1s(selectedH1s.filter(s => s !== h1));
     } else {
-      setSelectedL1s([...selectedL1s, l1]);
+      setSelectedH1s([...selectedH1s, h1]);
     }
   };
 
@@ -256,7 +220,7 @@ export function HierarchyConstructionPanel() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleApplyGranularTagging()}
-                        disabled={isTagging || selectedL1s.length === 0}
+                        disabled={isTagging || selectedH1s.length === 0}
                         className="text-[10px] font-bold px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center gap-1 disabled:opacity-50"
                       >
                         {isTagging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
@@ -264,20 +228,20 @@ export function HierarchyConstructionPanel() {
                       </button>
                     </div>
                   </div>
-                  <p className="text-[11px] text-slate-500">문서의 다양한 맥락을 포괄하기 위한 L1 도메인 후보입니다. 태깅에 반영할 항목을 선택/수정하세요.</p>
+                  <p className="text-[11px] text-slate-500">문서의 다양한 맥락을 포괄하기 위한 H1 도메인 후보입니다. 태깅에 반영할 항목을 선택/수정하세요.</p>
                   <div className="flex flex-wrap gap-2">
-                    {analysis.l1_candidates.map((l1) => (
+                    {analysis.h1_candidates.map((h1) => (
                       <button
-                        key={l1}
-                        onClick={() => toggleL1(l1)}
+                        key={h1}
+                        onClick={() => toggleH1(h1)}
                         className={cn(
                           "px-4 py-2 rounded-full text-xs font-bold transition-all border-2",
-                          selectedL1s.includes(l1)
+                          selectedH1s.includes(h1)
                             ? "bg-indigo-500 border-indigo-500 text-white shadow-md shadow-indigo-200"
                             : "bg-white border-slate-200 text-slate-400 hover:border-indigo-200 hover:text-indigo-400"
                         )}
                       >
-                        {l1}
+                        {h1}
                       </button>
                     ))}
                   </div>
@@ -299,11 +263,11 @@ export function HierarchyConstructionPanel() {
                         <div key={idx} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
                           <p className="text-[11px] text-slate-600 italic line-clamp-2">"{sample.content_preview}"</p>
                           <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-md">{sample.hierarchy.l1}</span>
+                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-md">{sample.hierarchy.h1}</span>
                             <ChevronRight className="w-3 h-3 text-slate-300" />
-                            <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold rounded-md">{sample.hierarchy.l2}</span>
+                            <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold rounded-md">{sample.hierarchy.h2}</span>
                             <ChevronRight className="w-3 h-3 text-slate-300" />
-                            <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold rounded-md">{sample.hierarchy.l3}</span>
+                            <span className="px-2 py-0.5 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold rounded-md">{sample.hierarchy.h3}</span>
                           </div>
                         </div>
                       ))}
@@ -366,9 +330,9 @@ export function HierarchyConstructionPanel() {
           💡 계층 구조화 가이드
         </h5>
         <ul className="space-y-2 text-xs text-slate-500 list-disc ml-4 leading-relaxed">
-          <li><strong>도메인 분석</strong>: AI가 문서의 전체 맥락을 파악하여 최적의 상위 카테고리(L1)를 제안합니다.</li>
-          <li><strong>스키마 선정</strong>: 제안된 L1 중 실제 태깅에 사용할 항목을 선택하거나 수정할 수 있습니다.</li>
-          <li><strong>DB 반영</strong>: 'DB 전체 반영' 시 선택된 도메인을 기준으로 모든 청크에 세부 계층(L1-L2-L3)이 자동 할당됩니다.</li>
+          <li><strong>도메인 분석</strong>: AI가 문서의 전체 맥락을 파악하여 최적의 상위 카테고리(H1)를 제안합니다.</li>
+          <li><strong>스키마 선정</strong>: 제안된 H1 중 실제 태깅에 사용할 항목을 선택하거나 수정할 수 있습니다.</li>
+          <li><strong>DB 반영</strong>: 'DB 전체 반영' 시 선택된 도메인을 기준으로 모든 청크에 세부 계층(H1-H2-H3)이 자동 할당됩니다.</li>
           <li><strong>품질 검증</strong>: 할당된 계층 정보는 향후 QA 생성 단계에서 정교한 필터링 기준으로 사용됩니다.</li>
         </ul>
       </div>

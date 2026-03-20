@@ -1,6 +1,6 @@
 # AutoEval
 
-**LLM 기반 QA 자동 생성 및 다층 평가 플랫폼**
+**LLM 기반 QA 자동 생성 및 평가 POC**
 
 PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 4레이어 품질 평가까지 엔드-투-엔드로 처리합니다.
 
@@ -42,13 +42,13 @@ flowchart TD
     DB1[(DB 저장: doc_chunks)]
 
     B0["STEP 2 · 계층 태깅"]
-    B1[단계 1 — L1 도출]
-    B2[단계 2 — L2/L3 도출]
+    B1[단계 1 — H1 도출]
+    B2[단계 2 — H2/H3 도출]
     B3[단계 3 — 청크별 계층 일괄 적용]
-    DB2[(DB 저장: metadata l1/l2/l3)]
+    DB2[(DB 저장: metadata h1/h2/h3)]
 
     C0["STEP 3 · QA 생성"]
-    C1[L1/L2 필터 — 계층 기반 청크 선별]
+    C1[H1/H2 필터 — 계층 기반 청크 선별]
     C2[도메인 분석 — 대상 도메인 · 의도 파악]
     C3[병렬 QA 생성 — 다중 모델 동시 생성]
     DB3[(DB 저장: qa_gen_results)]
@@ -91,7 +91,7 @@ flowchart TD
 | 처리 | 내용 |
 |------|------|
 | 파싱 | PDF(PyMuPDF) / DOCX(python-docx) — Section-First 청킹, 표 Markdown 변환 |
-| 정규화 | 특수문자(Ÿ 등) 치환, 줄바꿈 결합, 짧은 청크 병합 |
+| 정규화 | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합 |
 | 중복 방지 | SHA-1 `content_hash` 기반 — 동일 청크 INSERT skip |
 | 벡터화 | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — **1536차원** 벡터 변환 |
 | 저장 | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) |
@@ -100,17 +100,17 @@ flowchart TD
 
 | 단계 | API | 동작 |
 |------|-----|------|
-| 단계 1 — L1 도출 | `analyze-hierarchy` | doc_chunks 샘플 → LLM → **대분류 카테고리 3~5개 확정** |
-| 단계 2 — L2/L3 도출 | `analyze-l2-l3` | L1 기반 → LLM 1회 → **중·소분류 카테고리 동시 생성** |
+| 단계 1 — H1 도출 | `analyze-hierarchy` | doc_chunks 샘플 → LLM → **대분류 카테고리 3~5개 확정** |
+| 단계 2 — H2/H3 도출 | `analyze-h2-h3` | H1 기반 → LLM 1회 → **중·소분류 카테고리 동시 생성** |
 | 단계 3 — 청크 태깅 | `apply-granular-tagging` | 청크별 계층 목록에서 **선택만** (신규 생성 금지) — 일괄 적용 |
 
-> 단계 3 완료 후 `doc_chunks.metadata.hierarchy_l1/l2/l3` 업데이트 → 프론트엔드 L1/L2 드롭다운으로 생성 범위 지정
+> 단계 3 완료 후 `doc_chunks.metadata.hierarchy_h1/h2/h3` 업데이트 → 프론트엔드 H1/H2 드롭다운으로 생성 범위 지정
 
 #### STEP 3 — QA 생성
 
 | 단계 | 내용 |
 |------|------|
-| 계층 기반 청크 선별 | L1/L2 필터 조회, heading·colophon 청크 제외 |
+| 계층 기반 청크 선별 | H1/H2 필터 조회, heading·colophon 청크 제외 |
 | 도메인 분석 | 샘플 청크 → LLM → 대상 도메인·의도 파악 (job당 1회) |
 | 프롬프트 빌드 | `build_user_template` — domain_profile 기반 XML 태그 적응형 구성 |
 | 다중 모델 동시 생성 | `ThreadPoolExecutor` — 모델별 worker 수 분리 병렬 실행 |
@@ -156,6 +156,7 @@ A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50
 ```
 autoeval/
 ├── backend/
+│   ├── Dockerfile                   # Python 3.12-slim + uv, TZ=Asia/Seoul, curl 포함
 │   ├── main.py                      # FastAPI 앱 + 라우트 등록 + 로깅 설정
 │   │                                  GET /api/dashboard/metrics 포함
 │   ├── api/
@@ -189,32 +190,36 @@ autoeval/
 │       ├── models.py                # 모델 alias → model_id, cost 매핑
 │       └── constants.py             # worker 수 등 기본 상수
 │
-├── frontend/src/
-│   ├── App.tsx                      # 탭 라우팅 + Glassmorphism 배경 (gradient mesh)
-│   ├── lib/api.ts                   # 백엔드 API 클라이언트 함수
-│   └── components/
-│       ├── layout/
-│       │   ├── Sidebar.tsx          # 글래스 사이드바 (bg-slate-900/95 backdrop-blur-xl)
-│       │   └── Header.tsx           # 글래스 헤더 (bg-white/70 backdrop-blur-md)
-│       ├── dashboard/
-│       │   ├── DashboardOverview.tsx  # 실시간 대시보드 (Supabase 집계 데이터)
-│       │   ├── StatsCards.tsx         # 통계 카드 (accent border + glass)
-│       │   └── ActivityChart.tsx      # 점수 추이 차트
-│       ├── standardization/
-│       │   └── DataStandardizationPanel.tsx  # 업로드 + 3-Pass 태깅 UI
-│       ├── generation/
-│       │   └── QAGenerationPanel.tsx         # L1/L2 드롭다운 + 생성 설정 UI
-│       ├── evaluation/
-│       │   └── QAEvaluationDashboard.tsx     # 평가 결과 + 레이어별 점수 UI
-│       ├── playground/
-│       │   └── ChatPlayground.tsx            # LLM 채팅 플레이그라운드
-│       └── settings/
-│           ├── SettingsPanel.tsx             # 시스템 설정 (Profile / API Keys / Pipeline)
-│           └── PipelineFlow.tsx              # ReactFlow 5-스텝 파이프라인 시각화
+├── frontend/
+│   ├── Dockerfile                   # Node 빌드 → nginx:alpine (프로덕션)
+│   ├── Dockerfile.dev               # Node 20-alpine Vite dev server (HMR)
+│   ├── nginx.conf                   # SPA 라우팅 + /api/ 리버스 프록시 (resolver 127.0.0.11)
+│   └── src/
+│       ├── App.tsx                  # 탭 라우팅 + Glassmorphism 배경 (gradient mesh)
+│       ├── lib/api.ts               # 백엔드 API 클라이언트 함수
+│       └── components/
+│           ├── layout/
+│           │   ├── Sidebar.tsx          # 글래스 사이드바 (bg-slate-900/95 backdrop-blur-xl)
+│           │   └── Header.tsx           # 글래스 헤더 (bg-white/70 backdrop-blur-md)
+│           ├── dashboard/
+│           │   ├── DashboardOverview.tsx  # 실시간 대시보드 (Supabase 집계 데이터)
+│           │   ├── StatsCards.tsx         # 통계 카드 (accent border + glass)
+│           │   └── ActivityChart.tsx      # 점수 추이 차트
+│           ├── standardization/
+│           │   └── DataStandardizationPanel.tsx  # 업로드 + 3-Pass 태깅 UI
+│           ├── generation/
+│           │   └── QAGenerationPanel.tsx         # H1/H2 드롭다운 + 생성 설정 UI
+│           ├── evaluation/
+│           │   └── QAEvaluationDashboard.tsx     # 평가 결과 + 레이어별 점수 UI
+│           ├── playground/
+│           │   └── ChatPlayground.tsx            # LLM 채팅 플레이그라운드
+│           └── settings/
+│               ├── SettingsPanel.tsx             # 시스템 설정 (Profile / API Keys / Pipeline)
+│               └── PipelineFlow.tsx              # ReactFlow 5-스텝 파이프라인 시각화
 │
-├── DEV_260318v2.md      # 플로우 & 프롬프트 개선 세션 (2026-03-18)
-├── DEV_260318v3.md      # 골든셋 설계 계획
-├── DEV_260319.md        # UI 개선 계획 & Glassmorphism 구현 (2026-03-19)
+├── docker-compose.yml               # 프로덕션: server(8000) + client(3000), healthcheck
+├── docker-compose.dev.yml           # 개발 오버라이드: 소스 볼륨 마운트 + Vite HMR
+├── .env.example                     # 환경 변수 템플릿 (ANTHROPIC / GOOGLE / OPENAI / SUPABASE)
 └── README.md
 ```
 
@@ -407,11 +412,11 @@ docker compose up -d --build
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/api/ingestion/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/api/ingestion/analyze-hierarchy` | Pass 1 — L1 master 3~5개 도출 |
-| `POST` | `/api/ingestion/analyze-l2-l3` | Pass 2 — L2/L3 master 동시 생성 |
+| `POST` | `/api/ingestion/analyze-hierarchy` | Pass 1 — H1 master 3~5개 도출 |
+| `POST` | `/api/ingestion/analyze-h2-h3` | Pass 2 — H2/H3 master 동시 생성 |
 | `POST` | `/api/ingestion/analyze-tagging-samples` | 태깅 미리보기 (DB 업데이트 없음) |
 | `POST` | `/api/ingestion/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
-| `GET`  | `/api/ingestion/hierarchy-list` | L1/L2/L3 고유 목록 (드롭다운용) |
+| `GET`  | `/api/ingestion/hierarchy-list` | H1/H2/H3 고유 목록 (드롭다운용) |
 
 ### Generation
 
@@ -466,7 +471,7 @@ docker compose up -d --build
 | **XML 프롬프트 전환** | 전 파이프라인 (ingestion / generation / evaluation) XML 태그 구조화 |
 | **유연 생성 조건** | 8개 고정 → 4~8개, 의도 유형 컨텍스트 기반 선택 + 다양성 규칙 |
 | **질문 근거 제약** | 문서에 명시된 사실/정의/절차만 질문화, 메타 표현 시작 금지 |
-| **Hierarchy 3-Pass** | L1 확정 → L2/L3 master 동시 생성 → 청크별 선택만 (신규 생성 금지) |
+| **Hierarchy 3-Pass** | H1 확정 → H2/H3 master 동시 생성 → 청크별 선택만 (신규 생성 금지) |
 | **평가 프롬프트 개선** | rag_triad.py XML 전환, qa_quality.py system/user 메시지 분리 |
 | **E2E 테스트** | 프롬프트엔지니어링.pdf 28/28 Quality 100%, 메타 표현 0건 확인 |
 
@@ -475,8 +480,8 @@ docker compose up -d --build
 | 우선순위 | 항목 |
 |---------|------|
 | 중 | Supabase jobs 테이블 연계 — 생성/평가 시점 DB 동기화 |
-| 중 | Few-shot 예시 추가 — `_build_prompt`에 태깅 예시 삽입 |
-| 낮음 | 골든셋 구축 — `qa_golden_set` 테이블 + 자동 후보 추출 (DEV_260318v3.md) |
+| 상 | 실패데이터 재처리 — 실패 데이터 처리방안 구성 |
+| 상 | 골든셋 구축 — `qa_golden_set` 테이블 + 자동 후보 추출 (DEV_260318v3.md) |
 
 ---
 
