@@ -17,10 +17,7 @@ if TYPE_CHECKING:
 logging.getLogger("google.generativeai").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("trulens.core.utils.evaluator").setLevel(logging.WARNING)
-logging.getLogger("trulens.core.database.sqlalchemy").setLevel(logging.WARNING)
 logging.getLogger("alembic").setLevel(logging.WARNING)
-logging.getLogger("trulens.experimental.otel_tracing.core.session").setLevel(logging.WARNING)
 
 logger = logging.getLogger("autoeval.evaluation")
 

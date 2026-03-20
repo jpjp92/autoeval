@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Any
 from .job_manager import EvalJobStatus, EvaluationManager
 from .syntax_validator import SyntaxValidator
 from .dataset_stats import DatasetStats
-from .rag_triad import RAGTriadEvaluator, TRULENS_AVAILABLE
+from .rag_triad import RAGTriadEvaluator
 from .qa_quality import QAQualityEvaluator
 from .recommendations import generate_recommendations
 
