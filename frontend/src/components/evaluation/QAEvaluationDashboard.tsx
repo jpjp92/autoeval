@@ -425,9 +425,9 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
       {/* 평가 근거 */}
       {(() => {
         const ragReasons = [
-          { label: '문맥 관련성',  score: undefined as number | undefined, reason: qa.relevance_reason },
-          { label: '충실도',       score: undefined as number | undefined, reason: qa.groundedness_reason },
-          { label: '질문 명확성',  score: undefined as number | undefined, reason: qa.clarity_reason },
+          { label: '관련성', score: undefined as number | undefined, reason: qa.relevance_reason },
+          { label: '근거성', score: undefined as number | undefined, reason: qa.groundedness_reason },
+          { label: '명확성', score: undefined as number | undefined, reason: qa.clarity_reason },
         ].filter(r => r.reason);
         const qualityReasons = [
           { label: '사실성',  reason: qa.factuality_reason },

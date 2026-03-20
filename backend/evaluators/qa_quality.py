@@ -101,8 +101,8 @@ Evaluate all four dimensions objectively based solely on the provided context.
 </role>
 <output_format>
 Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
-For each reason, write exactly 1 concise sentence explaining the score.
-{"factuality": <int 0-10>, "factuality_reason": "<1 sentence>", "completeness": <int 0-10>, "completeness_reason": "<1 sentence>", "specificity": <int 0-10>, "specificity_reason": "<1 sentence>", "conciseness": <int 0-10>, "conciseness_reason": "<1 sentence>"}
+For each reason, write exactly 1 concise sentence in Korean explaining the score.
+{"factuality": <int 0-10>, "factuality_reason": "<1 sentence in Korean>", "completeness": <int 0-10>, "completeness_reason": "<1 sentence in Korean>", "specificity": <int 0-10>, "specificity_reason": "<1 sentence in Korean>", "conciseness": <int 0-10>, "conciseness_reason": "<1 sentence in Korean>"}
 </output_format>"""
         try:
             if self.provider == "openai" and self.client:

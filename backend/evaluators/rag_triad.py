@@ -1,30 +1,14 @@
 """
 RAG Triad Evaluator
 RAG Triad 평가 로직 + clean_markdown helper (Layer 2)
-TruLens 기반, 멀티 프로바이더 지원 (OpenAI / Gemini / Anthropic)
+멀티 프로바이더 지원 (OpenAI / Gemini / Anthropic) — LangChain judge 직접 호출
 """
 import json
 import logging
 import os
 import re
-from typing import List
 
 logger = logging.getLogger(__name__)
-
-# TruLens — 모듈 레벨 싱글톤 (재생성 시 SQLAlchemy 중복 테이블 오류 방지)
-_TRU_SESSION = None
-try:
-    from trulens.core import TruSession
-    from trulens.core import Metric, Selector
-    from trulens.apps.app import TruApp
-    TRULENS_AVAILABLE = True
-    try:
-        _TRU_SESSION = TruSession()
-    except Exception as _e:
-        logger.warning(f"TruSession init failed at import time: {_e}")
-        TRULENS_AVAILABLE = False
-except ImportError:
-    TRULENS_AVAILABLE = False
 
 # 중앙 모델 설정
 try:
@@ -53,19 +37,11 @@ def clean_markdown(text: str) -> str:
 
 
 class RAGTriadEvaluator:
-    """RAG Triad 평가 로직 (Layer 2, TruLens 기반)"""
+    """RAG Triad 평가 로직 (Layer 2) — LangChain judge 직접 호출"""
 
     def __init__(self, evaluator_model: str = "gemini-2.5-flash"):
         self.judge_model = None
         self.evaluator_model = self._get_model_id(evaluator_model)
-        self.tru_session = _TRU_SESSION  # 모듈 싱글톤 재사용
-        self.feedbacks: List = []
-
-        if TRULENS_AVAILABLE:
-            try:
-                self._setup_trulens_metrics()
-            except Exception as e:
-                logger.warning(f"Failed to setup trulens metrics: {e}")
 
         try:
             if "gemini" in self.evaluator_model.lower():
@@ -123,34 +99,6 @@ class RAGTriadEvaluator:
             if short in model_name.lower():
                 return full
         return model_name
-
-    def _setup_trulens_metrics(self):
-        """TruLens Metric 객체 생성"""
-        self.f_relevance = Metric(
-            implementation=self.evaluate_relevance,
-            name="Relevance",
-            selectors={
-                "question": Selector.select_record_input(),
-                "answer":   Selector.select_record_output(),
-            },
-        )
-        self.f_groundedness = Metric(
-            implementation=self.evaluate_groundedness,
-            name="Groundedness",
-            selectors={
-                "answer":  Selector.select_record_output(),
-                "context": Selector.select_context(collect_list=True),
-            },
-        )
-        self.f_clarity = Metric(
-            implementation=self.evaluate_clarity,
-            name="Clarity",
-            selectors={
-                "question": Selector.select_record_input(),
-                "answer":   Selector.select_record_output(),
-            },
-        )
-        self.feedbacks = [self.f_relevance, self.f_groundedness, self.f_clarity]
 
     def _extract_score(self, text: str) -> float:
         """0-10 점수 추출 → 0-1 정규화 (CoT 마지막 줄 우선)"""
@@ -331,9 +279,9 @@ based solely on the provided context.
 </scoring_dimensions>
 
 <task>
-Evaluate all three dimensions. For each reason, write exactly 1 concise sentence explaining the score.
+Evaluate all three dimensions. For each reason, write exactly 1 concise sentence in Korean explaining the score.
 Return ONLY valid JSON:
-{{"relevance": <0-10>, "relevance_reason": "<1 sentence>", "groundedness": <0-10>, "groundedness_reason": "<1 sentence>", "clarity": <0-10>, "clarity_reason": "<1 sentence>"}}
+{{"relevance": <0-10>, "relevance_reason": "<1 sentence in Korean>", "groundedness": <0-10>, "groundedness_reason": "<1 sentence in Korean>", "clarity": <0-10>, "clarity_reason": "<1 sentence in Korean>"}}
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._parse_rag_json(response.content or "")
