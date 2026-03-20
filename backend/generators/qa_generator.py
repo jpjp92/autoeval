@@ -38,21 +38,32 @@ def get_client(provider: str):
     return _clients[provider]
 
 
+class APIQuotaExceededError(Exception):
+    """API 비용 소진 또는 Rate Limit 초과 시 발생 (job 즉시 중단용)"""
+    pass
+
+
+class APIAuthError(Exception):
+    """API 키 인증 실패 시 발생 (job 즉시 중단용)"""
+    pass
+
+
 def generate_qa_anthropic(model_id: str, system_prompt: str, user_prompt: str) -> Dict:
     """Anthropic (Claude) API를 사용한 QA 생성"""
+    import anthropic as _anthropic
     client = get_client("anthropic")
 
-    response = client.messages.create(
-        model=model_id,
-        max_tokens=2048,
-        messages=[
-            {
-                "role": "user",
-                "content": user_prompt,
-            }
-        ],
-        system=system_prompt,
-    )
+    try:
+        response = client.messages.create(
+            model=model_id,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": user_prompt}],
+            system=system_prompt,
+        )
+    except _anthropic.RateLimitError as e:
+        raise APIQuotaExceededError(f"Anthropic API 한도 초과 (429). API 키 사용량을 확인하세요. ({e})")
+    except _anthropic.AuthenticationError as e:
+        raise APIAuthError(f"Anthropic API 키 인증 실패. ANTHROPIC_API_KEY를 확인하세요. ({e})")
 
     raw = response.content[0].text.strip()
     if raw.startswith("```"):
@@ -76,10 +87,18 @@ def generate_qa_google(model_id: str, system_prompt: str, user_prompt: str) -> D
     client = get_client("google")
 
     prompt = system_prompt + "\n\n" + user_prompt
-    response = client.models.generate_content(
-        model=model_id,
-        contents=prompt,
-    )
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+        )
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+            raise APIQuotaExceededError(f"Google API 한도 초과 (429). API 키 사용량을 확인하세요. ({e})")
+        if "401" in err_str or "api_key" in err_str.lower() or "invalid" in err_str.lower():
+            raise APIAuthError(f"Google API 키 인증 실패. GOOGLE_API_KEY를 확인하세요. ({e})")
+        raise
 
     raw = response.text.strip()
     if raw.startswith("```"):
@@ -100,18 +119,23 @@ def generate_qa_google(model_id: str, system_prompt: str, user_prompt: str) -> D
 
 def generate_qa_openai(model_id: str, system_prompt: str, user_prompt: str) -> Dict:
     """OpenAI API를 사용한 QA 생성"""
-    from openai import OpenAI
+    from openai import OpenAI, RateLimitError, AuthenticationError
 
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-    response = client.chat.completions.create(
-        model=model_id,
-        max_completion_tokens=2048,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model_id,
+            max_completion_tokens=2048,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    except RateLimitError as e:
+        raise APIQuotaExceededError(f"OpenAI API 한도 초과 (429). API 키 사용량을 확인하세요. ({e})")
+    except AuthenticationError as e:
+        raise APIAuthError(f"OpenAI API 키 인증 실패. OPENAI_API_KEY를 확인하세요. ({e})")
 
     raw = response.choices[0].message.content.strip()
     if raw.startswith("```"):

@@ -3,6 +3,20 @@ import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkle
 import { cn } from "@/src/lib/utils";
 import { API_BASE, getHierarchyList } from "@/src/lib/api";
 
+/** Cold start 대비 재시도 fetch (최대 3회, 5초 간격) */
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delayMs = 5000): Promise<Response> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (e) {
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error("fetch failed");
+}
+
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
 interface AnalysisResult {
@@ -73,7 +87,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setH2h3Master(null);
     try {
       // 1단계: H1 master 생성
-      const res = await fetch(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
+      const res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: uploadedFilename }),
@@ -86,7 +100,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
 
       // 2단계: H2/H3 master 생성
       setIsAnalyzingL2L3(true);
-      const h2h3Res = await fetch(`${API_BASE}/api/ingestion/analyze-h2-h3`, {
+      const h2h3Res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-h2-h3`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: uploadedFilename, selected_h1_list: data.h1_candidates }),

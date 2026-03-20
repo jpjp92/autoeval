@@ -29,9 +29,10 @@ validated_output/
 # package
 frontend/node_modules/
 backend/default.sqlite
+
+# test
 google-embeddingpage.html
-테스트데이터_1.pdf
+docs/plan/
 check_db_quality.py
 analyze_pdf_structure.py
-sample/테스트데이터_2.pdf
-sample/테스트데이터_3.pdf
+sample/
