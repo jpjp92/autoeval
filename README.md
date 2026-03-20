@@ -1,6 +1,6 @@
 # AutoEval
 
-**LLM 기반 QA 자동 생성 및 평가 POC**
+**LLM 기반 QA 자동 생성 및 평가 POC 설계**
 
 PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 4레이어 품질 평가까지 엔드-투-엔드로 처리합니다.
 
@@ -448,41 +448,16 @@ docker compose up -d --build
 
 ---
 
-## 개발 노트
+## 배포 구성 (Render + Vercel)
 
-### 완료 (2026-03-19)
+| 플랫폼 | 역할 | 환경변수 |
+| ------ | ---- | -------- |
+| Render | FastAPI 백엔드 | `CORS_ORIGINS=https://autoeval-v1.vercel.app` |
+| Vercel | React 프론트엔드 | `VITE_API_URL=https://autoeval-uccr.onrender.com` |
 
-| 항목 | 내용 |
-|------|------|
-| **Glassmorphism UI** | gradient mesh 배경, glass 사이드바/헤더/카드, accent border 통일 |
-| **Settings 통합** | Settings 탭 제거 → Admin User 클릭 시 Settings 패널 접근 |
-| **Settings full-bleed** | 카드 안 카드 구조 제거 → 헤더 바로 아래 전체 화면 확장 |
-| **Header 정리** | 미사용 Search 입력 제거, 내부 "Settings" h2 중복 제거 |
-| **Dashboard 실데이터** | 하드코딩 → Supabase 집계 API (`get_dashboard_metrics()`) 연동 |
-| **Score Trend 차트** | 토큰 사용량 차트 → 점수 추이 차트로 교체 |
-| **Pipeline 시각화** | ReactFlow 5-스텝 파이프라인 다이어그램 (Settings > Pipeline 탭) |
-| **로컬 파일 저장 제거** | `output/*.json` / `validated_output/*.json` 이중 저장 → Supabase 단일 스토어 |
-| **백엔드 리팩토링** | `ingestion_api.py` 1539줄 → `ingestion/parsers.py` + `ingestion_api.py` 분리 |
-
-### 완료 (2026-03-18)
-
-| 항목 | 내용 |
-|------|------|
-| **XML 프롬프트 전환** | 전 파이프라인 (ingestion / generation / evaluation) XML 태그 구조화 |
-| **유연 생성 조건** | 8개 고정 → 4~8개, 의도 유형 컨텍스트 기반 선택 + 다양성 규칙 |
-| **질문 근거 제약** | 문서에 명시된 사실/정의/절차만 질문화, 메타 표현 시작 금지 |
-| **Hierarchy 3-Pass** | H1 확정 → H2/H3 master 동시 생성 → 청크별 선택만 (신규 생성 금지) |
-| **평가 프롬프트 개선** | rag_triad.py XML 전환, qa_quality.py system/user 메시지 분리 |
-| **E2E 테스트** | 프롬프트엔지니어링.pdf 28/28 Quality 100%, 메타 표현 0건 확인 |
-
-### 다음 작업
-
-| 우선순위 | 항목 |
-|---------|------|
-| 중 | Supabase jobs 테이블 연계 — 생성/평가 시점 DB 동기화 |
-| 상 | 실패데이터 재처리 — 실패 데이터 처리방안 구성 |
-| 상 | 골든셋 구축 — `qa_golden_set` 테이블 + 자동 후보 추출 (DEV_260318v3.md) |
+- Render는 `PORT` 환경변수를 자동 주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
+- 로컬 개발 시 `VITE_API_URL` 미설정 → `http://localhost:8000` fallback 자동 적용
 
 ---
 
-**Last Updated**: 2026-03-19 (2차) | **Branch**: main
+**Last Updated**: 2026-03-20 | **Branch**: main
