@@ -80,10 +80,10 @@ Step 1. 생성 설정
       └── GET /api/ingestion/hierarchy-list → 드롭다운 구성
 
 Step 2. QA 생성 실행
-  ├── POST /api/generation/generate → job_id 수신
-  ├── Polling: GET /api/generation/{job_id}/status (1초 간격)
+  ├── POST /api/generate → job_id 수신
+  ├── Polling: GET /api/generate/{job_id}/status (1초 간격)
   │   → progress 바, 상태 메시지 표시
-  └── 완료 시: GET /api/generation/{job_id}/preview
+  └── 완료 시: GET /api/generate/{job_id}/preview
       → 샘플 3개 카드 표시 (컨텍스트 + Q/A + 의도 배지)
 
 Step 3. QA 평가 이동
@@ -103,8 +103,8 @@ boolean→확인형  process→방법형
 
 ```
 평가 실행
-  ├── POST /api/evaluation/evaluate (result_filename, evaluator_model)
-  ├── Polling: GET /api/evaluation/{job_id}/status
+  ├── POST /api/evaluate (result_filename, evaluator_model)
+  ├── Polling: GET /api/evaluate/{job_id}/status
   └── 완료 시 결과 표시:
       ├── 요약 카드 (총 QA, 유효 QA, 최종 점수, 등급)
       ├── 의도 분포 (PieChart)
@@ -113,8 +113,8 @@ boolean→확인형  process→방법형
       └── 상세 QA 테이블 (Layer별 점수, pass/fail)
 
 히스토리
-  └── GET /api/evaluation/history → 이전 평가 목록
-      → 클릭 시 상세 결과 로드 (GET /api/evaluation/export-by-id/{id})
+  └── GET /api/evaluate/history → 이전 평가 목록
+      → 클릭 시 상세 결과 로드 (GET /api/evaluate/export-by-id/{id})
 
 Export
   ├── XLSX: exportToCSV(evaluationData)  — 2시트 (Stats + Detail)
@@ -156,11 +156,11 @@ GET /api/dashboard/metrics
 |------|--------|-----------|
 | `getDashboardMetrics()` | GET | `/api/dashboard/metrics` |
 | `getHierarchyList(filename?)` | GET | `/api/ingestion/hierarchy-list` |
-| `generateQA(request)` | POST | `/api/generation/generate` |
-| `getGenStatus(jobId)` | GET | `/api/generation/{jobId}/status` |
-| `getGenPreview(jobId)` | GET | `/api/generation/{jobId}/preview` |
-| `evaluateQA(request)` | POST | `/api/evaluation/evaluate` |
-| `getEvalStatus(jobId)` | GET | `/api/evaluation/{jobId}/status` |
-| `getEvalHistory()` | GET | `/api/evaluation/history` |
-| `getEvalExport(jobId)` | GET | `/api/evaluation/{jobId}/export` |
-| `getEvalExportById(evalId)` | GET | `/api/evaluation/export-by-id/{evalId}` |
+| `generateQA(request)` | POST | `/api/generate` |
+| `evaluateQA(request)` | POST | `/api/evaluate` |
+| `getEvalStatus(jobId)` | GET | `/api/evaluate/{jobId}/status` |
+| `getEvalHistory()` | GET | `/api/evaluate/history` |
+| `getEvalExport(jobId)` | GET | `/api/evaluate/{jobId}/export` |
+| `getEvalExportById(evalId)` | GET | `/api/evaluate/export-by-id/{evalId}` |
+
+> Generation 상태 폴링(`/api/generate/{jobId}/status`)과 미리보기(`/api/generate/{jobId}/preview`)는 `QAGenerationPanel.tsx`에서 직접 `fetch()` 호출.

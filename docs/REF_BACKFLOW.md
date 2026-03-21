@@ -96,9 +96,9 @@ backend/main.py
 
 ---
 
-## Generation API (`/api/generation`)
+## Generation API (`/api/generate`)
 
-### POST `/generate` — QA 생성
+### POST `/api/generate` — QA 생성
 
 ```
 1. job_id 생성: gen_YYYYMMDD_HHMMSS_μs
@@ -120,12 +120,12 @@ backend/main.py
    └── [진행 100%] 완료
 ```
 
-### GET `/{job_id}/status`
+### GET `/api/generate/{job_id}/status`
 ```
 인메모리 job 상태 반환: status, progress, message, error, result_id
 ```
 
-### GET `/{job_id}/preview`
+### GET `/api/generate/{job_id}/preview`
 ```
 1. result_id로 Supabase qa_gen_results 조회
 2. qa_list 평탄화 (최대 limit개)
@@ -134,9 +134,9 @@ backend/main.py
 
 ---
 
-## Evaluation API (`/api/evaluation`)
+## Evaluation API (`/api/evaluate`)
 
-### POST `/evaluate` — QA 평가
+### POST `/api/evaluate` — QA 평가
 
 ```
 1. job_id 생성: eval_YYYYMMDD_HHMMSS_μs
@@ -159,14 +159,19 @@ backend/main.py
        └── Supabase qa_eval_results 저장
 ```
 
-### GET `/history`
+### GET `/api/evaluate/{job_id}/status`
+```
+인메모리 job 상태 반환: status, progress, message, error
+```
+
+### GET `/api/evaluate/history`
 ```
 1. Supabase qa_eval_results 조회 (limit 50, 최신순)
 2. linked_evaluation_id로 source_doc 역추적
 3. 히스토리 목록 반환
 ```
 
-### GET `/{job_id}/export` / `/export-by-id/{eval_id}`
+### GET `/api/evaluate/{job_id}/export` / `/api/evaluate/export-by-id/{eval_id}`
 ```
 1. qa_gen_results + pipeline_results 조인
 2. QA쌍별 점수(rag_avg, quality_avg, pass) 결합
