@@ -23,13 +23,18 @@ frontend/
 │       │   ├── StatsCards.tsx           # 지표 카드 (accent border + glass)
 │       │   └── ActivityChart.tsx        # 평가 점수 추이 차트 (recharts)
 │       ├── standardization/
-│       │   └── DataStandardizationPanel.tsx  # 문서 업로드 + 3단계 계층 태깅 UI
+│       │   ├── DataStandardizationPanel.tsx  # 문서 업로드 + 3단계 계층 태깅 UI
+│       │   └── HierarchyConstructionPanel.tsx # 계층 구성 전용 패널
 │       ├── generation/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (L1/L2 드롭다운 + 진행상황)
 │       ├── evaluation/
 │       │   └── QAEvaluationDashboard.tsx # 4레이어 평가 결과 + 이력 조회 + 리포트 내보내기
 │       │                                 # QA 목록 테이블: 실패유형 배지 (primary_failure 기반)
 │       │                                 # QADetailView: 차원별 평가 근거(reason) + 주요 실패 유형 섹션
+│       ├── agents/
+│       │   └── AgentTable.tsx           # 에이전트 목록 테이블
+│       ├── analytics/
+│       │   └── AnalyticsDashboard.tsx   # 분석 대시보드
 │       ├── playground/
 │       │   └── ChatPlayground.tsx       # 채팅 플레이그라운드 (미구현)
 │       └── settings/

@@ -9,7 +9,7 @@
 | `id` | uuid PK | `gen_random_uuid()` |
 | `content` | text NOT NULL | 청크 텍스트 |
 | `metadata` | jsonb DEFAULT '{}' | 구조 메타데이터 (아래 참고) |
-| `embedding` | vector(3072) | Gemini Embedding 2 벡터 |
+| `embedding` | vector(1536) | Gemini Embedding 2 벡터 (HNSW 2000차원 제한으로 1536 설정) |
 | `created_at` | timestamptz | 기본값 `now()` |
 
 **metadata JSONB 키**

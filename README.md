@@ -161,8 +161,8 @@ autoeval/
 │   │                                  GET /api/dashboard/metrics 포함
 │   ├── api/
 │   │   ├── ingestion_api.py         # POST /api/ingestion/* — 라우터 + process_and_ingest
-│   │   ├── generation_api.py        # POST /api/generation/generate — 병렬 QA 생성 job
-│   │   └── evaluation_api.py        # POST /api/evaluation/evaluate — 4레이어 평가 job
+│   │   ├── generation_api.py        # POST /api/generate — 병렬 QA 생성 job
+│   │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job
 │   ├── ingestion/
 │   │   └── parsers.py               # 파싱·정규화·필터·청킹 순수 함수 (I/O 없음)
 │   ├── generators/

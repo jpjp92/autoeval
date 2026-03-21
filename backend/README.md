@@ -20,13 +20,12 @@ backend/
 │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
 │   └── domain_profiler.py       # analyze_domain() — doc_chunks 샘플 → LLM 도메인 분석
 ├── evaluators/                  # 4레이어 평가 로직
-│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 + Supabase 저장
+│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 — _classify_failure_types() + reason/failure 필드 qa_preview 빌드
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
-│   ├── rag_triad.py             # Layer 2: RAG Triad — evaluate_all_with_reasons() 단일 호출 (score + reason 반환), TruLens 싱글톤
+│   ├── rag_triad.py             # Layer 2: RAG Triad — evaluate_all_with_reasons() 단일 호출 (score + reason 반환)
 │   ├── qa_quality.py            # Layer 3: Quality Score — factuality/completeness/specificity/conciseness + reason 반환
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
-│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 — _classify_failure_types() + reason/failure 필드 qa_preview 빌드
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository 패키지
 │   ├── base_client.py           # 클라이언트 초기화, require_client(), health_check()
@@ -95,6 +94,7 @@ API 문서: `http://localhost:8000/docs`
 |--------|------|------|
 | `POST` | `/api/generate` | QA 생성 job 시작 (domain_profiler → 적응형 프롬프트 → 병렬 생성) |
 | `GET`  | `/api/generate/{job_id}/status` | 생성 job 진행 상태 조회 |
+| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (최대 N개, context 포함) |
 | `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
 | `DELETE` | `/api/generate/{job_id}` | job 취소 |
 
