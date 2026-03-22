@@ -11,7 +11,8 @@ import { DataStandardizationPanel } from "./components/standardization/DataStand
 function App() {
   const [activeTab, setActiveTab] = useState("overview");
   const [currentFilename, setCurrentFilename] = useState<string | null>(null);
-  const [lastEvalJobId, setLastEvalJobId] = useState<string | null>(null);
+  const [lastEvalJobId, setLastEvalJobId] = useState<string | null>(null); // 세션 in-memory job용
+  const [lastEvalDbId, setLastEvalDbId]   = useState<string | null>(null); // DB 히스토리 id용
   // taggingVersion 증가 시 QAGenerationPanel에서 hierarchy 재로드
   const [taggingVersion, setTaggingVersion] = useState(0);
 
@@ -42,7 +43,11 @@ function App() {
         <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden" : "overflow-y-scroll p-8"}`}>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
-            <DashboardOverview setActiveTab={setActiveTab} isActive={activeTab === "overview"} />
+            <DashboardOverview
+              setActiveTab={setActiveTab}
+              isActive={activeTab === "overview"}
+              onEvalSelect={(evalId) => { setLastEvalDbId(evalId); setActiveTab("evaluation"); }}
+            />
           </div>
 
           <div className={activeTab === "standardization" ? "max-w-7xl mx-auto" : "hidden"}>
@@ -63,7 +68,7 @@ function App() {
           </div>
 
           <div className={activeTab === "evaluation" ? "max-w-7xl mx-auto" : "hidden"}>
-            <QAEvaluationDashboard evalJobId={lastEvalJobId} />
+            <QAEvaluationDashboard evalJobId={lastEvalJobId} initialEvalDbId={lastEvalDbId} />
           </div>
 
           <div className={activeTab === "playground" ? "max-w-7xl mx-auto" : "hidden"}>

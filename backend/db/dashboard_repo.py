@@ -18,7 +18,7 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
     try:
         # 1) qa_gen_results
         gen_res = supabase.table("qa_gen_results").select(
-            "id, job_id, source_doc, metadata, stats, created_at"
+            "id, job_id, source_doc, metadata, stats, created_at, linked_evaluation_id"
         ).order("created_at", desc=True).execute()
         gen_rows = gen_res.data or []
 
@@ -52,33 +52,37 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
             "total_evaluations": len(eval_rows),
         }
 
-        # --- recent_jobs (최근 10건) ---
+        # --- recent_jobs (최근 10건, 생성 job 기준) ---
+        # 1차: linked_evaluation_id FK 기준
+        eval_map = {e["id"]: e for e in eval_rows if e.get("id")}
+        # 2차 폴백: eval.metadata.generation_id == gen.id (FK 미설정 레코드 보완)
+        eval_map_by_gen_id = {
+            (e.get("metadata") or {}).get("generation_id"): e
+            for e in eval_rows
+            if (e.get("metadata") or {}).get("generation_id")
+        }
+
         recent_jobs = []
         for g in gen_rows[:10]:
             meta = g.get("metadata") or {}
             st = g.get("stats") or {}
+            linked_id = g.get("linked_evaluation_id")
+            linked_eval = (
+                eval_map.get(linked_id)
+                if linked_id
+                else eval_map_by_gen_id.get(g.get("id"))
+            )
             recent_jobs.append({
                 "job_id": g.get("job_id", ""),
-                "type": "generation",
                 "source_doc": g.get("source_doc") or meta.get("source_doc", ""),
                 "model": meta.get("generation_model", ""),
                 "total_qa": st.get("total_qa", 0),
+                "eval_id":     linked_eval.get("id")          if linked_eval else None,
+                "eval_job_id": linked_eval.get("job_id")      if linked_eval else None,
+                "eval_score":  linked_eval.get("final_score") if linked_eval else None,
+                "eval_grade":  linked_eval.get("final_grade") if linked_eval else None,
                 "created_at": g.get("created_at", ""),
             })
-        for e in eval_rows[:10]:
-            meta = e.get("metadata") or {}
-            recent_jobs.append({
-                "job_id": e.get("job_id", ""),
-                "type": "evaluation",
-                "source_doc": meta.get("source_doc", ""),
-                "model": meta.get("evaluator_model", ""),
-                "total_qa": e.get("total_qa", 0),
-                "final_score": e.get("final_score"),
-                "final_grade": e.get("final_grade", ""),
-                "created_at": e.get("created_at", ""),
-            })
-        recent_jobs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        recent_jobs = recent_jobs[:10]
 
         # --- grade_distribution ---
         grade_dist: Dict[str, int] = {"A+": 0, "A": 0, "B+": 0, "B": 0, "C": 0, "F": 0}
