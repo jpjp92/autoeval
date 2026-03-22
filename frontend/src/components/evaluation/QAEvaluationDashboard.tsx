@@ -337,6 +337,22 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   const status = getQAStatus(qa.quality_avg, qa.rag_avg);
   const cfg    = STATUS_CONFIG[status];
 
+  const ragDimensions = [
+    { label: '관련성', reason: qa.relevance_reason },
+    { label: '근거성', reason: qa.groundedness_reason },
+    { label: '명확성', reason: qa.clarity_reason },
+  ].filter(r => r.reason);
+
+  const qualityDimensions = [
+    { label: '사실성', reason: qa.factuality_reason },
+    { label: '완전성', reason: qa.completeness_reason },
+    { label: '구체성', reason: qa.specificity_reason },
+    { label: '간결성', reason: qa.conciseness_reason },
+  ].filter(r => r.reason);
+
+  const scoreColor = (v: number) =>
+    v >= 0.85 ? 'text-emerald-600' : v >= 0.7 ? 'text-amber-500' : 'text-rose-600';
+
   return (
     <div className="p-5 space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
       {/* 헤더 */}
@@ -367,6 +383,23 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
         </div>
       </div>
 
+      {/* 실패 유형 callout — primary_failure 있을 때만 */}
+      {qa.primary_failure && (
+        <div className={cn(
+          'rounded-xl p-4 border text-xs space-y-1',
+          FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 border-slate-200'
+        )}>
+          <p className="font-bold text-[10px] uppercase tracking-widest">주요 실패 유형</p>
+          <p className="font-semibold">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
+          {qa.failure_reason && <p className="opacity-80 leading-relaxed">{qa.failure_reason}</p>}
+          {(qa.failure_types?.length ?? 0) > 1 && (
+            <p className="opacity-60 text-[10px]">
+              전체: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Q / A / Context */}
       <div className="space-y-3">
         <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
@@ -393,93 +426,53 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
         )}
       </div>
 
-      {/* 점수 */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">품질 평가</p>
-          {qa.quality_avg != null ? (
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-500">평균 점수</span>
-              <span className={cn('text-lg font-black font-mono', qa.quality_avg >= 0.7 ? 'text-emerald-600' : 'text-rose-600')}>
-                {qa.quality_avg.toFixed(3)}
-              </span>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400">데이터 없음</p>
-          )}
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">RAG Triad</p>
-          {qa.rag_avg != null ? (
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-slate-500">평균 점수</span>
-              <span className={cn('text-lg font-black font-mono', qa.rag_avg >= 0.7 ? 'text-emerald-600' : 'text-rose-600')}>
+      {/* RAG Triad 섹션 — avg + 차원별 reason */}
+      {(qa.rag_avg != null || ragDimensions.length > 0) && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">RAG Triad</p>
+            {qa.rag_avg != null && (
+              <span className={cn('text-lg font-black font-mono', scoreColor(qa.rag_avg))}>
                 {qa.rag_avg.toFixed(3)}
               </span>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400">데이터 없음</p>
-          )}
-        </div>
-      </div>
-
-      {/* 평가 근거 */}
-      {(() => {
-        const ragReasons = [
-          { label: '관련성', score: undefined as number | undefined, reason: qa.relevance_reason },
-          { label: '근거성', score: undefined as number | undefined, reason: qa.groundedness_reason },
-          { label: '명확성', score: undefined as number | undefined, reason: qa.clarity_reason },
-        ].filter(r => r.reason);
-        const qualityReasons = [
-          { label: '사실성',  reason: qa.factuality_reason },
-          { label: '완전성',  reason: qa.completeness_reason },
-          { label: '구체성',  reason: qa.specificity_reason },
-          { label: '간결성',  reason: qa.conciseness_reason },
-        ].filter(r => r.reason);
-        const hasReasons = ragReasons.length > 0 || qualityReasons.length > 0;
-        if (!hasReasons) return null;
-        return (
-          <div className="space-y-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">평가 근거</p>
-            {ragReasons.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">RAG Triad</p>
-                {ragReasons.map(({ label, reason }) => (
-                  <div key={label} className="flex gap-2 text-xs">
-                    <span className="shrink-0 font-semibold text-slate-500 w-20">{label}</span>
-                    <span className="text-slate-600 leading-relaxed">{reason}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {qualityReasons.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">품질 평가</p>
-                {qualityReasons.map(({ label, reason }) => (
-                  <div key={label} className="flex gap-2 text-xs">
-                    <span className="shrink-0 font-semibold text-slate-500 w-20">{label}</span>
-                    <span className="text-slate-600 leading-relaxed">{reason}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {qa.primary_failure && (
-              <div className={cn('rounded-xl p-4 border text-xs space-y-1',
-                FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 border-slate-200'
-              )}>
-                <p className="font-bold text-[10px] uppercase tracking-widest">주요 실패 유형</p>
-                <p className="font-semibold">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
-                {qa.failure_reason && <p className="opacity-80 leading-relaxed">{qa.failure_reason}</p>}
-                {(qa.failure_types?.length ?? 0) > 1 && (
-                  <p className="opacity-60 text-[10px]">
-                    전체: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
-                  </p>
-                )}
-              </div>
             )}
           </div>
-        );
-      })()}
+          {ragDimensions.length > 0 && (
+            <div className="divide-y divide-slate-100">
+              {ragDimensions.map(({ label, reason }) => (
+                <div key={label} className="flex gap-3 px-4 py-3 text-xs">
+                  <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
+                  <span className="text-slate-600 leading-relaxed">{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 품질 평가 섹션 — avg + 차원별 reason */}
+      {(qa.quality_avg != null || qualityDimensions.length > 0) && (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">품질 평가</p>
+            {qa.quality_avg != null && (
+              <span className={cn('text-lg font-black font-mono', scoreColor(qa.quality_avg))}>
+                {qa.quality_avg.toFixed(3)}
+              </span>
+            )}
+          </div>
+          {qualityDimensions.length > 0 && (
+            <div className="divide-y divide-slate-100">
+              {qualityDimensions.map(({ label, reason }) => (
+                <div key={label} className="flex gap-3 px-4 py-3 text-xs">
+                  <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
+                  <span className="text-slate-600 leading-relaxed">{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -497,7 +490,7 @@ const GRADE_COLOR: Record<string, string> = {
 const QA_PAGE_SIZE = 5;
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
-export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null } = {}) {
+export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobId?: string | null; initialEvalDbId?: string | null } = {}) {
   const [showExportMenu, setShowExportMenu]   = useState(false);
   const [exportLoading, setExportLoading]     = useState(false);
   const [showHistoryMenu, setShowHistoryMenu] = useState(false);
@@ -549,6 +542,14 @@ export function QAEvaluationDashboard({ evalJobId }: { evalJobId?: string | null
       }
     });
   }, []);
+
+  // 대시보드에서 진입 시 해당 히스토리 항목 자동 선택
+  // historyList 로드 전에 initialEvalDbId가 설정될 수 있으므로 두 값 모두 준비된 시점에 실행
+  useEffect(() => {
+    if (!initialEvalDbId || !historyList.length) return;
+    const target = historyList.find((h) => h.id === initialEvalDbId);
+    if (target) selectHistory(target);
+  }, [initialEvalDbId, historyList]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 히스토리 항목 선택
   const selectHistory = async (item: HistoryItem) => {

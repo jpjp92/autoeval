@@ -16,12 +16,13 @@ interface DashboardData {
   };
   recent_jobs: Array<{
     job_id: string;
-    type: string;
     source_doc: string;
     model: string;
     total_qa: number;
-    final_score?: number;
-    final_grade?: string;
+    eval_id?: string | null;
+    eval_job_id?: string | null;
+    eval_score?: number | null;
+    eval_grade?: string | null;
     created_at: string;
   }>;
   grade_distribution: Record<string, number>;
@@ -57,7 +58,15 @@ const GRADE_COLORS: Record<string, string> = {
   "F": "bg-rose-100 text-rose-700 border-rose-200",
 };
 
-export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (tab: string) => void; isActive: boolean }) {
+export function DashboardOverview({
+  setActiveTab,
+  isActive,
+  onEvalSelect,
+}: {
+  setActiveTab: (tab: string) => void;
+  isActive: boolean;
+  onEvalSelect?: (evalJobId: string) => void;
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [jobPage, setJobPage] = useState(0);
@@ -114,10 +123,10 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
                         <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">작업 ID</th>
-                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">유형</th>
                         <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">문서</th>
                         <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">모델</th>
                         <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">QA 수</th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">평가</th>
                         <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">시간</th>
                       </tr>
                     </thead>
@@ -139,31 +148,43 @@ export function DashboardOverview({ setActiveTab, isActive }: { setActiveTab: (t
                           </td>
                         </tr>
                       ) : (
-                        pagedJobs.map((job) => (
-                          <tr key={job.job_id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
-                              {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
-                            </td>
-                            <td className="px-4 py-2.5 whitespace-nowrap">
-                              <span className={cn(
-                                "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border",
-                                job.type === "generation"
-                                  ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              )}>
-                                {job.type === "generation" ? "생성" : "평가"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5 text-slate-600 text-xs max-w-[160px] truncate" title={job.source_doc}>
-                              {job.source_doc || "—"}
-                            </td>
-                            <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{job.model || "—"}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-slate-700 text-xs whitespace-nowrap">{job.total_qa}</td>
-                            <td className="px-4 py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">
-                              {formatRelativeTime(job.created_at)}
-                            </td>
-                          </tr>
-                        ))
+                        pagedJobs.map((job) => {
+                          const hasEval = !!job.eval_id;
+                          return (
+                            <tr
+                              key={job.job_id}
+                              onClick={hasEval && onEvalSelect ? () => onEvalSelect(job.eval_id!) : undefined}
+                              className={cn(
+                                "hover:bg-slate-50/50 transition-colors",
+                                hasEval && onEvalSelect ? "cursor-pointer" : "cursor-default"
+                              )}
+                            >
+                              <td className="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
+                                {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-600 text-xs max-w-[160px] truncate" title={job.source_doc}>
+                                {job.source_doc || "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{job.model || "—"}</td>
+                              <td className="px-4 py-2.5 text-right font-medium text-slate-700 text-xs whitespace-nowrap">{job.total_qa}</td>
+                              <td className="px-4 py-2.5 whitespace-nowrap">
+                                {hasEval && job.eval_grade ? (
+                                  <span className={cn(
+                                    "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border",
+                                    GRADE_COLORS[job.eval_grade] || "bg-slate-100 text-slate-600 border-slate-200"
+                                  )}>
+                                    {job.eval_grade}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-400">미평가</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">
+                                {formatRelativeTime(job.created_at)}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
