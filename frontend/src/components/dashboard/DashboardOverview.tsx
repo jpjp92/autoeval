@@ -263,6 +263,13 @@ export function DashboardOverview({
               </div>
             </button>
           </div>
+
+          <button
+            onClick={() => setActiveTab("settings")}
+            className="mt-4 flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-500 transition-colors self-start"
+          >
+            파이프라인 구조 보기 <ArrowRight className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
