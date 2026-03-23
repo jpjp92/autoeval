@@ -25,12 +25,15 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       {/* Header Area */}
       <div className={cn("p-4 flex items-center h-16", isCollapsed ? "justify-center" : "justify-between")}>
         {!isCollapsed && (
-          <div className="flex items-center gap-3 overflow-hidden">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className="flex items-center gap-3 overflow-hidden hover:opacity-80 transition-opacity"
+          >
             <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
               <Zap className="w-5 h-5 text-white" fill="currentColor" />
             </div>
             <span className="font-bold text-xl tracking-tight whitespace-nowrap">Auto Eval</span>
-          </div>
+          </button>
         )}
         
         {/* Toggle Button */}

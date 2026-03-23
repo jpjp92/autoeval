@@ -52,6 +52,70 @@ async def save_doc_chunk(
         return None
 
 
+async def save_doc_chunks_batch(chunks: list) -> list:
+    """
+    배치 단위로 doc_chunks 저장.
+    - content_hash 목록 1회 SELECT로 중복 확인
+    - 신규 청크만 1회 배치 INSERT
+    chunks: [{"content": str, "embedding": list, "metadata": dict}]
+    """
+    if not supabase or not chunks:
+        return []
+
+    try:
+        # 1. hash 목록 수집
+        hash_list = [
+            h for h in (
+                (c.get("metadata") or {}).get("content_hash") for c in chunks
+            ) if h
+        ]
+
+        # 2. 기존 hash 1회 SELECT
+        existing_hashes: set = set()
+        if hash_list:
+            existing_res = (
+                supabase.table("doc_chunks")
+                .select("metadata")
+                .in_("metadata->>content_hash", hash_list)
+                .execute()
+            )
+            for r in (existing_res.data or []):
+                h = (r.get("metadata") or {}).get("content_hash")
+                if h:
+                    existing_hashes.add(h)
+
+        # 3. 신규 청크만 필터링
+        now = datetime.utcnow().isoformat()
+        new_rows = []
+        skipped = 0
+        for c in chunks:
+            content_hash = (c.get("metadata") or {}).get("content_hash")
+            if content_hash and content_hash in existing_hashes:
+                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]})")
+                skipped += 1
+                continue
+            new_rows.append({
+                "content":    c["content"],
+                "embedding":  c["embedding"],
+                "metadata":   c.get("metadata") or {},
+                "created_at": now,
+            })
+
+        if skipped:
+            logger.info(f"⏭️ Batch duplicate skip: {skipped} chunks")
+
+        # 4. 신규 청크 1회 배치 INSERT
+        if not new_rows:
+            return []
+
+        response = supabase.table("doc_chunks").insert(new_rows).execute()
+        return [r["id"] for r in (response.data or [])]
+
+    except Exception as e:
+        logger.error(f"❌ Failed to save doc chunks batch: {e}")
+        return []
+
+
 async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any]) -> bool:
     """특정 청크의 메타데이터 업데이트"""
     if not supabase:
