@@ -403,13 +403,13 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
       {/* Q / A / Context */}
       <div className="space-y-3">
         <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">질문</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">질문</p>
           <p className="text-sm text-slate-800 leading-relaxed font-medium">{qa.q}</p>
         </div>
 
         {qa.a ? (
           <div className="bg-indigo-50/60 rounded-xl p-4 border border-indigo-100">
-            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">답변</p>
+            <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wide mb-2">답변</p>
             <p className="text-sm text-slate-700 leading-relaxed">{qa.a}</p>
           </div>
         ) : (
@@ -420,7 +420,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
         {qa.context && (
           <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100">
-            <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-2">컨텍스트</p>
+            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">컨텍스트</p>
             <p className="text-xs text-slate-600 leading-relaxed">{qa.context}</p>
           </div>
         )}
@@ -428,9 +428,9 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
       {/* RAG Triad 섹션 — avg + 차원별 reason */}
       {(qa.rag_avg != null || ragDimensions.length > 0) && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">RAG Triad</p>
+        <div className="bg-sky-50/40 rounded-xl border border-sky-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-sky-100">
+            <p className="text-xs font-semibold text-sky-600 uppercase tracking-wide">RAG Triad</p>
             {qa.rag_avg != null && (
               <span className={cn('text-lg font-black font-mono', scoreColor(qa.rag_avg))}>
                 {qa.rag_avg.toFixed(3)}
@@ -438,7 +438,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
             )}
           </div>
           {ragDimensions.length > 0 && (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-sky-100">
               {ragDimensions.map(({ label, reason }) => (
                 <div key={label} className="flex gap-3 px-4 py-3 text-xs">
                   <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
@@ -452,9 +452,9 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
       {/* 품질 평가 섹션 — avg + 차원별 reason */}
       {(qa.quality_avg != null || qualityDimensions.length > 0) && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">품질 평가</p>
+        <div className="bg-violet-50/40 rounded-xl border border-violet-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-violet-100">
+            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">품질 평가</p>
             {qa.quality_avg != null && (
               <span className={cn('text-lg font-black font-mono', scoreColor(qa.quality_avg))}>
                 {qa.quality_avg.toFixed(3)}
@@ -462,7 +462,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
             )}
           </div>
           {qualityDimensions.length > 0 && (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-violet-100">
               {qualityDimensions.map(({ label, reason }) => (
                 <div key={label} className="flex gap-3 px-4 py-3 text-xs">
                   <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
