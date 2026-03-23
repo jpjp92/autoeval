@@ -328,6 +328,20 @@ async def run_qa_generation_real(
                 filename=doc_filename,
                 limit=max(samples * 3, 30),  # 여유있게 가져와서 skip 후에도 충분히 확보
             )
+            # hierarchy 필터 결과가 없고 filename이 있으면 filename만으로 재쿼리
+            # (이전에 hierarchy_h1/h2/h3가 metadata에 미저장된 청크 대응)
+            if not chunks and doc_filename and (h1 or h2 or h3):
+                logger.warning(
+                    f"[{job_id}] hierarchy filter returned 0 chunks — "
+                    f"retrying filename-only (h1={h1!r}, h2={h2!r}, h3={h3!r})"
+                )
+                chunks = await get_doc_chunks_by_filter(
+                    hierarchy_h1=None,
+                    hierarchy_h2=None,
+                    hierarchy_h3=None,
+                    filename=doc_filename,
+                    limit=max(samples * 3, 30),
+                )
         logger.info(f"[{job_id}] Raw chunks from DB: {len(chunks)} (before skip filter)")
         
         # heading/발행처 청크 skip 판단

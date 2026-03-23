@@ -268,8 +268,6 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "ingested_at": ingested_at,
                     "embedding_model": "gemini-embedding-2-preview",
                 }
-                for old_key in ["hierarchy_h1", "hierarchy_h2", "hierarchy_h3"]:
-                    chunk_metadata.pop(old_key, None)
 
                 batch_rows.append({
                     "content":   c["raw_text"],
