@@ -4,12 +4,12 @@ import {
 } from 'recharts';
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
-  Code2, ChevronDown, Clock, History, Loader2,
+  Code2, ChevronDown, Clock, History, Loader2, LayoutGrid,
   ArrowLeft, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect, useRef } from 'react';
-import { exportToCSV, exportToHTML, exportToJSON } from '@/src/lib/exportUtils';
+import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
 import { getEvalStatus, getEvalHistory, getEvalExport, getEvalExportById } from '@/src/lib/api';
 
 // ─── Intent 레이블 ────────────────────────────────────────────────────────────
@@ -166,13 +166,13 @@ function buildChartData(report: EvalReport) {
   }));
 
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0 },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0 },
-    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
-    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
-    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0, group: 'rag' as const },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0, group: 'rag' as const },
+    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0, group: 'quality' as const },
+    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0, group: 'quality' as const },
+    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0, group: 'quality' as const },
+    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0, group: 'quality' as const },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -205,13 +205,13 @@ function buildChartDataFromHistory(item: HistoryItem) {
   }));
 
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0 },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0 },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0 },
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0 },
-    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0 },
-    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0 },
-    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0 },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0, group: 'rag' as const },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0, group: 'rag' as const },
+    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0, group: 'quality' as const },
+    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0, group: 'quality' as const },
+    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0, group: 'quality' as const },
+    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0, group: 'quality' as const },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -232,7 +232,7 @@ const IntentTooltip = ({ active, payload }: any) => {
 };
 
 // ─── 품질 점수 인터랙티브 바 차트 ────────────────────────────────────────────
-function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number }> }) {
+function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number; group: 'rag' | 'quality' }> }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [animated, setAnimated]     = useState(false);
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -278,7 +278,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
   }, []);
 
   return (
-    <div ref={containerRef} className="space-y-3 py-1 px-1">
+    <div ref={containerRef} className="space-y-2.5 py-1">
       {data.map((item, i) => {
         const color = item.score >= 0.85 ? 'bg-emerald-500' : item.score >= 0.7 ? 'bg-amber-400' : 'bg-rose-400';
         const textColor = item.score >= 0.85 ? 'text-emerald-600' : item.score >= 0.7 ? 'text-amber-600' : 'text-rose-500';
@@ -292,7 +292,12 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
             onMouseLeave={() => setHoveredIdx(null)}
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-semibold text-slate-600 leading-none flex items-center gap-1">
+              <span className="text-[11px] font-semibold text-slate-600 leading-none flex items-center gap-1.5">
+                {item.group === 'rag' ? (
+                  <span className="text-[9px] font-bold text-sky-500 bg-sky-50 border border-sky-200 rounded px-1 py-0.5 leading-none shrink-0">RAG</span>
+                ) : (
+                  <span className="text-[9px] font-bold text-violet-500 bg-violet-50 border border-violet-200 rounded px-1 py-0.5 leading-none shrink-0">품질</span>
+                )}
                 {item.name}
                 <span className={cn(
                   'text-[10px] font-normal text-slate-400 transition-all duration-200',
@@ -305,7 +310,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
                 {item.score.toFixed(3)}
               </span>
             </div>
-            <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className={cn('h-full rounded-full', color, isHovered && 'brightness-110')}
                 style={{
@@ -320,8 +325,8 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
           </div>
         );
       })}
-      {/* 0.7 기준선 범례 */}
-      <div className="flex items-center gap-1.5 pt-7.5 justify-end">
+      {/* 범례 — 우측 정렬 */}
+      <div className="flex justify-end pt-2">
         <div className="flex gap-3 text-[9px] text-slate-400 items-center">
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />≥ 0.85</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />≥ 0.70</span>
@@ -494,6 +499,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const [showExportMenu, setShowExportMenu]   = useState(false);
   const [exportLoading, setExportLoading]     = useState(false);
   const [showHistoryMenu, setShowHistoryMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading]                 = useState(false);
   const [error, setError]                     = useState<string | null>(null);
   const [report, setReport]                   = useState<EvalReport | null>(null);
@@ -505,6 +511,18 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const [qaPage, setQaPage]                   = useState(0);
   const [selectedQA, setSelectedQA]           = useState<QAPreviewItem | null>(null);
   const prevEvalJobId = useRef<string | null>(null);
+
+  // Export 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
 
   // evalJobId 변경 시 실제 데이터 fetch
   useEffect(() => {
@@ -592,7 +610,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types })),
+    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types, relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, clarity_reason: q.clarity_reason, factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, failure_reason: q.failure_reason })),
     metadata: {
       qa_model: (() => {
         const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
@@ -609,12 +627,13 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
     },
   } : null;
 
-  const handleExport = async (format: 'xlsx' | 'html' | 'json') => {
+  const handleExport = async (format: 'xlsx' | 'html' | 'json' | 'zip') => {
     if (!evaluationData) return;
     setShowExportMenu(false);
 
     if (format === 'html') { exportToHTML(evaluationData); return; }
     if (format === 'json') { exportToJSON(evaluationData); return; }
+    if (format === 'zip')  { await exportToZip(evaluationData); return; }
 
     setExportLoading(true);
     try {
@@ -720,7 +739,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
-          <div className="relative">
+          <div ref={exportMenuRef} className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData}
@@ -732,14 +751,17 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
-                {(['xlsx', 'html'] as const).map((fmt) => (
+                {(['xlsx', 'html', 'zip'] as const).map((fmt) => (
                   <button key={fmt} onClick={() => handleExport(fmt)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-slate-700 border-b border-slate-100 last:border-b-0">
                     {fmt === 'xlsx' && <FileText className="w-4 h-4 text-blue-600" />}
                     {fmt === 'html' && <Code2    className="w-4 h-4 text-green-600" />}
+                    {fmt === 'zip'  && <Download className="w-4 h-4 text-indigo-600" />}
                     <div>
                       <div className="font-medium">{fmt.toUpperCase()}</div>
-                      <div className="text-xs text-slate-500">{fmt === 'xlsx' ? 'Spreadsheet' : 'HTML Report'}</div>
+                      <div className="text-xs text-slate-500">
+                        {fmt === 'xlsx' ? 'Spreadsheet' : fmt === 'html' ? 'HTML Report' : 'XLSX + HTML 묶음'}
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -778,7 +800,9 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
         {/* Intent Distribution */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
           <div className="mb-2">
-            <h3 className="text-base font-semibold text-slate-800"> 🗂️ 의도 분류</h3>
+            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분류
+            </h3>
             <p className="text-xs text-slate-500">질문 유형 분포</p>
           </div>
           {intentDistribution.length === 0 ? (
@@ -1021,8 +1045,20 @@ function HistoryDropdown({
   setShowMenu: (v: boolean) => void;
   onSelect: (item: HistoryItem) => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu, setShowMenu]);
+
   return (
-    <div className="relative">
+    <div ref={ref} className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
         className="flex items-center justify-center gap-2 w-32 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"

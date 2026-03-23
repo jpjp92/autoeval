@@ -1,8 +1,9 @@
 /**
  * Export utilities for evaluation results
- * Supports XLSX (2-sheet), HTML, and JSON formats
+ * Supports XLSX (2-sheet), HTML, JSON, and ZIP (XLSX + HTML) formats
  */
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 
 const INTENT_KR: Record<string, string> = {
   factoid:   '사실형',
@@ -28,7 +29,7 @@ export interface EvaluationData {
   summaryStats: Array<{ label: string; value: string; icon?: any; color?: string; bg?: string }>;
   layer1Stats: Array<{ subject: string; A: number; fullMark: number }>;
   intentDistribution: Array<{ name: string; label?: string; krLabel?: string; value: number }>;
-  llmQualityScores: Array<{ name: string; nameEn?: string; score: number }>;
+  llmQualityScores: Array<{ name: string; nameEn?: string; score: number; group?: 'rag' | 'quality' }>;
   detailedQA: Array<{
     id: number;
     q: string;
@@ -40,6 +41,14 @@ export interface EvaluationData {
     pass: boolean;
     primary_failure?: string | null;
     failure_types?: string[];
+    relevance_reason?: string;
+    groundedness_reason?: string;
+    clarity_reason?: string;
+    factuality_reason?: string;
+    completeness_reason?: string;
+    specificity_reason?: string;
+    conciseness_reason?: string;
+    failure_reason?: string;
   }>;
   metadata?: {
     qa_model?:  string;  // QA 생성 모델
@@ -62,7 +71,7 @@ function toKST(isoString?: string): string {
 /**
  * Export evaluation results to XLSX (Stats 시트 + Detail 시트)
  */
-export function exportToCSV(data: EvaluationData): void {
+function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   const evalDate = toKST(data.metadata?.timestamp);
   const qaModel   = data.metadata?.qa_model   || data.metadata?.model || '-';
@@ -72,7 +81,6 @@ export function exportToCSV(data: EvaluationData): void {
   // ── Stats 시트 ──────────────────────────────────────────────────────────────
   const statsRows: (string | number)[][] = [];
 
-  // 메타데이터 (최상단)
   statsRows.push(['[ 메타데이터 ]', '']);
   statsRows.push(['QA 생성 모델',    qaModel]);
   statsRows.push(['평가 모델',       evalModel]);
@@ -145,7 +153,11 @@ export function exportToCSV(data: EvaluationData): void {
   ];
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail');
 
-  // ── 다운로드 ────────────────────────────────────────────────────────────────
+  return wb;
+}
+
+export function exportToCSV(data: EvaluationData): void {
+  const wb = buildWorkbook(data);
   const filename = `qa-evaluation-${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
@@ -182,13 +194,13 @@ function svgDonut(
   const cols = 4; const colW = Math.floor(W / cols);
   const legendItems = items.map((item, i) => {
     const col = i % cols, row = Math.floor(i / cols);
-    const lx = col * colW + 6, ly = 178 + row * 18;
+    const lx = col * colW + 6, ly = 194 + row * 18;
     const lbl = item.krLabel ?? item.label ?? item.name;
     return `<circle cx="${lx+4}" cy="${ly-3}" r="4" fill="${colorMap[item.name] ?? '#94a3b8'}"/>
 <text x="${lx+12}" y="${ly}" font-size="10" fill="#475569">${lbl}</text>`;
   }).join('');
   const legendRows = Math.ceil(items.length / cols);
-  const H = 174 + legendRows * 18 + 8;
+  const H = 190 + legendRows * 18 + 8;
 
   // 애니메이션용 clipPath (초기: 점 → JS가 sweep 확장)
   const clipId = 'dc';
@@ -204,7 +216,7 @@ function svgDonut(
 }
 
 function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>): string {
-  const W = 260; const H = 226; const cx = 130; const cy = 100; const maxR = 74; const n = items.length;
+  const W = 260; const H = 246; const cx = 130; const cy = 100; const maxR = 74; const n = items.length;
   const ang = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
   const pt  = (i: number, rr: number): [number, number] => [cx + rr * Math.cos(ang(i)), cy + rr * Math.sin(ang(i))];
 
@@ -242,16 +254,16 @@ function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>
 
   return `<svg class="radar-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
 ${grid}${axes}${polygon}${dots}${labels}
-<text x="${cx}" y="${H-14}" text-anchor="middle" font-size="11" fill="#64748b">통합 점수:
+<text x="${cx}" y="${H-20}" text-anchor="middle" font-size="11" fill="#64748b">통합 점수:
   <tspan font-weight="700" fill="#6366f1"> ${intScore} / 10</tspan>
 </text>
 </svg>`;
 }
 
-function svgBars(items: Array<{ name: string; nameEn?: string; score: number }>): string {
-  const W = 260; const barH = 24; const gap = 10; const labelW = 68; const barMaxW = 150;
+function svgBars(items: Array<{ name: string; nameEn?: string; score: number; group?: 'rag' | 'quality' }>): string {
+  const W = 340; const barH = 20; const gap = 10; const labelW = 88; const barMaxW = 210;
   const barsH = gap + items.length * (barH + gap);
-  const legendY = barsH + 22;
+  const legendY = barsH + 10;
   const totalH = legendY + 16;
 
   let bars = '';
@@ -260,8 +272,13 @@ function svgBars(items: Array<{ name: string; nameEn?: string; score: number }>)
     const targetW = Math.max(2, item.score * barMaxW);
     const color = item.score >= 0.85 ? '#10b981' : item.score >= 0.7 ? '#f59e0b' : '#f43f5e';
     const tip = item.nameEn ? `${item.name}(${item.nameEn}): ${item.score.toFixed(3)}` : `${item.name}: ${item.score.toFixed(3)}`;
+    const groupPrefix = item.group === 'rag'
+      ? `<tspan fill="#0284c7" font-weight="700" font-size="9">RAG </tspan>`
+      : item.group === 'quality'
+        ? `<tspan fill="#7c3aed" font-weight="700" font-size="9">품질 </tspan>`
+        : '';
     bars += `
-<text x="${labelW-6}" y="${(y+barH/2+1).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="#475569">${item.name}</text>
+<text x="${labelW-6}" y="${(y+barH/2+1).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="#475569">${groupPrefix}${item.name}</text>
 <rect x="${labelW}" y="${y}" width="${barMaxW}" height="${barH}" rx="4" fill="#f1f5f9"/>
 <rect class="bar-fill" x="${labelW}" y="${y}" width="${targetW.toFixed(1)}" height="${barH}" rx="4" fill="${color}"
   style="clip-path:inset(0 100% 0 0 round 4px);cursor:pointer;transition:opacity .15s"
@@ -270,14 +287,15 @@ function svgBars(items: Array<{ name: string; nameEn?: string; score: number }>)
 <text x="${(labelW + targetW + 5).toFixed(1)}" y="${(y+barH/2+1).toFixed(1)}" dominant-baseline="middle" font-size="11" fill="#1e293b" font-weight="600">${item.score.toFixed(3)}</text>`;
   });
 
-  // 범례 (평가 페이지 동일)
+  // 범례 — 우측 3항목 균등 배치
+  const lA = W - 148, lB = W - 96, lC = W - 44;
   const legend = `
-<circle cx="4"   cy="${legendY+5}" r="4" fill="#10b981"/>
-<text x="12"  y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.85</text>
-<circle cx="60"  cy="${legendY+5}" r="4" fill="#f59e0b"/>
-<text x="68"  y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.70</text>
-<circle cx="116" cy="${legendY+5}" r="4" fill="#f43f5e"/>
-<text x="124" y="${legendY+9}" font-size="9" fill="#64748b">&lt; 0.70</text>`;
+<circle cx="${lA}" cy="${legendY+5}" r="4" fill="#10b981"/>
+<text x="${lA+8}" y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.85</text>
+<circle cx="${lB}" cy="${legendY+5}" r="4" fill="#f59e0b"/>
+<text x="${lB+8}" y="${legendY+9}" font-size="9" fill="#64748b">≥ 0.70</text>
+<circle cx="${lC}" cy="${legendY+5}" r="4" fill="#f43f5e"/>
+<text x="${lC+8}" y="${legendY+9}" font-size="9" fill="#64748b">&lt; 0.70</text>`;
 
   return `<svg class="bars-svg" width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg">
 ${bars}
@@ -287,7 +305,7 @@ ${legend}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function exportToHTML(data: EvaluationData): void {
+function buildHTMLContent(data: EvaluationData): string {
   const timestamp = toKST(data.metadata?.timestamp);
   const qaModel   = data.metadata?.qa_model   || data.metadata?.model || 'N/A';
   const evalModel = data.metadata?.eval_model || data.metadata?.model || 'N/A';
@@ -299,12 +317,11 @@ export function exportToHTML(data: EvaluationData): void {
     list: '#f59e0b', boolean: '#c026d3',
   };
 
-  // 차트 SVG 생성
   const donutSVG  = svgDonut(data.intentDistribution, intentColorsMap);
   const radarSVG  = svgRadar(data.layer1Stats);
   const barsSVG   = svgBars(data.llmQualityScores);
 
-  const htmlContent = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -344,6 +361,46 @@ export function exportToHTML(data: EvaluationData): void {
         .failure-evaluation_error   { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e9d5ff; background: #faf5ff; color: #7e22ce; }
         .failure-none { color: #cbd5e1; font-size: 12px; }
         footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px; }
+        tbody tr.qa-row { cursor: pointer; }
+        tbody tr.qa-row:hover { background: #f0f9ff !important; }
+        .pg-wrap { display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:0 2px; }
+        .pg-btn { display:inline-flex;align-items:center;padding:6px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer;font-size:13px;font-weight:500;color:#475569;transition:all .15s; }
+        .pg-btn:hover:not(:disabled) { background:#f1f5f9;color:#1e293b; }
+        .pg-btn:disabled { opacity:.38;cursor:not-allowed; }
+        .pg-info { font-size:13px;color:#64748b;font-weight:500; }
+        #qa-detail-view { background:white;border-radius:12px;padding:28px 32px;box-shadow:0 1px 3px rgba(0,0,0,.08); }
+        .detail-back { display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer;font-size:13px;font-weight:500;color:#475569;margin-bottom:20px;transition:all .15s; }
+        .detail-back:hover { background:#f1f5f9; }
+        .detail-qa-box { border-radius:12px;padding:16px;border:1px solid;margin-bottom:12px; }
+        .detail-qa-box-q   { background:#f8fafc;border-color:#f1f5f9; }
+        .detail-qa-box-a   { background:rgba(238,242,255,0.6);border-color:#e0e7ff; }
+        .detail-qa-box-ctx { background:rgba(255,251,235,0.5);border-color:#fde68a; }
+        .detail-qa-label { font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.025em;margin-bottom:8px; }
+        .detail-qa-label-q   { color:#94a3b8; }
+        .detail-qa-label-a   { color:#818cf8; }
+        .detail-qa-label-ctx { color:#f59e0b; }
+        .detail-qa-text { font-size:14px;color:#1e293b;line-height:1.65; }
+        .detail-context-text { font-size:13px;color:#475569;line-height:1.6;max-height:160px;overflow-y:auto; }
+        .detail-section { border-radius:12px;padding:0;margin-bottom:0;overflow:hidden; }
+        .detail-section-rag { background:rgba(240,249,255,0.4);border:1px solid #bae6fd; }
+        .detail-section-qual { background:rgba(245,243,255,0.4);border:1px solid #ddd6fe; }
+        .detail-section-header { display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid; }
+        .detail-section-rag .detail-section-header { border-color:#e0f2fe; }
+        .detail-section-qual .detail-section-header { border-color:#ede9fe; }
+        .detail-section-title { font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.025em;margin:0; }
+        .detail-section-rag .detail-section-title { color:#0284c7; }
+        .detail-section-qual .detail-section-title { color:#7c3aed; }
+        .detail-section-body { padding:0 16px; }
+        .detail-metric { padding:10px 0;border-bottom:1px solid; }
+        .detail-section-rag .detail-section-body .detail-metric { border-color:#e0f2fe; }
+        .detail-section-qual .detail-section-body .detail-metric { border-color:#ede9fe; }
+        .detail-metric { padding:8px 0;border-bottom:1px solid; }
+        .detail-metric:last-child { border-bottom:none; }
+        .detail-metric-name { font-size:13px;font-weight:600;color:#334155;margin-bottom:4px; }
+        .detail-metric-reason { font-size:12px;color:#64748b;line-height:1.55; }
+        .detail-failure-callout { background:#fff1f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:16px; }
+        .detail-failure-callout-title { font-size:12px;font-weight:700;color:#991b1b;margin-bottom:4px; }
+        .detail-failure-callout-text { font-size:13px;color:#dc2626;line-height:1.55; }
         @media print { body { background: white; } section { page-break-inside: avoid; } }
         .chart-card { background: white; padding: 20px 20px 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; align-items: flex-start; }
         .chart-card-inner { width: 100%; display: flex; flex-direction: column; align-items: center; }
@@ -375,75 +432,47 @@ export function exportToHTML(data: EvaluationData): void {
         <h2>📊 시각화 차트</h2>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
             <div class="chart-card">
-                <div class="chart-title">🗂️ 의도 분류</div>
+                <div class="chart-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                  의도 분류
+                </div>
                 <div class="chart-sub">질문 유형 분포</div>
                 <div class="chart-card-inner">${donutSVG}</div>
             </div>
             <div class="chart-card">
-                <div class="chart-title">⚡ 데이터 통계</div>
+                <div class="chart-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  데이터 통계
+                </div>
                 <div class="chart-sub">구조적·통계적 검증 (0–10)</div>
-                <div class="chart-card-inner">${radarSVG}</div> 
+                <div class="chart-card-inner">${radarSVG}</div>
             </div>
             <div class="chart-card">
-                <div class="chart-title">🎯 RAG Triad + 품질 평가 점수</div>
+                <div class="chart-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                  RAG Triad + 품질 평가 점수
+                </div>
                 <div class="chart-sub">RAG Triad + 품질 평가 통합 점수</div>
                 <div class="chart-card-inner">${barsSVG}</div>
             </div>
         </div>
     </section>
 
-    <section>
-        <h2>🎯 데이터 통계 (0–10)</h2>
-        <table>
-            <thead><tr><th>지표</th><th>점수</th><th>비율</th></tr></thead>
-            <tbody>
-                ${data.layer1Stats.map((s) => `<tr><td><strong>${s.subject}</strong></td><td>${s.A.toFixed(2)}</td><td>${((s.A / s.fullMark) * 100).toFixed(1)}%</td></tr>`).join('')}
-            </tbody>
-        </table>
-    </section>
-
-    <section>
-        <h2>⭐ RAG Triad + 품질 평가 점수 (0–1)</h2>
-        <table>
-            <thead><tr><th>지표</th><th>점수</th><th>평가</th></tr></thead>
-            <tbody>
-                ${data.llmQualityScores.map((s) => {
-                  const displayName = s.nameEn ? `${s.name}(${s.nameEn})` : s.name;
-                  const cls = s.score >= 0.85 ? 'status-pass' : s.score >= 0.7 ? 'status-pass' : 'status-fail';
-                  const label = s.score >= 0.85 ? '우수' : s.score >= 0.7 ? '양호' : '미흡';
-                  return `<tr><td><strong>${displayName}</strong></td><td><span class="${s.score >= 0.7 ? 'score-pass' : 'score-fail'}">${s.score.toFixed(3)}</span></td><td><span class="${cls}">${label}</span></td></tr>`;
-                }).join('')}
-            </tbody>
-        </table>
-    </section>
 
     <section>
         <h2>📋 QA 상세 평가 결과</h2>
-        <table>
-            <thead><tr><th>ID</th><th>의도</th><th>질문</th><th>답변</th><th>품질</th><th>Triad</th><th>상태</th><th>실패유형</th></tr></thead>
-            <tbody>
-                ${data.detailedQA.map((qa) => {
-                  const qFail = qa.l2_avg < 0.7;
-                  const rFail = qa.triad_avg < 0.7;
-                  const statusLabel = qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공';
-                  const statusCls   = qFail && rFail ? 'status-fail' : (qFail || rFail) ? 'status-hold' : 'status-pass';
-                  const failureKey  = qa.primary_failure ?? null;
-                  const failureBadge = failureKey
-                    ? `<span class="failure-${failureKey}">${FAILURE_KR[failureKey] ?? failureKey}</span>`
-                    : `<span class="failure-none">-</span>`;
-                  return `<tr>
-                    <td><strong>${qa.id}</strong></td>
-                    <td><div class="intent-badge" style="background:${intentColorsMap[qa.intent] || '#4f46e5'}18;border-color:${intentColorsMap[qa.intent] || '#4f46e5'}35;color:${intentColorsMap[qa.intent] || '#4f46e5'}">${INTENT_KR[qa.intent] ?? qa.intent}</div></td>
-                    <td style="max-width:280px">${qa.q}</td>
-                    <td style="max-width:240px;color:#475569">${qa.a ?? '-'}</td>
-                    <td><span class="${qFail ? 'score-fail' : 'score-pass'}">${qa.l2_avg.toFixed(3)}</span></td>
-                    <td><span class="${rFail ? 'score-fail' : 'score-pass'}">${qa.triad_avg.toFixed(3)}</span></td>
-                    <td><span class="${statusCls}">${statusLabel}</span></td>
-                    <td>${failureBadge}</td>
-                  </tr>`;
-                }).join('')}
-            </tbody>
-        </table>
+        <div id="qa-list-view">
+            <table id="qa-table">
+                <thead><tr><th>ID</th><th>의도</th><th>질문</th><th>답변</th><th>품질</th><th>Triad</th><th>상태</th><th>실패유형</th></tr></thead>
+                <tbody id="qa-tbody"></tbody>
+            </table>
+            <div class="pg-wrap">
+                <button class="pg-btn" id="pg-prev" onclick="changePage(-1)">← 이전</button>
+                <span class="pg-info" id="pg-info"></span>
+                <button class="pg-btn" id="pg-next" onclick="changePage(1)">다음 →</button>
+            </div>
+        </div>
+        <div id="qa-detail-view" style="display:none"></div>
     </section>
 
     <footer>Generated on ${timestamp} · Auto Evaluation Dashboard</footer>
@@ -511,11 +540,129 @@ function animateBars(){
   });
 }
 
-window.addEventListener('load',function(){animateBars();animateDonut();animateRadar();});
+var QA_DATA=${JSON.stringify(data.detailedQA).replace(/<\/script>/gi,'<\\/script>')};
+var QA_PAGE_SIZE=5;
+var qaCurrentPage=0;
+var INTENT_KR_JS={factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'이유형',how:'방법형',definition:'정의형',list:'목록형',boolean:'확인형'};
+var INTENT_COLORS_JS={factoid:'#06b6d4',numeric:'#eab308',procedure:'#3b82f6',why:'#d946ef',how:'#22c55e',definition:'#0ea5e9',list:'#f59e0b',boolean:'#c026d3'};
+var FAILURE_KR_JS={hallucination:'환각',faithfulness_error:'충실도오류',retrieval_miss:'검색미스',ambiguous_question:'모호',bad_chunk:'불량청크',evaluation_error:'평가오류'};
+
+function escHtml(s){if(!s)return'-';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function scoreColor(v){return v>=0.85?'#059669':v>=0.7?'#d97706':'#dc2626';}
+
+function renderQATable(page){
+  qaCurrentPage=page;
+  var start=page*QA_PAGE_SIZE,end=Math.min(start+QA_PAGE_SIZE,QA_DATA.length);
+  var totalPages=Math.ceil(QA_DATA.length/QA_PAGE_SIZE)||1;
+  var rows='';
+  for(var i=start;i<end;i++){
+    var qa=QA_DATA[i];
+    var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
+    var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
+    var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
+    var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
+    var failKey=qa.primary_failure||null;
+    var failBadge=failKey?'<span class="failure-'+failKey+'">'+(FAILURE_KR_JS[failKey]||failKey)+'</span>':'<span class="failure-none">-</span>';
+    rows+='<tr class="qa-row" onclick="showQADetail('+i+')">'
+      +'<td><strong>'+qa.id+'</strong></td>'
+      +'<td><div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div></td>'
+      +'<td style="max-width:280px">'+escHtml(qa.q)+'</td>'
+      +'<td style="max-width:240px;color:#475569">'+escHtml(qa.a||'-')+'</td>'
+      +'<td><span class="'+(qFail?'score-fail':'score-pass')+'">'+qa.l2_avg.toFixed(3)+'</span></td>'
+      +'<td><span class="'+(rFail?'score-fail':'score-pass')+'">'+qa.triad_avg.toFixed(3)+'</span></td>'
+      +'<td><span class="'+statusCls+'">'+statusLabel+'</span></td>'
+      +'<td>'+failBadge+'</td>'
+      +'</tr>';
+  }
+  document.getElementById('qa-tbody').innerHTML=rows;
+  document.getElementById('pg-info').textContent=(page+1)+' / '+totalPages+' 페이지 · 총 '+QA_DATA.length+'개';
+  document.getElementById('pg-prev').disabled=page===0;
+  document.getElementById('pg-next').disabled=end>=QA_DATA.length;
+  document.getElementById('qa-list-view').style.display='';
+  document.getElementById('qa-detail-view').style.display='none';
+}
+
+function changePage(delta){
+  var total=Math.ceil(QA_DATA.length/QA_PAGE_SIZE)||1;
+  var next=qaCurrentPage+delta;
+  if(next>=0&&next<total)renderQATable(next);
+}
+
+function showQADetail(idx){
+  var qa=QA_DATA[idx];
+  var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
+  var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
+  var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
+  var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
+  var failKey=qa.primary_failure||null;
+  var failureCallout='';
+  var ragMetrics=[
+    {name:'관련성 (Context Relevance)',reason:qa.relevance_reason},
+    {name:'근거성 (Groundedness)',reason:qa.groundedness_reason},
+    {name:'명확성 (Clarity)',reason:qa.clarity_reason}
+  ];
+  var ragRows=ragMetrics.map(function(m){
+    return '<div class="detail-metric">'
+      +'<div class="detail-metric-name">'+m.name+'</div>'
+      +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
+      +'</div>';
+  }).join('');
+  var qualMetrics=[
+    {name:'사실성 (Factuality)',reason:qa.factuality_reason},
+    {name:'완전성 (Completeness)',reason:qa.completeness_reason},
+    {name:'구체성 (Specificity)',reason:qa.specificity_reason},
+    {name:'간결성 (Conciseness)',reason:qa.conciseness_reason}
+  ];
+  var qualRows=qualMetrics.map(function(m){
+    return '<div class="detail-metric">'
+      +'<div class="detail-metric-name">'+m.name+'</div>'
+      +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
+      +'</div>';
+  }).join('');
+  var html='<button class="detail-back" onclick="showQAList()">← 목록으로</button>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">'
+    +'<strong style="font-size:20px;color:#1e293b">#'+qa.id+'</strong>'
+    +'<div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div>'
+    +'<span class="'+statusCls+'">'+statusLabel+'</span>'
+    +'</div>'
+    +'<div class="detail-qa-box detail-qa-box-q">'
+    +'<p class="detail-qa-label detail-qa-label-q">질문</p>'
+    +'<p class="detail-qa-text">'+escHtml(qa.q)+'</p>'
+    +'</div>'
+    +'<div class="detail-qa-box detail-qa-box-a">'
+    +'<p class="detail-qa-label detail-qa-label-a">답변</p>'
+    +'<p class="detail-qa-text" style="color:#475569">'+escHtml(qa.a||'-')+'</p>'
+    +'</div>'
+    +(qa.context?'<div class="detail-qa-box detail-qa-box-ctx"><p class="detail-qa-label detail-qa-label-ctx">컨텍스트</p><p class="detail-context-text">'+escHtml(qa.context)+'</p></div>':'')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px">'
+    +'<div class="detail-section detail-section-rag">'
+    +'<div class="detail-section-header"><p class="detail-section-title">RAG Triad</p><span style="font-family:monospace;font-size:12px;color:#0284c7;font-weight:600">'+qa.triad_avg.toFixed(3)+'</span></div>'
+    +'<div class="detail-section-body">'+ragRows+'</div>'
+    +'</div>'
+    +'<div class="detail-section detail-section-qual">'
+    +'<div class="detail-section-header"><p class="detail-section-title">품질 평가</p><span style="font-family:monospace;font-size:12px;color:#7c3aed;font-weight:600">'+qa.l2_avg.toFixed(3)+'</span></div>'
+    +'<div class="detail-section-body">'+qualRows+'</div>'
+    +'</div>'
+    +'</div>';
+  document.getElementById('qa-detail-view').innerHTML=html;
+  document.getElementById('qa-list-view').style.display='none';
+  document.getElementById('qa-detail-view').style.display='';
+  window.scrollTo({top:document.getElementById('qa-detail-view').offsetTop-20,behavior:'smooth'});
+}
+
+function showQAList(){
+  document.getElementById('qa-list-view').style.display='';
+  document.getElementById('qa-detail-view').style.display='none';
+}
+
+window.addEventListener('load',function(){animateBars();animateDonut();animateRadar();renderQATable(0);});
 </script>
 </body>
 </html>`;
+}
 
+export function exportToHTML(data: EvaluationData): void {
+  const htmlContent = buildHTMLContent(data);
   const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -576,6 +723,31 @@ export function exportToJSON(data: EvaluationData): void {
   const url = URL.createObjectURL(blob);
   link.setAttribute('href', url);
   link.setAttribute('download', `evaluation-report-${new Date().toISOString().slice(0, 10)}.json`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export evaluation results to ZIP (XLSX + HTML 묶음)
+ */
+export async function exportToZip(data: EvaluationData): Promise<void> {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const zip = new JSZip();
+
+  const wb = buildWorkbook(data);
+  const xlsxBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array;
+  zip.file(`qa-evaluation-${dateStr}.xlsx`, xlsxBuffer);
+
+  const htmlContent = buildHTMLContent(data);
+  zip.file(`evaluation-report-${dateStr}.html`, htmlContent);
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `evaluation-report-${dateStr}.zip`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

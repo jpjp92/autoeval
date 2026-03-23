@@ -83,9 +83,9 @@ export function StatsGrid({ summary, loading }: StatsGridProps) {
       value: summary?.total_evaluations != null ? String(summary.total_evaluations) : "—",
       subtitle: "누적 평가 실행 건수",
       icon: ClipboardList,
-      accentColor: "border-l-rose-500",
-      iconBg: "bg-rose-50",
-      iconColor: "text-rose-600",
+      accentColor: "border-l-sky-500",
+      iconBg: "bg-sky-50",
+      iconColor: "text-sky-600",
     },
   ];
 
