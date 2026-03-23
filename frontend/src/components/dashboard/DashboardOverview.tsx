@@ -172,10 +172,15 @@ export function DashboardOverview({
                               <td className="px-4 py-2.5 whitespace-nowrap">
                                 {hasEval && job.eval_grade ? (
                                   <span className={cn(
-                                    "inline-flex items-center justify-center w-8 py-0.5 rounded text-xs font-medium border",
+                                    "inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border",
                                     GRADE_COLORS[job.eval_grade] || "bg-slate-100 text-slate-600 border-slate-200"
                                   )}>
-                                    {job.eval_grade}
+                                    <span className={cn(
+                                      "text-xs leading-none tracking-tight",
+                                      job.eval_grade.includes('+') && "translate-x-px"
+                                    )}>
+                                      {job.eval_grade}
+                                    </span>
                                   </span>
                                 ) : (
                                   <span className="text-xs text-slate-400">미평가</span>
