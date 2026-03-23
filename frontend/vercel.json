@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://autoeval-uccr.onrender.com/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://autoeval-uccr.onrender.com/health"
+    }
+  ]
+}
