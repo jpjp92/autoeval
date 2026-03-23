@@ -137,7 +137,7 @@ const nodes: Node[] = [
   s('s2-p1', 1, 0, '단계 1 — H1 도출',    '대분류 카테고리 추출',    1),
   s('s2-p2', 1, 1, '단계 2 — H2/H3 도출', '중·소분류 카테고리 추출', 1),
   s('s2-p3', 1, 2, '단계 3 — 청크 태깅',  '청크별 계층 일괄 적용',   1),
-  d('db2',   1, 3, 'DB 저장: doc_chuncks.metadata'),
+  d('db2',   1, 3, 'DB 저장: doc_chunks.metadata'),
 
   // ── S3: QA 생성 ── (4 nodes)
   g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
@@ -151,7 +151,7 @@ const nodes: Node[] = [
   s('s4-l1a',   3, 0, 'Layer 1-A  Syntax',     '필드 · 길이 검사',                3),
   s('s4-l1b',   3, 1, 'Layer 1-B  Statistics', '다양성 · 중복률',                 3),
   s('s4-l2',    3, 2, 'Layer 2  RAG Triad',    '관련성 · 근거성 · 명확성',         3),
-  s('s4-l3',    3, 3, 'Layer 3  Quality',      '사실성 · 완결성',                  3),
+  s('s4-l3',    3, 3, 'Layer 3  Quality',      '사실성 · 완전성 · 구체성 · 간결성',  3),
   s('s4-score', 3, 4, '최종 점수 집계',        '구문·통계 ×0.1 / RAG·품질 ×0.4',  3,
     { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
   d('db4', 3, 5, 'DB 저장: qa_eval_results'),
