@@ -92,9 +92,9 @@ flowchart TD
 |------|------|
 | 파싱 | PDF(PyMuPDF) / DOCX(python-docx) — Section-First 청킹, 표 Markdown 변환 |
 | 정규화 | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합 |
-| 중복 방지 | SHA-1 `content_hash` 기반 — 동일 청크 INSERT skip |
+| 중복 방지 | SHA-1 `content_hash` 기반 — 배치 중복 SELECT → 신규 청크만 1회 배치 INSERT (128회 → 2회) |
 | 벡터화 | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — **1536차원** 벡터 변환 |
-| 저장 | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) |
+| 저장 | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) — `hierarchy_h1/h2/h3` metadata에 포함 |
 
 #### STEP 2 — 계층 태깅 (3단계)
 
@@ -145,9 +145,10 @@ A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50
 
 | 기능 | 내용 |
 |------|------|
-| 평가 결과 확인 | QA 상세 · 레이어별 점수 — 평가 탭에서 job 선택 후 조회 |
-| 리포트 내보내기 | XLSX / HTML 다운로드 |
-| 대시보드 | 집계 지표(총 QA·평균 점수·문서 수·통과율) · 점수 추이 · 등급 분포 |
+| 평가 결과 확인 | QA 상세 · 레이어별 점수 — 상태 필터 버튼(성공/보류/실패)으로 필터링 가능 |
+| 리포트 내보내기 | XLSX / HTML / ZIP (XLSX+HTML 묶음) 다운로드 |
+| 대시보드 | 집계 지표(총 QA·평균 점수·문서 수·성공 QA 수) · 점수 추이 · 등급 분포 · 차트 툴팁 |
+| 히스토리 연동 | 대시보드 파이프라인 로그 클릭 → 평가 탭 자동 이동 + 해당 이력 자동 선택 |
 
 ---
 
@@ -455,8 +456,15 @@ docker compose up -d --build
 | Vercel | React 프론트엔드 | `VITE_API_URL=https://autoeval-uccr.onrender.com` |
 
 - Render는 `PORT` 환경변수를 자동 주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
-- 로컬 개발 시 `VITE_API_URL` 미설정 → `http://localhost:8000` fallback 자동 적용
+- 로컬 개발 시 Vite 프록시가 `/api/*`를 `localhost:8000`으로 포워딩 (`vite.config.ts`)
+- Vercel 배포 시 `vercel.json` rewrites가 `/api/*`를 Render로 서버사이드 포워딩 → CORS 불필요
+
+```
+브라우저 요청 흐름
+  로컬  : localhost:3000/api/... → Vite 프록시 → localhost:8000
+  Vercel: autoeval-v1.vercel.app/api/... → Vercel rewrites → autoeval-uccr.onrender.com
+```
 
 ---
 
-**Last Updated**: 2026-03-20 | **Branch**: main
+**Last Updated**: 2026-03-23 | **Branch**: main

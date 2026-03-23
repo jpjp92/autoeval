@@ -51,6 +51,10 @@ frontend/
 ## 세션 플로우 (App.tsx state)
 
 ```
+[Dashboard] 파이프라인 로그 조회
+  → recent_jobs (대시보드에서 평가 로그 표시)
+  → 행 클릭 → onEvalSelect(eval_id)
+        ↓
 [Standardization] 문서 업로드
   → onUploadComplete(filename)        App.currentFilename 설정
   → onTaggingComplete()               App.taggingVersion 증가 (hierarchy 재로드 트리거)
@@ -60,10 +64,9 @@ frontend/
   → generateQA payload에 filename 포함
   → 평가 완료 시 onEvalComplete(evalJobId) + 자동 탭 전환 → evaluation
         ↓
-[Evaluation] evalJobId prop 수신
-  → GET /api/evaluate/{evalJobId}/status  실데이터 렌더링
-  → 이력 조회: GET /api/evaluate/history
-  → 상세 내보내기: GET /api/evaluate/export-by-id/{eval_id}
+[Evaluation] initialEvalDbId prop 수신
+  → historyList 로드 후 id 매칭 → selectHistory 자동 호출
+  → 또는 수동: 이력 조회 → 상세 선택
 ```
 
 **App.tsx에서 관리하는 state:**
@@ -72,7 +75,8 @@ frontend/
 |-------|------|------|
 | `activeTab` | `string` | 현재 활성 탭 |
 | `currentFilename` | `string \| null` | 업로드된 문서 파일명 (문서 스코프 키) |
-| `lastEvalJobId` | `string \| null` | 마지막 평가 job UUID (Evaluation 탭 전달용) |
+| `lastEvalJobId` | `string \| null` | 마지막 생성 job UUID (Generation 세션 in-memory용) |
+| `lastEvalDbId` | `string \| null` | 마지막 평가 Supabase record ID (Evaluation 탭 전달용, 대시보드 로그 연동) |
 | `taggingVersion` | `number` | 태깅 완료 시 증가 — Generation의 hierarchy 재로드 트리거 |
 
 ---
@@ -133,13 +137,14 @@ frontend/
 
 | prop | 타입 | 설명 |
 |------|------|------|
-| `evalJobId` | `string \| null` | 마지막 평가 job UUID |
+| `initialEvalDbId` | `string \| null` | 초기 평가 Supabase record ID (대시보드 로그 클릭 연동) |
 
 ### `DashboardOverview`
 
 | prop | 타입 | 설명 |
 |------|------|------|
-| `setActiveTab` | `(tab: string) => void` | Quick Actions 탭 이동 |
+| `setActiveTab` | `(tab: string) => void` | Quick Actions / 평가 탭 이동 |
+| `onEvalSelect` | `(eval_id: string) => void` | 파이프라인 로그 행 클릭 시 평가 ID 전달 |
 | `isActive` | `boolean` | overview 탭 활성 시 API 재요청 트리거 |
 
 ---
@@ -161,4 +166,4 @@ VITE_API_URL=http://localhost:8000
 
 ---
 
-**Last Updated**: 2026-03-20 | **Branch**: main
+**Last Updated**: 2026-03-23 | **Branch**: main

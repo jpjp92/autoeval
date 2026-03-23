@@ -32,9 +32,9 @@ backend/
 │   ├── qa_generation_repo.py    # QA 생성 결과 저장/조회
 │   ├── evaluation_repo.py       # 평가 결과 저장/조회
 │   ├── generation_eval_link.py  # 생성-평가 연결 (linked_evaluation_id)
-│   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색
+│   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색 + save_doc_chunks_batch() 배치 INSERT
 │   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
-│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs, grade_dist)
+│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs+eval_id, grade_dist) + get_distinct_doc_count RPC
 ├── config/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
 │   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더 (build_system_prompt 등)
@@ -93,21 +93,52 @@ API 문서: `http://localhost:8000/docs`
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/api/generate` | QA 생성 job 시작 (domain_profiler → 적응형 프롬프트 → 병렬 생성) |
-| `GET`  | `/api/generate/{job_id}/status` | 생성 job 진행 상태 조회 |
-| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (최대 N개, context 포함) |
-| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
-| `DELETE` | `/api/generate/{job_id}` | job 취소 |
+| `GET`  | `/api/generate/{job_id}/status` | 생성 job 상태 (status / progress / result_id) |
+| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (기본 5개, context snippet 포함) |
+| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 (status 필터 + limit 지원) |
+| `DELETE` | `/api/generate/{job_id}` | job 취소 (completed 상태는 취소 불가) |
+
+**POST /api/generate request body**
+
+```json
+{
+  "model":           "gemini-3.1-flash",
+  "lang":            "ko",
+  "samples":         8,
+  "prompt_version":  "v1",
+  "filename":        "document.pdf",
+  "hierarchy_h1":    "대분류",
+  "hierarchy_h2":    "중분류"
+}
+```
+
+> `filename` + `hierarchy_h1/h2/h3`는 청크 필터 조건. 모두 생략 시 전체 청크에서 생성.
 
 ### Evaluation  `/api/evaluate`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/api/evaluate` | 4레이어 평가 job 시작 |
-| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
-| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory) |
-| `GET`  | `/api/evaluate/history` | Supabase 저장된 평가 이력 |
-| `GET`  | `/api/evaluate/{job_id}/export` | 현재 세션 job QA+점수 상세 내보내기 (reason + failure 필드 포함) |
-| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 (RPC `get_eval_qa_scores` 사용) |
+| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 (eval_report 포함) |
+| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory, 최신순) |
+| `GET`  | `/api/evaluate/history` | Supabase qa_eval_results 과거 평가 이력 (최대 50건) |
+| `GET`  | `/api/evaluate/{job_id}/export` | 세션 job QA+점수 조인 내보내기 (reason + failure_types + primary_failure 포함) |
+| `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 내보내기 — RPC `get_eval_qa_scores`로 qa_scores만 추출 |
+
+**POST /api/evaluate request body**
+
+```json
+{
+  "result_filename": "qa_model_lang_v1_YYYYMMDD_HHmmss.json",
+  "evaluator_model": "gemini-2.5-flash",
+  "generation_id":   "<qa_gen_results.id>",
+  "limit":           null
+}
+```
+
+> `result_filename` 필수 (job 식별용 레이블, **실제 파일이 아님** — 파일 시스템에 저장되지 않음).  
+> `generation_id` 필수: QA 데이터를 Supabase `qa_gen_results`에서 조회하는 기준. 없으면 평가 불가.  
+> `evaluator_model` 기본값: `gemini-2.5-flash`.
 
 ### System
 
@@ -118,9 +149,26 @@ API 문서: `http://localhost:8000/docs`
 
 ---
 
-## 생성 파이프라인 흐름
+## 데이터 저장 방식
+
+**파일 시스템 저장 없음** — 모든 중간 결과물은 Supabase에만 저장됨.
+
+| 단계 | 저장 위치 | 비고 |
+|------|----------|------|
+| 문서 청크 | `doc_chunks` | content + embedding + metadata JSONB |
+| QA 생성 결과 | `qa_gen_results` | qa_list JSONB + stats |
+| QA 평가 결과 | `qa_eval_results` | pipeline_results JSONB + final_score + grade |
+
+`result_filename` 필드(예: `qa_gemini_ko_v1_20260323_123456.json`)는 job 식별용 레이블로만 사용되며, 실제 파일로 디스크에 쓰이지 않음.  
+`output/` 디렉토리의 `.json` 파일들은 초기 개발(test/backup) 시절 산물.
+
+---
 
 ```
+[사전] 청크 조회
+    hierarchy_h1/h2/h3 필터 → get_doc_chunks_by_filter()
+    결과 0건 + filename 있으면 → filename-only 재쿼리 (구버전 청크 대응)
+
 [1단계] 도메인 분석 (job당 1회)
     doc_chunks 샘플 (최대 10개) → domain_profiler.analyze_domain()
     → domain_profile { domain, target_audience, key_terms, chunk_type_dist, intent_hints }
