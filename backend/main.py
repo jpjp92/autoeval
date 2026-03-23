@@ -121,7 +121,7 @@ except ImportError as e:
 # 공통 엔드포인트
 # ============================================================================
 
-@app.get("/health", tags=["system"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["system"])
 def health_check():
     """헬스체크"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
