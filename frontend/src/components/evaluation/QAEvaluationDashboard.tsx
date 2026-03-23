@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
-  Code2, ChevronDown, Clock, History, Loader2, LayoutGrid,
+  Code2, ChevronDown, Clock, History, Loader2, LayoutGrid, Info,
   ArrowLeft, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -230,6 +230,32 @@ const IntentTooltip = ({ active, payload }: any) => {
   }
   return null;
 };
+
+// ─── 차트 정보 툴팁 ──────────────────────────────────────────────────────────
+function ChartInfoTooltip({ title, items }: {
+  title: string;
+  items: Array<{ label?: string; text: string }>;
+}) {
+  return (
+    <div className="relative group flex-shrink-0">
+      <Info className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400 cursor-default transition-colors" />
+      <div className="absolute right-0 top-5 w-60 bg-slate-800 rounded-xl p-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl">
+        <p className="text-[11px] font-semibold text-white mb-2">{title}</p>
+        <div className="space-y-1.5">
+          {items.map((item, i) => (
+            <div key={i} className="flex gap-1.5 text-[11px] leading-snug">
+              {item.label && (
+                <span className="text-slate-300 font-medium shrink-0">{item.label}</span>
+              )}
+              <span className="text-slate-400">{item.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="absolute -top-1.5 right-2 w-3 h-3 bg-slate-800 rotate-45 rounded-sm" />
+      </div>
+    </div>
+  );
+}
 
 // ─── 품질 점수 인터랙티브 바 차트 ────────────────────────────────────────────
 function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number; group: 'rag' | 'quality' }> }) {
@@ -799,11 +825,21 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Intent Distribution */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-          <div className="mb-2">
-            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분류
-            </h3>
-            <p className="text-xs text-slate-500">질문 유형 분포</p>
+          <div className="mb-2 flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분류
+              </h3>
+              <p className="text-xs text-slate-500">질문 유형 분포</p>
+            </div>
+            <ChartInfoTooltip
+              title="의도 분류"
+              items={[
+                { text: 'QA 질문을 8가지 유형으로 분류한 분포입니다.' },
+                { label: '유형', text: '사실·수치·절차·이유·방법·정의·목록·확인' },
+                { label: '기준', text: '분포가 고를수록 다양한 질문 유형을 포괄합니다.' },
+              ]}
+            />
           </div>
           {intentDistribution.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-xs text-slate-400">데이터 없음</div>
@@ -836,11 +872,21 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
         {/* Radar: Dataset Stats */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-          <div className="mb-2">
-            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-500" /> 데이터 통계
-            </h3>
-            <p className="text-xs text-slate-500">구조적·통계적 검증 (0–10)</p>
+          <div className="mb-2 flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-500" /> 데이터 통계
+              </h3>
+              <p className="text-xs text-slate-500">구조적·통계적 검증 (0–10)</p>
+            </div>
+            <ChartInfoTooltip
+              title="데이터 통계"
+              items={[
+                { text: 'QA의 구조적·통계적 품질을 0–10으로 검증합니다.' },
+                { label: '항목', text: '문장 길이, 어휘 다양성, 중복률, 완결성 등 6개' },
+                { label: '통합점수', text: '각 지표의 가중 평균값' },
+              ]}
+            />
           </div>
           <div className="flex-1 min-h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -862,11 +908,22 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
         {/* 품질 점수 — 커스텀 인터랙티브 바 */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-          <div className="mb-3">
-            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
-              <Target className="w-4 h-4 text-indigo-500" /> RAG Triad + 품질 평가 점수
-            </h3>
-            <p className="text-xs text-slate-500">RAG Triad + 품질 평가 통합 점수</p>
+          <div className="mb-3 flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <Target className="w-4 h-4 text-indigo-500" /> RAG Triad + 품질 평가 점수
+              </h3>
+              <p className="text-xs text-slate-500">RAG Triad + 품질 평가 통합 점수</p>
+            </div>
+            <ChartInfoTooltip
+              title="RAG Triad + 품질 평가"
+              items={[
+                { text: 'LLM 기반 평가 점수입니다 (0–1).' },
+                { label: 'RAG Triad', text: '관련성 · 근거성 · 명확성' },
+                { label: '품질 평가', text: '사실성 · 완전성 · 구체성 · 간결성' },
+                { label: '등급', text: '0.85↑ 우수 / 0.70↑ 양호 / 미만 미흡' },
+              ]}
+            />
           </div>
           <div className="flex-1">
             <QualityScoreChart data={llmQualityScores} />

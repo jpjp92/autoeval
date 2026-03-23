@@ -15,6 +15,7 @@ function App() {
   const [lastEvalDbId, setLastEvalDbId]   = useState<string | null>(null); // DB 히스토리 id용
   // taggingVersion 증가 시 QAGenerationPanel에서 hierarchy 재로드
   const [taggingVersion, setTaggingVersion] = useState(0);
+  const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
 
   const getHeaderTitle = () => {
     if (activeTab === "evaluation") return "Evaluation";
@@ -47,6 +48,7 @@ function App() {
               setActiveTab={setActiveTab}
               isActive={activeTab === "overview"}
               onEvalSelect={(evalId) => { setLastEvalDbId(evalId); setActiveTab("evaluation"); }}
+              onPipelineClick={() => { setSettingsSection("pipeline"); setActiveTab("settings"); }}
             />
           </div>
 
@@ -76,7 +78,7 @@ function App() {
           </div>
 
           <div className={activeTab === "settings" ? "h-full" : "hidden"}>
-            <SettingsPanel />
+            <SettingsPanel section={settingsSection} />
           </div>
         </main>
       </div>
