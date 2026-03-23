@@ -62,10 +62,12 @@ export function DashboardOverview({
   setActiveTab,
   isActive,
   onEvalSelect,
+  onPipelineClick,
 }: {
   setActiveTab: (tab: string) => void;
   isActive: boolean;
   onEvalSelect?: (evalJobId: string) => void;
+  onPipelineClick?: () => void;
 }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,7 +267,7 @@ export function DashboardOverview({
           </div>
 
           <button
-            onClick={() => setActiveTab("settings")}
+            onClick={() => onPipelineClick?.()}
             className="mt-4 flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-500 transition-colors self-start"
           >
             파이프라인 구조 보기 <ArrowRight className="w-3 h-3" />

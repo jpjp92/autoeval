@@ -1,5 +1,5 @@
 import { User, Key, Bell, Shield, Eye, EyeOff, GitBranch } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/src/lib/utils';
 import { PipelineFlow } from './PipelineFlow';
 
@@ -63,8 +63,12 @@ function ApiKeyRow({ label, provider, placeholder, description }: ApiKeyRowProps
   );
 }
 
-export function SettingsPanel() {
-  const [activeSection, setActiveSection] = useState('profile');
+export function SettingsPanel({ section }: { section?: string } = {}) {
+  const [activeSection, setActiveSection] = useState(section ?? 'profile');
+
+  useEffect(() => {
+    if (section) setActiveSection(section);
+  }, [section]);
 
   return (
     <div className="bg-white/60 backdrop-blur-sm overflow-hidden flex h-full border-t border-slate-200/40">
