@@ -143,9 +143,11 @@ function buildChartData(report: EvalReport) {
   const qua = report.pipeline_results?.quality;
   const sum = report.summary;
 
+  const successCount = (report.qa_preview ?? [])
+    .filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === 'success').length;
   const summaryStats = [
     { label: '총 생성된 QA',   value: report.metadata.total_qa.toLocaleString(), icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
-    { label: '구문 통과율',     value: `${(sum.syntax_pass_rate ?? 0).toFixed(1)}%`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
+    { label: '성공 QA 수',     value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
     { label: 'RAG Triad 평균', value: (sum.rag_average_score ?? 0).toFixed(3),    icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100' },
     { label: '품질 평균 점수', value: (sum.quality_average_score ?? 0).toFixed(3), icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100' },
   ];
@@ -185,11 +187,12 @@ function buildChartDataFromHistory(item: HistoryItem) {
   const qua = pl.quality;
   const sc  = item.scores ?? {};
 
+  const passCount = sc.quality?.pass_count ?? sc.syntax?.valid ?? item.total_qa;
   const summaryStats = [
-    { label: '총 생성된 QA',   value: item.total_qa.toLocaleString(),                icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
-    { label: '구문 통과율',     value: `${(sc.syntax?.pass_rate ?? 0).toFixed(1)}%`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'RAG Triad 평균', value: (rag?.summary?.avg_score   ?? 0).toFixed(3),  icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100' },
-    { label: '품질 평균 점수', value: (qua?.summary?.avg_quality  ?? 0).toFixed(3),  icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100' },
+    { label: '총 생성된 QA',   value: item.total_qa.toLocaleString(),                                          icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
+    { label: '성공 QA 수',     value: `${passCount} / ${item.total_qa.toLocaleString()}`,                      icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
+    { label: 'RAG Triad 평균', value: (rag?.summary?.avg_score   ?? 0).toFixed(3),                            icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100' },
+    { label: '품질 평균 점수', value: (qua?.summary?.avg_quality  ?? 0).toFixed(3),                            icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100' },
   ];
 
   const layer1Stats = [
@@ -270,7 +273,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
   const triggerFnRef = useRef(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setAnimated(false);
-    timerRef.current = window.setTimeout(() => setAnimated(true), 100);
+    timerRef.current = setTimeout(() => setAnimated(true), 100);
   });
 
   // data 실제 값이 바뀔 때 재애니메이션 (히스토리 전환 등)
@@ -630,9 +633,18 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const totalPages   = Math.max(1, Math.ceil(qaPreview.length / QA_PAGE_SIZE));
   const pagedQA      = qaPreview.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
 
+  // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
+  const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
+  const successCount = qaPreview.filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === 'success').length;
+  const correctedSummaryStats = chartData?.summaryStats.map((stat, i) =>
+    i === 1 && qaPreview.length > 0
+      ? { ...stat, value: `${successCount} / ${totalQA}` }
+      : stat
+  ) ?? [];
+
   // export용 데이터
   const evaluationData = chartData ? {
-    summaryStats:       chartData.summaryStats,
+    summaryStats:       correctedSummaryStats,
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
@@ -738,7 +750,8 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
   if (!chartData) return null;
 
-  const { summaryStats, layer1Stats, intentDistribution, llmQualityScores } = chartData;
+  const { layer1Stats, intentDistribution, llmQualityScores } = chartData;
+  const summaryStats = correctedSummaryStats;
 
   // ─── Main Dashboard ────────────────────────────────────────────────────────
   return (

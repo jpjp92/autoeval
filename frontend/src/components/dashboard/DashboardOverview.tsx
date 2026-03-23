@@ -286,7 +286,7 @@ export function DashboardOverview({
           <div className="flex items-center gap-2 mb-6">
             <BarChart3 className="w-5 h-5 text-slate-400" />
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">등급 분포</h3>
+              <h3 className="text-lg font-semibold text-slate-800">평가 등급 분포</h3>
               <p className="text-sm text-slate-500">전체 평가 결과</p>
             </div>
           </div>

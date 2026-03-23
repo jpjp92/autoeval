@@ -27,6 +27,7 @@ from db.generation_eval_link import link_generation_to_evaluation
 # 문서 청크
 from db.doc_chunk_repo import (
     save_doc_chunk,
+    save_doc_chunks_batch,
     update_chunk_metadata,
     search_doc_chunks,
     get_doc_chunks_by_filter,
@@ -53,6 +54,7 @@ __all__ = [
     "get_evaluation_result",
     "link_generation_to_evaluation",
     "save_doc_chunk",
+    "save_doc_chunks_batch",
     "update_chunk_metadata",
     "search_doc_chunks",
     "get_doc_chunks_by_filter",

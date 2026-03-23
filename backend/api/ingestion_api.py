@@ -33,7 +33,7 @@ from config.supabase_client import (
     get_document_chunks,
     get_hierarchy_list,
     is_supabase_available,
-    save_doc_chunk,
+    save_doc_chunks_batch,
     update_chunk_metadata,
 )
 from ingestion.parsers import (
@@ -243,6 +243,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 ),
             )
 
+            batch_rows = []
             for idx, emb_data in enumerate(res.embeddings):
                 c = batch[idx]
                 embedding_np = np.array(emb_data.values)
@@ -270,8 +271,13 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 for old_key in ["hierarchy_h1", "hierarchy_h2", "hierarchy_h3"]:
                     chunk_metadata.pop(old_key, None)
 
-                await save_doc_chunk(c["raw_text"], normalized_embedding, chunk_metadata)
+                batch_rows.append({
+                    "content":   c["raw_text"],
+                    "embedding": normalized_embedding,
+                    "metadata":  chunk_metadata,
+                })
 
+            await save_doc_chunks_batch(batch_rows)
             logger.info(f"   Batch {i // batch_size + 1} done ({len(batch)} chunks).")
 
         logger.info(f"✅ Ingestion complete: {filename} ({len(all_chunks_to_embed)} chunks)")
