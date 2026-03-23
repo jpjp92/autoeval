@@ -538,6 +538,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const [historyQaLoading, setHistoryQaLoading] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [qaPage, setQaPage]                   = useState(0);
+  const [statusFilter, setStatusFilter]       = useState<QAStatus | null>(null);
   const [selectedQA, setSelectedQA]           = useState<QAPreviewItem | null>(null);
   const prevEvalJobId = useRef<string | null>(null);
 
@@ -606,6 +607,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
     setHistoryQaPreview([]);
     setShowHistoryMenu(false);
     setQaPage(0);
+    setStatusFilter(null);
     setSelectedQA(null);
 
     setHistoryQaLoading(true);
@@ -630,8 +632,11 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const activeItem   = historyReport?.item;
   const qaPreview    = report?.qa_preview ?? historyQaPreview;
   const qaListLoading = historyQaLoading;
-  const totalPages   = Math.max(1, Math.ceil(qaPreview.length / QA_PAGE_SIZE));
-  const pagedQA      = qaPreview.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
+  const filteredQA   = statusFilter
+    ? qaPreview.filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === statusFilter)
+    : qaPreview;
+  const totalPages   = Math.max(1, Math.ceil(filteredQA.length / QA_PAGE_SIZE));
+  const pagedQA      = filteredQA.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
 
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
@@ -953,18 +958,30 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
               <h3 className="text-base font-semibold text-slate-900">상세 평가 결과</h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 {qaPreview.length > 0
-                  ? `총 ${qaPreview.length}개 · 페이지당 ${QA_PAGE_SIZE}개 · 행 클릭 시 상세 보기`
+                  ? `${statusFilter ? `${filteredQA.length}개 표시 중 /` : '총'} ${qaPreview.length}개 · 페이지당 ${QA_PAGE_SIZE}개 · 행 클릭 시 상세 보기`
                   : '히스토리 데이터는 QA 상세 미리보기를 제공하지 않습니다'}
               </p>
             </div>
-            {/* 상태 범례 — 가로 배치 */}
-            <div className="flex items-center gap-4 text-xs font-medium">
-              {(Object.keys(STATUS_CONFIG) as QAStatus[]).map((s) => (
-                <span key={s} className="flex items-center gap-1.5 text-slate-600">
-                  <span className={cn('w-2 h-2 rounded-full', STATUS_CONFIG[s].dotColor)} />
-                  {STATUS_CONFIG[s].label}
-                </span>
-              ))}
+            {/* 상태 필터 버튼 */}
+            <div className="flex items-center gap-1.5">
+              {(Object.keys(STATUS_CONFIG) as QAStatus[]).map((s) => {
+                const isActive = statusFilter === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => { setStatusFilter(isActive ? null : s); setQaPage(0); }}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      isActive
+                        ? STATUS_CONFIG[s].className
+                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                    )}
+                  >
+                    <span className={cn('w-1.5 h-1.5 rounded-full', STATUS_CONFIG[s].dotColor)} />
+                    {STATUS_CONFIG[s].label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
