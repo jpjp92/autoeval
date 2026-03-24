@@ -37,3 +37,4 @@ check_db_quality.py
 analyze_pdf_structure.py
 sample/
 .python-version
+.claude/CLAUDE.md
