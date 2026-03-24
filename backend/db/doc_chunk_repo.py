@@ -159,8 +159,11 @@ async def get_doc_chunks_by_filter(
     hierarchy_h3: Optional[str] = None,
     filename: Optional[str] = None,
     limit: int = 20,
+    exclude_ids: Optional[list] = None,
 ) -> list:
-    """metadata 필터 기반 doc_chunks 직접 조회 (vector similarity 없음)"""
+    """metadata 필터 기반 doc_chunks 직접 조회 (vector similarity 없음).
+    exclude_ids: anchor_ids coverage gap 보충 시 중복 제외용.
+    """
     if not supabase:
         return []
     try:
@@ -173,10 +176,51 @@ async def get_doc_chunks_by_filter(
             query = query.eq("metadata->>hierarchy_h2", hierarchy_h2)
         if hierarchy_h3:
             query = query.eq("metadata->>hierarchy_h3", hierarchy_h3)
+        if exclude_ids:
+            query = query.not_.in_("id", exclude_ids)
         response = query.limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
         logger.error(f"❌ Failed to get doc chunks by filter: {e}")
+        return []
+
+
+async def get_doc_chunks_sampled(
+    filename: str,
+    n: int = 30,
+    document_id: Optional[str] = None,
+) -> list:
+    """
+    문서 전체에서 균등 샘플링 (Supabase RPC: sample_doc_chunks).
+    document_id 미지정 시 가장 최근 인제스천 자동 선택.
+    """
+    if not supabase:
+        return []
+    try:
+        params = {"p_filename": filename, "p_n": n}
+        if document_id:
+            params["p_document_id"] = document_id
+        response = supabase.rpc("sample_doc_chunks", params).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ get_doc_chunks_sampled failed: {e}")
+        return []
+
+
+async def get_doc_chunks_by_ids(chunk_ids: list) -> list:
+    """anchor_ids 목록으로 청크 정확 조회."""
+    if not supabase or not chunk_ids:
+        return []
+    try:
+        response = (
+            supabase.table("doc_chunks")
+            .select("id, content, metadata")
+            .in_("id", chunk_ids)
+            .execute()
+        )
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ get_doc_chunks_by_ids failed: {e}")
         return []
 
 

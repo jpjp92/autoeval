@@ -11,8 +11,7 @@ import {
   AlertCircle, X, RefreshCw, Check, BarChart2,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { generateQA, getHierarchyList } from "@/src/lib/api";
-import { API_BASE } from "@/src/lib/api";
+import { generateQA, getHierarchyList, mapErrorToMessage, API_BASE } from "@/src/lib/api";
 
 interface GenerationStatus {
   job_id: string;
@@ -243,7 +242,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
           }
         } else if (data.status === 'failed') {
           setIsGenerating(false);
-          setError(data.error || "Unknown error");
+          setError(mapErrorToMessage(data.error || "Unknown error"));
           clearInterval(pollInterval);
           setJobId(null);
           setPhase('complete');
@@ -279,7 +278,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
           onEvalComplete?.(evalJobId);
           setEvalJobId(null);
         } else if (data.status === 'failed') {
-          setError(data.error || "Evaluation failed");
+          setError(mapErrorToMessage(data.error || "Evaluation failed"));
           setPhase('complete');
           clearInterval(pollInterval);
           setEvalJobId(null);
@@ -307,7 +306,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
       } else throw new Error(evalData.error || "Failed to start evaluation");
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      setError(errorMsg);
+      setError(mapErrorToMessage(errorMsg));
       setPhase('complete');
     }
   };
@@ -322,6 +321,12 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
     setQaPreview([]);
     setQaPreviewTotal(0);
     try {
+      // localStorage에서 anchor_ids 조회
+      const savedAnchor = currentFilename
+        ? localStorage.getItem(`anchor_ids:${currentFilename}`)
+        : null;
+      const anchorIds: string[] = savedAnchor ? JSON.parse(savedAnchor) : [];
+
       const response = await generateQA({
         model: formValues.model, lang: formValues.lang, samples: formValues.samples,
         prompt_version: formValues.promptVersion,
@@ -329,12 +334,13 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
         ...(selectedH1 && { hierarchy_h1: selectedH1 }),
         ...(selectedH2 && { hierarchy_h2: selectedH2 }),
         ...(selectedH3 && { hierarchy_h3: selectedH3 }),
+        ...(anchorIds.length > 0 && { anchor_ids: anchorIds }),
       }) as any;
       if (!response.success || !response.job_id) throw new Error(response.error || "Failed to start generation");
       setJobId(response.job_id);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      setError(errorMsg);
+      setError(mapErrorToMessage(errorMsg));
       setIsGenerating(false);
       setPhase("complete");
     }

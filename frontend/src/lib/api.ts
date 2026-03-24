@@ -4,6 +4,20 @@
 
 export const API_BASE = '';
 
+// ── 에러 메시지 매핑 ──────────────────────────────────────────────────────────
+
+export function mapErrorToMessage(error: string): string {
+  if (error.includes("계층") && error.includes("청크가 없습니다"))
+    return "선택한 계층(H1/H2)에 해당하는 데이터가 없습니다.\nHierarchy 태깅(Pass3)이 완료됐는지 확인해 주세요.";
+  if (error.includes("anchor_ids"))
+    return "문서가 재업로드되어 분석 정보가 만료됐습니다.\nHierarchy 분석을 다시 실행해 주세요.";
+  if (error.includes("태깅이 완료되지 않았습니다"))
+    return "Hierarchy 태깅(Pass3)이 완료되지 않았습니다.\nPass3을 먼저 실행해 주세요.";
+  if (error.includes("Supabase") || error.includes("unavailable"))
+    return "데이터베이스 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.";
+  return `오류가 발생했습니다: ${error}`;
+}
+
 interface ApiResponse<T = any> {
   success: boolean;
   data?: T;

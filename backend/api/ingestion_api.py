@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from config.supabase_client import (
     get_document_chunks,
+    get_doc_chunks_sampled,
     get_hierarchy_list,
     is_supabase_available,
     save_doc_chunks_batch,
@@ -82,6 +83,7 @@ class HierarchyAnalysisResponse(BaseModel):
     h1_candidates: List[str]
     suggested_hierarchy: Dict[str, str]
     validation: str
+    anchor_ids: Optional[List[str]] = None
 
 
 class GranularTaggingRequest(BaseModel):
@@ -93,6 +95,7 @@ class GranularTaggingRequest(BaseModel):
 class H2H3AnalysisRequest(BaseModel):
     filename: str
     selected_h1_list: List[str]
+    anchor_ids: Optional[List[str]] = None
 
 
 class H2H3AnalysisResponse(BaseModel):
@@ -353,10 +356,14 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
-    chunks = await get_document_chunks(request.filename, limit=15)
-    if not chunks:
+    # anchor 균등 샘플링 (30개) — 이후 Pass1/2/도메인분석/QA생성에 재사용
+    anchor_chunks = await get_doc_chunks_sampled(request.filename, n=30)
+    if not anchor_chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
+    anchor_ids = [c["id"] for c in anchor_chunks]
 
+    # Pass1: anchor 앞 15개로 H1 생성
+    chunks = anchor_chunks[:15]
     concatenated_text = "\n\n".join(c["content"] for c in chunks)
 
     prompt = f"""
@@ -393,7 +400,7 @@ Return a JSON object with this exact structure:
             config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
         )
         analysis_res = json.loads(response.text)
-        return HierarchyAnalysisResponse(**analysis_res)
+        return HierarchyAnalysisResponse(**analysis_res, anchor_ids=anchor_ids)
     except Exception as e:
         logger.error(f"❌ Hierarchy analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
@@ -405,11 +412,16 @@ async def analyze_h2_h3(request: H2H3AnalysisRequest):
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
-    chunks = await get_document_chunks(request.filename, limit=30)
+    # anchor_ids가 있으면 재사용, 없으면 새로 샘플링
+    if request.anchor_ids:
+        from config.supabase_client import get_doc_chunks_by_ids
+        chunks = await get_doc_chunks_by_ids(request.anchor_ids)
+    else:
+        chunks = await get_doc_chunks_sampled(request.filename, n=30)
     if not chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
 
-    sample_text = "\n\n---\n\n".join(c["content"][:600] for c in chunks[:20])
+    sample_text = "\n\n---\n\n".join(c["content"][:600] for c in chunks[:30])
 
     prompt = f"""
 <role>
@@ -585,7 +597,17 @@ Return ONLY a JSON array — no explanation:
         async def process_batch(batch_idx: int, batch: list):
             nonlocal completed
             async with semaphore:
-                chunks_data = [{"idx": i, "content": c["content"][:1000]} for i, c in enumerate(batch)]
+                def _make_chunk_entry(i: int, c: dict) -> dict:
+                    entry = {"idx": i, "content": c["content"][:800]}
+                    meta = c.get("metadata") or {}
+                    sp = (meta.get("section_path") or "").strip()
+                    st = (meta.get("section_title") or "").strip()
+                    if sp:
+                        entry["section_path"] = sp
+                    if st:
+                        entry["section_title"] = st
+                    return entry
+                chunks_data = [_make_chunk_entry(i, c) for i, c in enumerate(batch)]
                 try:
                     res = await gemini_client.aio.models.generate_content(
                         model="gemini-3-flash-preview",

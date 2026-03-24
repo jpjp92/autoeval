@@ -24,7 +24,14 @@ interface AnalysisResult {
   h1_candidates: string[];
   suggested_hierarchy: HierarchyData;
   validation: string;
+  anchor_ids?: string[];
 }
+
+const anchorKey = (filename: string) => `anchor_ids:${filename}`;
+const saveAnchorIds = (filename: string, ids: string[]) =>
+  localStorage.setItem(anchorKey(filename), JSON.stringify(ids));
+const clearAnchorIds = (filename: string) =>
+  localStorage.removeItem(anchorKey(filename));
 
 export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTaggingComplete }: {
   setActiveTab?: (tab: string) => void;
@@ -66,6 +73,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       if (res.ok) {
         setUploadMessage({ text: `"${fileName}" 업로드 완료. 백그라운드에서 벡터화 중입니다.`, type: "success" });
         setUploadedFilename(fileName);
+        clearAnchorIds(fileName); // 재업로드 시 기존 anchor_ids 무효화
         onUploadComplete?.(fileName);
         setFile(null);
       } else {
@@ -96,14 +104,22 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
+      // anchor_ids localStorage 저장 (재업로드 전까지 유지)
+      if (data.anchor_ids?.length) {
+        saveAnchorIds(uploadedFilename, data.anchor_ids);
+      }
       setIsAnalyzing(false);
 
-      // 2단계: H2/H3 master 생성
+      // 2단계: H2/H3 master 생성 (anchor_ids 재전달)
       setIsAnalyzingL2L3(true);
       const h2h3Res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-h2-h3`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: uploadedFilename, selected_h1_list: data.h1_candidates }),
+        body: JSON.stringify({
+          filename: uploadedFilename,
+          selected_h1_list: data.h1_candidates,
+          anchor_ids: data.anchor_ids ?? [],
+        }),
       });
       if (!h2h3Res.ok) throw new Error((await h2h3Res.json()).detail || "H2/H3 분석 실패");
       const h2h3Data = await h2h3Res.json();

@@ -110,6 +110,9 @@ class GenerateRequest(BaseModel):
     hierarchy_h3: Optional[str] = None
     retrieval_query: Optional[str] = None
 
+    # anchor_ids: analyze-hierarchy에서 고정된 균등 샘플 청크 ID 목록
+    anchor_ids: Optional[list] = None
+
 class GenerationStatus(BaseModel):
     job_id: str
     status: JobStatus
@@ -274,12 +277,13 @@ async def run_qa_generation_real(
     h3 = config.get("hierarchy_h3")
     r_query = config.get("retrieval_query")
     doc_filename = config.get("filename")
+    anchor_ids = config.get("anchor_ids") or []
 
     logger.info(f"[{job_id}] Config: filename={doc_filename!r}, h1={h1!r}, h2={h2!r}, h3={h3!r}")
 
     items = []
 
-    from config.supabase_client import search_doc_chunks, get_doc_chunks_by_filter, is_supabase_available
+    from config.supabase_client import search_doc_chunks, get_doc_chunks_by_filter, get_doc_chunks_by_ids, is_supabase_available
 
     if is_supabase_available() and (h1 or h2 or h3 or r_query or doc_filename):
         logger.info(f"[{job_id}] Using Vector DB retrieval (filters present)")
@@ -320,30 +324,46 @@ async def run_qa_generation_real(
                 filter=filter_dict
             )
         else:
-            # r_query 없음 → metadata 필터만 필요, 직접 select (zero vector 불필요)
-            chunks = await get_doc_chunks_by_filter(
-                hierarchy_h1=h1,
-                hierarchy_h2=h2,
-                hierarchy_h3=h3,
-                filename=doc_filename,
-                limit=max(samples * 3, 30),  # 여유있게 가져와서 skip 후에도 충분히 확보
-            )
-            # hierarchy 필터 결과가 없고 filename이 있으면 filename만으로 재쿼리
-            # (이전에 hierarchy_h1/h2/h3가 metadata에 미저장된 청크 대응)
-            if not chunks and doc_filename and (h1 or h2 or h3):
-                logger.warning(
-                    f"[{job_id}] hierarchy filter returned 0 chunks — "
-                    f"retrying filename-only (h1={h1!r}, h2={h2!r}, h3={h3!r})"
-                )
+            # r_query 없음 → anchor_ids 우선, 없으면 metadata 필터 조회
+            if anchor_ids:
+                chunks = await get_doc_chunks_by_ids(anchor_ids)
+                logger.info(f"[{job_id}] anchor_ids 기반 조회: {len(chunks)}개")
+                # coverage gap: anchor_ids < samples 이면 같은 h1/h2 범위에서 보충
+                if len(chunks) < samples:
+                    extra = await get_doc_chunks_by_filter(
+                        hierarchy_h1=h1,
+                        hierarchy_h2=h2,
+                        hierarchy_h3=h3,
+                        filename=doc_filename,
+                        limit=samples - len(chunks),
+                        exclude_ids=[c["id"] for c in chunks],
+                    )
+                    chunks.extend(extra)
+                    logger.info(f"[{job_id}] coverage gap 보충: +{len(extra)}개 → 총 {len(chunks)}개")
+            else:
                 chunks = await get_doc_chunks_by_filter(
-                    hierarchy_h1=None,
-                    hierarchy_h2=None,
-                    hierarchy_h3=None,
+                    hierarchy_h1=h1,
+                    hierarchy_h2=h2,
+                    hierarchy_h3=h3,
                     filename=doc_filename,
                     limit=max(samples * 3, 30),
                 )
+            if not chunks and (h1 or h2 or h3):
+                raise ValueError(
+                    f"선택한 계층(h1={h1!r}, h2={h2!r})에 해당하는 청크가 없습니다. "
+                    "Pass3 Hierarchy 태깅이 완료됐는지 확인하세요."
+                )
         logger.info(f"[{job_id}] Raw chunks from DB: {len(chunks)} (before skip filter)")
-        
+
+        # anchor_ids 사용 시 태깅 완료율 검증 (30% 초과 미태깅이면 에러)
+        if anchor_ids and chunks:
+            untagged = [c for c in chunks if not c.get("metadata", {}).get("hierarchy_h1")]
+            if len(untagged) > len(chunks) * 0.3:
+                raise ValueError(
+                    f"anchor_ids 청크의 hierarchy 태깅이 완료되지 않았습니다 "
+                    f"({len(untagged)}/{len(chunks)}개 미태깅). Pass3 태깅을 다시 실행해 주세요."
+                )
+
         # heading/발행처 청크 skip 판단
         _COLOPHON_KEYWORDS = ["발행처:", "발행인:", "저작권", "©", "무단전재", "재배포를 금"]
 
@@ -412,7 +432,9 @@ async def run_qa_generation_real(
 
     job_manager.update_job(job_id, progress=12, message="Analyzing document domain...")
     domain_profile = await analyze_domain(
-        hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3, model=model
+        hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3,
+        model=model,
+        anchor_ids=anchor_ids or None,
     )
     logger.info(
         f"[{job_id}] Domain profile: '{domain_profile.get('domain', '?')}' | "
