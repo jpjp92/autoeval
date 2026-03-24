@@ -441,6 +441,9 @@ def run_full_evaluation_pipeline(
         "valid_qa_count": len(valid_qa),
         "timestamp":      datetime.now().isoformat(),
     }
+    # qa_preview 빌드에 필요한 인덱스 정보를 함께 반환
+    results["_valid_qa_orig_indices"] = valid_qa_orig_indices
+    results["_syntax_errors"]         = syntax_errors
     return results
 
 
@@ -543,6 +546,8 @@ def run_evaluation(
 
         # QA 상세 미리보기 (프론트엔드 테이블용, 최대 100개)
         # rag/quality qa_scores는 valid_qa 기준 0-based 인덱스 → 원본 qa_list 인덱스로 재매핑
+        valid_qa_orig_indices = pipeline_results.get("_valid_qa_orig_indices", list(range(len(qa_list))))
+        syntax_errors         = pipeline_results.get("_syntax_errors", {})
         rag_by_idx: dict = {}
         for j, s in enumerate(rag_data["qa_scores"] if rag_data else []):
             orig = valid_qa_orig_indices[j] if j < len(valid_qa_orig_indices) else j
