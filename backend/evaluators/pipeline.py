@@ -246,6 +246,8 @@ def run_full_evaluation_pipeline(
     }
 
     valid_qa = qa_list
+    valid_qa_orig_indices: list[int] = list(range(len(qa_list)))  # syntax 스킵 시 원본 그대로
+    syntax_errors: dict = {}  # syntax 탈락 QA의 오류 정보
 
     # ===== Layer 1-A: SyntaxValidator (병렬) =====
     if "syntax" in layers:
@@ -266,11 +268,12 @@ def run_full_evaluation_pipeline(
                 i, is_valid, errors = future.result()
                 results_map[i] = (is_valid, errors)
 
-        valid_qa_filtered, syntax_errors = [], {}
+        valid_qa_filtered, valid_qa_orig_indices, syntax_errors = [], [], {}
         for i in range(len(qa_list)):
             is_valid, errors = results_map[i]
             if is_valid:
                 valid_qa_filtered.append(qa_list[i])
+                valid_qa_orig_indices.append(i)
             else:
                 syntax_errors[i] = errors
 
@@ -539,14 +542,35 @@ def run_evaluation(
         else:                     grade = "F"
 
         # QA 상세 미리보기 (프론트엔드 테이블용, 최대 100개)
-        # rag/quality qa_scores를 qa_list와 병합
-        rag_by_idx     = {s["qa_index"]: s for s in (rag_data["qa_scores"]     if rag_data     else [])}
-        quality_by_idx = {s["qa_index"]: s for s in (quality_data["qa_scores"] if quality_data else [])}
+        # rag/quality qa_scores는 valid_qa 기준 0-based 인덱스 → 원본 qa_list 인덱스로 재매핑
+        rag_by_idx: dict = {}
+        for j, s in enumerate(rag_data["qa_scores"] if rag_data else []):
+            orig = valid_qa_orig_indices[j] if j < len(valid_qa_orig_indices) else j
+            rag_by_idx[orig] = s
+        quality_by_idx: dict = {}
+        for j, s in enumerate(quality_data["qa_scores"] if quality_data else []):
+            orig = valid_qa_orig_indices[j] if j < len(valid_qa_orig_indices) else j
+            quality_by_idx[orig] = s
+        syntax_failed_set = set(syntax_errors.keys())
         qa_preview = []
         for i, qa in enumerate(qa_list[:100]):
             r = rag_by_idx.get(i, {})
             q = quality_by_idx.get(i, {})
-            failure_info = _classify_failure_types(r, q, qa.get("context", ""))
+
+            # syntax 탈락 QA: RAG/Quality 평가 없음 → 전용 failure_info 생성
+            if i in syntax_failed_set:
+                err_detail = "; ".join(
+                    f"{k}: {v}" for k, v in (syntax_errors.get(i) or {}).items()
+                ) or "구문 검증 실패"
+                failure_info = {
+                    "failure_types":   ["syntax_error"],
+                    "primary_failure": "syntax_error",
+                    "failure_reason":  f"구문 검증 탈락 — {err_detail}",
+                    "confidence":      None,
+                }
+            else:
+                failure_info = _classify_failure_types(r, q, qa.get("context", ""))
+
             qa_preview.append({
                 "qa_index":            i,
                 "q":                   qa.get("q", "")[:300],
