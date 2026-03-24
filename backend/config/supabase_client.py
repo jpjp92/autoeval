@@ -31,6 +31,8 @@ from db.doc_chunk_repo import (
     update_chunk_metadata,
     search_doc_chunks,
     get_doc_chunks_by_filter,
+    get_doc_chunks_sampled,
+    get_doc_chunks_by_ids,
     get_document_chunks,
 )
 
@@ -58,6 +60,8 @@ __all__ = [
     "update_chunk_metadata",
     "search_doc_chunks",
     "get_doc_chunks_by_filter",
+    "get_doc_chunks_sampled",
+    "get_doc_chunks_by_ids",
     "get_document_chunks",
     "get_hierarchy_list",
     "update_document_hierarchy",

@@ -182,7 +182,7 @@ def generate_qa(
                 user_template = USER_TEMPLATE_EN_V1
 
     hierarchy = " > ".join(item["hierarchy"]) if item.get("hierarchy") else "Uncategorized"
-    text = item.get("text", "")[:2000]
+    text = item.get("text", "")[:1500]
     user_prompt = user_template.format(hierarchy=hierarchy, text=text)
 
     # 프로바이더별 API 호출
