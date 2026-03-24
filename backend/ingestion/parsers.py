@@ -677,9 +677,16 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 # 청킹 파이프라인 헬퍼 (splitter factory)
 # ============================================================================
 
-def make_splitter(chunk_size: int = 1200, chunk_overlap: int = 200) -> RecursiveCharacterTextSplitter:
+def make_splitter(chunk_size: int = 1200, chunk_overlap: int = 300) -> RecursiveCharacterTextSplitter:
     return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n- ", "\n"],
+        separators=[
+            "\n\n",        # 문단 구분 (최우선)
+            "한다.\n",      # 법조문 문장 종결
+            "이다.\n",      # 정의 조항 종결
+            "한다.",        # 줄바꿈 없는 종결
+            "\n- ",        # 목록
+            "\n",          # 줄바꿈
+        ],
     )
