@@ -547,7 +547,7 @@ def run_evaluation(
                 "intent":              qa.get("intent", ""),
                 "rag_avg":             r.get("avg_score"),
                 "quality_avg":         q.get("avg_quality"),
-                "pass":                q.get("pass", False),
+                "pass":                q.get("pass", False) and not failure_info.get("failure_types"),
                 # RAG reason
                 "relevance_reason":    r.get("relevance_reason", ""),
                 "groundedness_reason": r.get("groundedness_reason", ""),
