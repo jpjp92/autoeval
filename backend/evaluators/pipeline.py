@@ -564,9 +564,9 @@ def run_evaluation(
 
             # syntax 탈락 QA: RAG/Quality 평가 없음 → 전용 failure_info 생성
             if i in syntax_failed_set:
-                err_detail = "; ".join(
-                    f"{k}: {v}" for k, v in (syntax_errors.get(i) or {}).items()
-                ) or "구문 검증 실패"
+                err_list   = syntax_errors.get(i) or []
+                err_detail = "; ".join(err_list) if isinstance(err_list, list) else str(err_list)
+                err_detail = err_detail or "구문 검증 실패"
                 failure_info = {
                     "failure_types":   ["syntax_error"],
                     "primary_failure": "syntax_error",
