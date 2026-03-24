@@ -22,8 +22,7 @@ interface TaggingSample { id: string; content_preview: string; hierarchy: Hierar
 interface AnalysisResult {
   domain_analysis: string;
   h1_candidates: string[];
-  suggested_hierarchy: HierarchyData;
-  validation: string;
+  h2_h3_master: Record<string, Record<string, string[]>>;
   anchor_ids?: string[];
 }
 
@@ -44,9 +43,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isAnalyzingL2L3, setIsAnalyzingL2L3] = useState(false);
   const [isTagging, setIsTagging] = useState(false);
-  const [isAnalyzingSamples, setIsAnalyzingSamples] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedH1s, setSelectedH1s] = useState<string[]>([]);
   const [h2h3Master, setH2h3Master] = useState<Record<string, Record<string, string[]>> | null>(null);
@@ -93,8 +90,9 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setAnalysis(null);
     setTaggingSamples([]);
     setH2h3Master(null);
+    setHierarchyTree(null);
     try {
-      // 1단계: H1 master 생성
+      // 1단계: H1/H2/H3 master 한 번에 생성
       const res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -104,59 +102,28 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
-      // anchor_ids localStorage 저장 (재업로드 전까지 유지)
+      setH2h3Master(data.h2_h3_master);
       if (data.anchor_ids?.length) {
         saveAnchorIds(uploadedFilename, data.anchor_ids);
       }
       setIsAnalyzing(false);
 
-      // 2단계: H2/H3 master 생성 (anchor_ids 재전달)
-      setIsAnalyzingL2L3(true);
-      const h2h3Res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-h2-h3`, {
+      // 2단계: 청크 태깅
+      setIsTagging(true);
+      const taggingRes = await fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filename: uploadedFilename,
           selected_h1_list: data.h1_candidates,
-          anchor_ids: data.anchor_ids ?? [],
+          h2_h3_master: data.h2_h3_master,
         }),
       });
-      if (!h2h3Res.ok) throw new Error((await h2h3Res.json()).detail || "H2/H3 분석 실패");
-      const h2h3Data = await h2h3Res.json();
-      const master = h2h3Data.h2_h3_master;
-      setH2h3Master(master);
-      setIsAnalyzingL2L3(false);
-
-      // 3단계: 태깅 적용
-      runTagging(uploadedFilename, data.h1_candidates, master);
-    } catch (e: any) {
-      setHierarchyMessage({ text: e.message, type: "error" });
-      setIsAnalyzing(false);
-      setIsAnalyzingL2L3(false);
-    }
-  };
-
-  const runTagging = async (filename: string, h1s: string[], master: Record<string, Record<string, string[]>>) => {
-    setIsAnalyzingSamples(true);
-    setIsTagging(true);
-    setHierarchyTree(null);
-    try {
-      const [samplesRes, taggingRes] = await Promise.all([
-        fetch(`${API_BASE}/api/ingestion/analyze-tagging-samples`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_h1_list: h1s, h2_h3_master: master }),
-        }),
-        fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename, selected_h1_list: h1s, h2_h3_master: master }),
-        }),
-      ]);
-      if (samplesRes.ok) {
-        const d = await samplesRes.json();
-        setTaggingSamples(d.samples || []);
-      }
       if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "태깅 실패");
-      const treeRes = await getHierarchyList(filename);
+      const taggingData = await taggingRes.json();
+      setTaggingSamples(taggingData.samples || []);
+
+      const treeRes = await getHierarchyList(uploadedFilename);
       if (treeRes.success) {
         setHierarchyTree(treeRes);
         const expandedH1Init: Record<string, boolean> = {};
@@ -173,8 +140,8 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       onTaggingComplete?.();
     } catch (e: any) {
       setHierarchyMessage({ text: e.message, type: "error" });
+      setIsAnalyzing(false);
     } finally {
-      setIsAnalyzingSamples(false);
       setIsTagging(false);
     }
   };
@@ -183,7 +150,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setSelectedH1s(prev => prev.includes(h1) ? prev.filter(s => s !== h1) : [...prev, h1]);
 
   const uploadDone = !!uploadedFilename && uploadMessage?.type === "success";
-  const hierarchyDone = !isTagging && !isAnalyzingSamples && taggingSamples.length > 0;
+  const hierarchyDone = !isAnalyzing && !isTagging && taggingSamples.length > 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-0">
@@ -303,16 +270,16 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               </div>
               <button
                 onClick={handleAnalyze}
-                disabled={isAnalyzing || isAnalyzingL2L3 || isTagging}
+                disabled={isAnalyzing || isTagging}
                 className={cn(
                   "min-w-[168px] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0",
-                  isAnalyzing || isAnalyzingL2L3 || isTagging
+                  isAnalyzing || isTagging
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 active:scale-[0.99]"
                 )}
               >
-                {(isAnalyzing || isAnalyzingL2L3 || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {isAnalyzing ? "H1 분석 중..." : isAnalyzingL2L3 ? "H2/H3 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
+                {(isAnalyzing || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {isAnalyzing ? "마스터 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
               </button>
             </div>
 
@@ -325,11 +292,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             )}
 
             {/* 진행 중 상태 */}
-            {(isAnalyzing || isAnalyzingL2L3 || isTagging) && (
+            {(isAnalyzing || isTagging) && (
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
                 <p className="text-sm text-indigo-700">
-                  {isAnalyzing ? "1단계: H1 도메인 분석 중..." : isAnalyzingL2L3 ? "2단계: H2/H3 분류 체계 생성 중..." : "3단계: 청크 태깅 적용 중..."}
+                  {isAnalyzing ? "1단계: H1/H2/H3 마스터 생성 중..." : "2단계: 청크 태깅 적용 중..."}
                 </p>
               </div>
             )}

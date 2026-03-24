@@ -81,8 +81,7 @@ class HierarchyAnalysisRequest(BaseModel):
 class HierarchyAnalysisResponse(BaseModel):
     domain_analysis: str
     h1_candidates: List[str]
-    suggested_hierarchy: Dict[str, str]
-    validation: str
+    h2_h3_master: Dict[str, Any]
     anchor_ids: Optional[List[str]] = None
 
 
@@ -92,24 +91,6 @@ class GranularTaggingRequest(BaseModel):
     h2_h3_master: Optional[Dict[str, Dict[str, List[str]]]] = None
 
 
-class H2H3AnalysisRequest(BaseModel):
-    filename: str
-    selected_h1_list: List[str]
-    anchor_ids: Optional[List[str]] = None
-
-
-class H2H3AnalysisResponse(BaseModel):
-    h2_h3_master: Dict[str, Any]
-
-
-class TaggingSample(BaseModel):
-    id: str
-    content_preview: str
-    hierarchy: Dict[str, str]
-
-
-class TaggingPreviewResponse(BaseModel):
-    samples: List[TaggingSample]
 
 
 # ============================================================================
@@ -352,43 +333,48 @@ async def upload_document(
 
 @router.post("/analyze-hierarchy", response_model=HierarchyAnalysisResponse)
 async def analyze_hierarchy(request: HierarchyAnalysisRequest):
-    """Pass 1: 문서 샘플 → H1 master 후보 도출."""
+    """Pass 1+2 통합: 문서 샘플 → H1/H2/H3 master 한 번에 생성."""
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
-    # anchor 균등 샘플링 (30개) — 이후 Pass1/2/도메인분석/QA생성에 재사용
+    # anchor 균등 샘플링 (30개) — 이후 도메인분석/QA생성에 재사용
     anchor_chunks = await get_doc_chunks_sampled(request.filename, n=30)
     if not anchor_chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
     anchor_ids = [c["id"] for c in anchor_chunks]
 
-    # Pass1: anchor 앞 15개로 H1 생성
-    chunks = anchor_chunks[:15]
-    concatenated_text = "\n\n".join(c["content"] for c in chunks)
+    concatenated_text = "\n\n---\n\n".join(c["content"][:600] for c in anchor_chunks)
 
     prompt = f"""
 <role>
-You are an expert document classifier. Discover the Master Schema (H1 categories) for the provided document.
+You are an expert document classifier. Build a complete hierarchical taxonomy (H1/H2/H3) for the provided document.
 </role>
 
 <constraints>
-- Identify exactly 3~5 distinct H1 domain categories that cover the full document.
-- H1 names must be in Korean (한국어), under 15 characters each.
+- Identify exactly 3~5 distinct H1 domain categories covering the full document.
+- For each H1, create 2~5 H2 sub-categories covering distinct content themes.
+- For each H2, create 2~4 specific H3 leaf labels.
+- All names in Korean (한국어), under 15 characters each.
 - H1 must represent content themes or domains — NOT section titles or headings.
-- Provide one concrete H1/H2/H3 example from the document.
 </constraints>
 
 <context>
-{concatenated_text[:15000]}
+{concatenated_text[:18000]}
 </context>
 
 <task>
 Return a JSON object with this exact structure:
 {{
   "domain_analysis": "한 문장으로 문서 전체 성격 요약",
-  "h1_candidates": ["카테고리1", "카테고리2", "카테고리3"],
-  "suggested_hierarchy": {{ "h1": "H1명", "h2": "H2명", "h3": "H3명" }},
-  "validation": "이 분류 방식이 적합한 이유 한 문장"
+  "h2_h3_master": {{
+    "H1명A": {{
+      "H2명1": ["H3명1", "H3명2"],
+      "H2명2": ["H3명1", "H3명2"]
+    }},
+    "H1명B": {{
+      "H2명1": ["H3명1", "H3명2"]
+    }}
+  }}
 }}
 </task>
 """
@@ -399,134 +385,22 @@ Return a JSON object with this exact structure:
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
         )
-        analysis_res = json.loads(response.text)
-        return HierarchyAnalysisResponse(**analysis_res, anchor_ids=anchor_ids)
+        result = json.loads(response.text)
+        if not isinstance(result.get("h2_h3_master"), dict):
+            raise ValueError(f"Unexpected LLM response: {type(result.get('h2_h3_master'))}")
+        h2_h3_master = result["h2_h3_master"]
+        h1_candidates = list(h2_h3_master.keys())
+        return HierarchyAnalysisResponse(
+            domain_analysis=result.get("domain_analysis", ""),
+            h1_candidates=h1_candidates,
+            h2_h3_master=h2_h3_master,
+            anchor_ids=anchor_ids,
+        )
     except Exception as e:
         logger.error(f"❌ Hierarchy analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-@router.post("/analyze-h2-h3", response_model=H2H3AnalysisResponse)
-async def analyze_h2_h3(request: H2H3AnalysisRequest):
-    """Pass 2: H1 master → H2/H3 master 동시 생성."""
-    if not gemini_client:
-        raise HTTPException(status_code=500, detail="Gemini client not initialized")
-
-    # anchor_ids가 있으면 재사용, 없으면 새로 샘플링
-    if request.anchor_ids:
-        from config.supabase_client import get_doc_chunks_by_ids
-        chunks = await get_doc_chunks_by_ids(request.anchor_ids)
-    else:
-        chunks = await get_doc_chunks_sampled(request.filename, n=30)
-    if not chunks:
-        raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
-
-    sample_text = "\n\n---\n\n".join(c["content"][:600] for c in chunks[:30])
-
-    prompt = f"""
-<role>
-You are an expert document classifier building a strict hierarchical taxonomy.
-Generate H2 sub-categories and H3 leaf labels for the given H1 master list.
-</role>
-
-<constraints>
-- For each H1, create 2~5 H2 sub-categories covering distinct content themes.
-- For each H2, create 2~4 specific H3 labels.
-- All names in Korean (한국어), under 15 characters each.
-</constraints>
-
-<h1_master>
-{json.dumps(request.selected_h1_list, ensure_ascii=False)}
-</h1_master>
-
-<context>
-{sample_text[:12000]}
-</context>
-
-<task>
-Return a JSON object:
-{{
-  "H1명": {{
-    "H2명A": ["H3명1", "H3명2"],
-    "H2명B": ["H3명1", "H3명2"]
-  }}
-}}
-</task>
-"""
-
-    try:
-        res = await gemini_client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt,
-            config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        h2_h3_master = json.loads(res.text)
-        # LLM이 간혹 dict 대신 list of dict를 반환하는 경우 병합
-        if isinstance(h2_h3_master, list):
-            merged: Dict[str, Any] = {}
-            for item in h2_h3_master:
-                if isinstance(item, dict):
-                    merged.update(item)
-            h2_h3_master = merged
-        if not isinstance(h2_h3_master, dict):
-            raise ValueError(f"Unexpected LLM response type: {type(h2_h3_master)}")
-        return H2H3AnalysisResponse(h2_h3_master=h2_h3_master)
-    except Exception as e:
-        logger.error(f"❌ H2/H3 analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"H2/H3 analysis failed: {str(e)}")
-
-
-@router.post("/analyze-tagging-samples", response_model=TaggingPreviewResponse)
-async def analyze_tagging_samples(request: GranularTaggingRequest):
-    """DB 업데이트 없이 3~5개 청크 태깅 미리보기."""
-    if not gemini_client:
-        raise HTTPException(status_code=500, detail="Gemini client not initialized")
-
-    all_chunks = await get_document_chunks(request.filename, limit=100)
-    if not all_chunks:
-        raise HTTPException(status_code=404, detail="No chunks found")
-
-    sample_indices = sorted(set([0, len(all_chunks) // 2, min(len(all_chunks) - 1, 20)]))
-    samples = [all_chunks[i] for i in sample_indices if i < len(all_chunks)]
-    chunks_data = [{"id": s["id"], "content": s["content"][:800]} for s in samples]
-
-    prompt = f"""
-Analyze these text chunks and assign the most appropriate [H1, H2, H3] hierarchy for each.
-
-### Master H1 List:
-{request.selected_h1_list}
-
-### Requirements:
-- Korean term, under 15 characters.
-- Result MUST be valid JSON array.
-
-### Input Chunks:
-{json.dumps(chunks_data, ensure_ascii=False)}
-
-### JSON Structure:
-[{{ "id": "chunk_uuid", "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
-"""
-
-    try:
-        res = await gemini_client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt,
-            config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        tagging_results = json.loads(res.text)
-        final_samples = []
-        for item in tagging_results:
-            orig = next((s for s in samples if s["id"] == item["id"]), None)
-            if orig:
-                final_samples.append(TaggingSample(
-                    id=item["id"],
-                    content_preview=orig["content"][:150] + "...",
-                    hierarchy=item["hierarchy"],
-                ))
-        return TaggingPreviewResponse(samples=final_samples)
-    except Exception as e:
-        logger.error(f"❌ Sample analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/apply-granular-tagging")
@@ -534,15 +408,16 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
     """Pass 3: 청크별 hierarchy 일괄 적용 (동기 처리)."""
     logger.info(f"🚀 Granular Tagging: {request.filename}")
 
-    async def run_tagging():
+    async def run_tagging() -> list:
         all_chunks = await get_document_chunks(request.filename, limit=2000)
         if not all_chunks:
-            return
+            return []
 
         batch_size = 5
         batches = [all_chunks[i: i + batch_size] for i in range(0, len(all_chunks), batch_size)]
         semaphore = asyncio.Semaphore(5)
         completed = 0
+        samples_collected: list = []
 
         def _build_prompt(chunks_data: list) -> str:
             if request.h2_h3_master:
@@ -632,6 +507,12 @@ Return ONLY a JSON array — no explanation:
                         }
                         update_tasks.append(update_chunk_metadata(target["id"], meta))
                         matched += 1
+                        if len(samples_collected) < 5:
+                            samples_collected.append({
+                                "id": target["id"],
+                                "content_preview": target["content"][:150] + "...",
+                                "hierarchy": h,
+                            })
 
                     if update_tasks:
                         await asyncio.gather(*update_tasks)
@@ -643,9 +524,10 @@ Return ONLY a JSON array — no explanation:
 
         await asyncio.gather(*[process_batch(i, b) for i, b in enumerate(batches)])
         logger.info(f"🏁 Tagging done: {request.filename} ({completed}/{len(batches)} batches)")
+        return samples_collected
 
-    await run_tagging()
-    return {"success": True, "message": f"Granular tagging completed for {request.filename}."}
+    samples = await run_tagging()
+    return {"success": True, "message": f"Granular tagging completed for {request.filename}.", "samples": samples}
 
 
 @router.get("/hierarchy-list")
