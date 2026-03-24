@@ -123,9 +123,16 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
     if "error" in quality or "error" in rag:
         failure_types.append("evaluation_error")
 
+    # 점수 기반 pass 기준(0.70)과 failure_types 감지 기준(0.60) 갭 보완:
+    # failure_types가 없어도 avg_quality < 0.70이면 low_quality 추가
+    avg_quality = quality.get("avg_quality", 1.0)
+    if not failure_types and avg_quality < 0.70:
+        failure_types.append("low_quality")
+
     if not failure_types:
         return {"failure_types": [], "primary_failure": None, "failure_reason": "", "confidence": None}
 
+    PRIORITY.append("low_quality")
     # 우선순위 기반 primary 선택
     primary = next((p for p in PRIORITY if p in failure_types), failure_types[0])
 
@@ -136,6 +143,7 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
         "ambiguous_question": rag.get("clarity_reason", ""),
         "bad_chunk":          f"컨텍스트 길이 {ctx_len}자 — 재생성 불가" if ctx_len < 100 else "",
         "evaluation_error":   quality.get("error", "") or rag.get("error", ""),
+        "low_quality":        f"품질 점수 미달 (avg_quality={avg_quality:.2f}, 기준 0.70) — 개선 필요",
     }
     return {
         "failure_types":   failure_types,
