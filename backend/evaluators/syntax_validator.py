@@ -10,7 +10,7 @@ class SyntaxValidator:
 
     CONFIG = {
         "q_length": (5, 500),
-        "a_length": (10, 2000),
+        "a_length": (2, 2000),
         "context_length": (50, 50000),
         "required_fields": ["q", "a", "context"],
     }
