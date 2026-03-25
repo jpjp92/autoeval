@@ -683,10 +683,24 @@ def make_splitter(chunk_size: int = 1200, chunk_overlap: int = 300) -> Recursive
         chunk_overlap=chunk_overlap,
         separators=[
             "\n\n",        # 문단 구분 (최우선)
-            "한다.\n",      # 법조문 문장 종결
-            "이다.\n",      # 정의 조항 종결
-            "한다.",        # 줄바꿈 없는 종결
+            "한다.\n",      # 법조문 문장 종결 (줄바꿈 동반)
+            "이다.\n",      # 정의 조항 종결 (줄바꿈 동반)
             "\n- ",        # 목록
             "\n",          # 줄바꿈
         ],
     )
+
+
+# 법조문 서술어 조각 패턴 (청크 시작에 남는 잔여 서술어 + 마침표까지 포함)
+_LEADING_FRAGMENT_RE = re.compile(
+    r'^(한다|했다|된다|됩니다|합니다|하였다|하였습니다|이다|있다|없다|않는다|아니다)[.。]?\s*',
+)
+
+
+def strip_leading_fragment(text: str) -> str:
+    """청크 시작의 서술어 조각(예: '한다. 다만...') 제거.
+    마침표까지 함께 제거하여 '다만, ...'처럼 깔끔하게 시작하도록 함.
+    제거 후 30자 미만이면 원본 유지 (의미있는 내용 손실 방지).
+    """
+    cleaned = _LEADING_FRAGMENT_RE.sub('', text).strip()
+    return cleaned if len(cleaned) >= 30 else text

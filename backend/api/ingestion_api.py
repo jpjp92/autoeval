@@ -49,6 +49,7 @@ from ingestion.parsers import (
     merge_adjacent_short_blocks,
     normalize_for_hash,
     remove_footer_noise,
+    strip_leading_fragment,
     strip_redundant_headings,
     _is_colophon_chunk,
     _is_symbol_noise_chunk,
@@ -158,6 +159,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
             section_text = "\n".join(section_text_parts)
 
             raw_chunks = splitter.split_text(section_text)
+            raw_chunks = [strip_leading_fragment(c) for c in raw_chunks]
             raw_chunks = _merge_short_chunks(raw_chunks, min_chars=200, max_chars=1200)
 
             for chunk_text in raw_chunks:
