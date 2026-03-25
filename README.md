@@ -42,9 +42,8 @@ flowchart TD
     DB1[(DB 저장: doc_chunks)]
 
     B0["STEP 2 · 계층 태깅"]
-    B1[단계 1 — H1 도출]
-    B2[단계 2 — H2/H3 도출]
-    B3[단계 3 — 청크별 계층 일괄 적용]
+    B1[단계 1 — H1/H2/H3 Master 생성 통합]
+    B3[단계 2 — 청크별 계층 일괄 적용]
     DB2[(DB 저장: metadata h1/h2/h3)]
 
     C0["STEP 3 · QA 생성"]
@@ -68,7 +67,7 @@ flowchart TD
 
     UP --> A0 --> A1 --> A2 --> A3 --신규--> A4 --> DB1
     A3 --중복 skip--> DB1
-    DB1 --> B0 --> B1 --> B2 --> B3 --> DB2
+    DB1 --> B0 --> B1 --> B3 --> DB2
     DB2 --> C0 --> C1 --> C2 --> C3 --> DB3
     DB3 --> D0 --> D1 --> D2 --> D3 --> D4 --> D5 --> DB4
     DB4 --> E0 --> E1 --> E2 --> E3
@@ -96,15 +95,14 @@ flowchart TD
 | 벡터화 | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — **1536차원** 벡터 변환 |
 | 저장 | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) — `hierarchy_h1/h2/h3` metadata에 포함 |
 
-#### STEP 2 — 계층 태깅 (3단계)
+#### STEP 2 — 계층 태깅 (2단계)
 
 | 단계 | API | 동작 |
 |------|-----|------|
-| 단계 1 — H1 도출 | `analyze-hierarchy` | doc_chunks 샘플 → LLM → **대분류 카테고리 3~5개 확정** |
-| 단계 2 — H2/H3 도출 | `analyze-h2-h3` | H1 기반 → LLM 1회 → **중·소분류 카테고리 동시 생성** |
-| 단계 3 — 청크 태깅 | `apply-granular-tagging` | 청크별 계층 목록에서 **선택만** (신규 생성 금지) — 일괄 적용 |
+| 단계 1 — H1/H2/H3 Master 생성 | `analyze-hierarchy` | anchor 청크 30개 → LLM **1회** → **H1(3~5개) + H2/H3 전체 master 동시 생성** |
+| 단계 2 — 청크 태깅 | `apply-granular-tagging` | 청크별 계층 목록에서 **선택만** (신규 생성 금지) — 일괄 적용, 완료 후 샘플 5개 반환 |
 
-> 단계 3 완료 후 `doc_chunks.metadata.hierarchy_h1/h2/h3` 업데이트 → 프론트엔드 H1/H2 드롭다운으로 생성 범위 지정
+> 단계 2 완료 후 `doc_chunks.metadata.hierarchy_h1/h2/h3` 업데이트 → 프론트엔드 H1/H2 드롭다운으로 생성 범위 지정
 
 #### STEP 3 — QA 생성
 
@@ -412,10 +410,8 @@ docker compose up -d --build
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/api/ingestion/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/api/ingestion/analyze-hierarchy` | Pass 1 — H1 master 3~5개 도출 |
-| `POST` | `/api/ingestion/analyze-h2-h3` | Pass 2 — H2/H3 master 동시 생성 |
-| `POST` | `/api/ingestion/analyze-tagging-samples` | 태깅 미리보기 (DB 업데이트 없음) |
-| `POST` | `/api/ingestion/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
+| `POST` | `/api/ingestion/analyze-hierarchy` | Pass 1+2 통합 — anchor 30개 → H1/H2/H3 master 한 번에 생성 |
+| `POST` | `/api/ingestion/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 (완료 후 샘플 5개 반환) |
 | `GET`  | `/api/ingestion/hierarchy-list` | H1/H2/H3 고유 목록 (드롭다운용) |
 
 ### Generation
@@ -467,4 +463,4 @@ docker compose up -d --build
 
 ---
 
-**Last Updated**: 2026-03-23 | **Branch**: main
+**Last Updated**: 2026-03-25 | **Branch**: main

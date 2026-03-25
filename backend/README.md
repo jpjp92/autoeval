@@ -82,10 +82,8 @@ API 문서: `http://localhost:8000/docs`
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/analyze-hierarchy` | Pass 1 — doc_chunks 샘플 → H1 master 3~5개 도출 |
-| `POST` | `/analyze-h2-h3` | Pass 2 — H1 기반 H2/H3 master 동시 생성 |
-| `POST` | `/analyze-tagging-samples` | 태깅 적용 전 3~5개 청크 미리보기 |
-| `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 |
+| `POST` | `/analyze-hierarchy` | Pass 1+2 통합 — anchor 30개 → LLM 1회 → H1/H2/H3 master 동시 생성 |
+| `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 (완료 후 샘플 5개 반환) |
 | `GET`  | `/hierarchy-list` | DB H1/H2/H3 고유 목록 반환 (드롭다운용) |
 
 ### Generation  `/api/generate`
@@ -167,7 +165,7 @@ API 문서: `http://localhost:8000/docs`
 ```
 [사전] 청크 조회
     hierarchy_h1/h2/h3 필터 → get_doc_chunks_by_filter()
-    결과 0건 + filename 있으면 → filename-only 재쿼리 (구버전 청크 대응)
+    결과 0건 + hierarchy 필터 있으면 → ValueError (Pass3 태깅 미완료 안내)
 
 [1단계] 도메인 분석 (job당 1회)
     doc_chunks 샘플 (최대 10개) → domain_profiler.analyze_domain()
