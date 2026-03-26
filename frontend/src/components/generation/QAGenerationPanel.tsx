@@ -112,16 +112,22 @@ const selectCls = (disabled: boolean) => cn(
   disabled && "opacity-50 cursor-not-allowed"
 );
 
-// intent → 한국어 레이블 (QAEvaluationDashboard 기준)
+// intent → 한국어 레이블
 const intentLabel = (intent: string) => {
   const map: Record<string, string> = {
+    // 신규 6종
+    fact:       "사실형",
+    purpose:    "원인형",
+    how:        "방법형",
+    condition:  "조건형",
+    comparison: "비교형",
+    list:       "열거형",
+    // 구형 8종 (하위 호환)
     factoid:    "사실형",
     numeric:    "수치형",
     procedure:  "절차형",
     why:        "원인형",
-    how:        "방법형",
     definition: "정의형",
-    list:       "목록형",
     boolean:    "확인형",
   };
   return map[intent?.toLowerCase()] ?? intent;
@@ -130,13 +136,19 @@ const intentLabel = (intent: string) => {
 // intent 뱃지 색상
 const intentColor = (intent: string) => {
   const map: Record<string, string> = {
+    // 신규 6종
+    fact:       "bg-blue-50 text-blue-600 border-blue-100",
+    purpose:    "bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100",
+    how:        "bg-emerald-50 text-emerald-600 border-emerald-100",
+    condition:  "bg-amber-50 text-amber-600 border-amber-100",
+    comparison: "bg-indigo-50 text-indigo-600 border-indigo-100",
+    list:       "bg-sky-50 text-sky-600 border-sky-100",
+    // 구형 8종 (하위 호환)
     factoid:    "bg-blue-50 text-blue-600 border-blue-100",
     numeric:    "bg-yellow-50 text-yellow-600 border-yellow-100",
-    definition: "bg-sky-50 text-sky-600 border-sky-100",
-    how:        "bg-emerald-50 text-emerald-600 border-emerald-100",
     procedure:  "bg-indigo-50 text-indigo-600 border-indigo-100",
     why:        "bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100",
-    list:       "bg-amber-50 text-amber-600 border-amber-100",
+    definition: "bg-sky-50 text-sky-600 border-sky-100",
     boolean:    "bg-purple-50 text-purple-600 border-purple-100",
   };
   return map[intent?.toLowerCase()] ?? "bg-slate-100 text-slate-500 border-slate-200";
@@ -146,7 +158,7 @@ const intentColor = (intent: string) => {
 export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
 
   const [formValues, setFormValues] = useState<FormValues>({
-    model: "gemini-3.1-flash", lang: "en", samples: 2,
+    model: "gemini-3.1-flash", lang: "ko", samples: 2,
     promptVersion: "v1", autoEvaluate: true, evaluatorModel: "gpt-5.1",
   });
   const [sampleInputValue, setSampleInputValue] = useState("");
@@ -321,11 +333,14 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
     setQaPreview([]);
     setQaPreviewTotal(0);
     try {
-      // localStorage에서 anchor_ids 조회
+      // localStorage에서 anchor_ids, document_id 조회
       const savedAnchor = currentFilename
         ? localStorage.getItem(`anchor_ids:${currentFilename}`)
         : null;
       const anchorIds: string[] = savedAnchor ? JSON.parse(savedAnchor) : [];
+      const documentId = currentFilename
+        ? localStorage.getItem(`document_id:${currentFilename}`) ?? undefined
+        : undefined;
 
       const response = await generateQA({
         model: formValues.model, lang: formValues.lang, samples: formValues.samples,
@@ -335,6 +350,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
         ...(selectedH2 && { hierarchy_h2: selectedH2 }),
         ...(selectedH3 && { hierarchy_h3: selectedH3 }),
         ...(anchorIds.length > 0 && { anchor_ids: anchorIds }),
+        ...(documentId && { document_id: documentId }),
       }) as any;
       if (!response.success || !response.job_id) throw new Error(response.error || "Failed to start generation");
       setJobId(response.job_id);
@@ -694,7 +710,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                   syntax:  "Layer 1-A · Syntax Validation",
                   stats:   "Layer 1-B · Data Statistics",
                   rag:     "Layer 2 · RAG Triad",
-                  quality: "Layer 3 · Quality Score",
+                  quality: "Layer 3 · 완전성 평가",
                 }[layer];
                 return (
                   <div key={layer} className="space-y-1">

@@ -269,10 +269,36 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
         rag_by_idx     = {s["qa_index"]: s for s in rag_raw}
         quality_by_idx = {s["qa_index"]: s for s in quality_raw}
 
+        # failure classification helper (pipeline_results.layers.quality.qa_scores에는
+        # failure 필드가 없으므로, 없으면 직접 재계산)
+        try:
+            from backend.evaluators.pipeline import _classify_failure_types as _cft
+        except ImportError:
+            try:
+                from evaluators.pipeline import _classify_failure_types as _cft
+            except ImportError:
+                _cft = None
+
         detail = []
         for i, qa in enumerate(flat_qa):
             r = rag_by_idx.get(i, {})
             q = quality_by_idx.get(i, {})
+
+            # failure_types / primary_failure가 qa_scores에 저장되어 있으면 그대로 사용,
+            # 없으면 _classify_failure_types로 재계산 (히스토리 로드 대응)
+            failure_types   = q.get("failure_types")   or r.get("failure_types")
+            primary_failure = q.get("primary_failure") or r.get("primary_failure")
+            failure_reason  = q.get("failure_reason")  or r.get("failure_reason", "")
+
+            if not failure_types and not primary_failure and _cft:
+                try:
+                    fi = _cft(r, q, qa.get("context", ""))
+                    failure_types   = fi.get("failure_types", [])
+                    primary_failure = fi.get("primary_failure")
+                    failure_reason  = fi.get("failure_reason", "")
+                except Exception:
+                    failure_types   = []
+
             detail.append({
                 "qa_index":            i,
                 "q":                   qa["q"],
@@ -288,14 +314,11 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "groundedness_reason": r.get("groundedness_reason", ""),
                 "clarity_reason":      r.get("clarity_reason", ""),
                 # Quality reason
-                "factuality_reason":   q.get("factuality_reason", ""),
                 "completeness_reason": q.get("completeness_reason", ""),
-                "specificity_reason":  q.get("specificity_reason", ""),
-                "conciseness_reason":  q.get("conciseness_reason", ""),
                 # Failure classification
-                "failure_types":       q.get("failure_types")   or r.get("failure_types", []),
-                "primary_failure":     q.get("primary_failure") or r.get("primary_failure"),
-                "failure_reason":      q.get("failure_reason")  or r.get("failure_reason", ""),
+                "failure_types":       failure_types   or [],
+                "primary_failure":     primary_failure or None,
+                "failure_reason":      failure_reason,
             })
         return detail
 

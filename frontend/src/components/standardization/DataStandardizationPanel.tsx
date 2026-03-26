@@ -24,13 +24,19 @@ interface AnalysisResult {
   h1_candidates: string[];
   h2_h3_master: Record<string, Record<string, string[]>>;
   anchor_ids?: string[];
+  document_id?: string;
 }
 
 const anchorKey = (filename: string) => `anchor_ids:${filename}`;
+const docIdKey  = (filename: string) => `document_id:${filename}`;
 const saveAnchorIds = (filename: string, ids: string[]) =>
   localStorage.setItem(anchorKey(filename), JSON.stringify(ids));
-const clearAnchorIds = (filename: string) =>
+const saveDocumentId = (filename: string, id: string) =>
+  localStorage.setItem(docIdKey(filename), id);
+const clearAnchorIds = (filename: string) => {
   localStorage.removeItem(anchorKey(filename));
+  localStorage.removeItem(docIdKey(filename));
+};
 
 export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTaggingComplete }: {
   setActiveTab?: (tab: string) => void;
@@ -106,9 +112,12 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       if (data.anchor_ids?.length) {
         saveAnchorIds(uploadedFilename, data.anchor_ids);
       }
+      if (data.document_id) {
+        saveDocumentId(uploadedFilename, data.document_id);
+      }
       setIsAnalyzing(false);
 
-      // 2단계: 청크 태깅
+      // 2단계: 청크 태깅 (document_id 기반 — 현재 업로드 버전만 태깅)
       setIsTagging(true);
       const taggingRes = await fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
         method: "POST",
@@ -117,6 +126,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
           filename: uploadedFilename,
           selected_h1_list: data.h1_candidates,
           h2_h3_master: data.h2_h3_master,
+          document_id: data.document_id,
         }),
       });
       if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "태깅 실패");
@@ -304,7 +314,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {/* H1 후보 */}
             {analysis && (
               <div className="space-y-2 animate-in fade-in duration-300">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">H1 도메인 후보</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">계층 대분류 후보</p>
                 <div className="flex flex-wrap gap-1.5">
                   {analysis.h1_candidates.map(h1 => (
                     <button
@@ -329,7 +339,19 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               <div className="space-y-2 animate-in fade-in duration-300">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">태깅 샘플 미리보기</p>
                 <div className="space-y-1.5">
-                  {taggingSamples.map((s, i) => (
+                  {(() => {
+                    const seen = new Set<string>();
+                    const picked: typeof taggingSamples = [];
+                    for (const s of taggingSamples) {
+                      if (picked.length >= 3) break;
+                      if (!seen.has(s.hierarchy.h1)) { seen.add(s.hierarchy.h1); picked.push(s); }
+                    }
+                    for (const s of taggingSamples) {
+                      if (picked.length >= 3) break;
+                      if (!picked.includes(s)) picked.push(s);
+                    }
+                    return picked;
+                  })().map((s, i) => (
                     <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-lg">
                       <p className="flex-1 text-xs text-slate-600 leading-relaxed line-clamp-2 min-w-0">{s.content_preview}</p>
                       <div className="flex items-center gap-1 flex-shrink-0 text-[10px] font-medium">

@@ -121,40 +121,38 @@ function g(id: string, col: number, n: number, label: string, ci: number): Node 
 
 const nodes: Node[] = [
   // ── 업로드 ──
-  { id: 'upload', type: 'step', position: { x: nx(0), y: 0 }, zIndex: 2,
+  { id: 'upload', type: 'step', position: { x: nx(0), y: GY - 52 }, zIndex: 2,
     data: { label: '📄 PDF / DOCX 업로드', bd: '#6366f1', tx: '#3730a3', color: '#e0e7ff' } },
 
-  // ── S1: 데이터 규격화 ── (5 nodes)
-  g('g1', 0, 5, 'STEP 1  ·  데이터 규격화', 0),
-  s('s1-parse',  0, 0, 'PDF / DOCX 파싱',       'Section-First 청킹',      0),
-  s('s1-norm',   0, 1, 'normalize_text',         '특수문자·줄바꿈 정리',    0),
-  s('s1-dedup',  0, 2, 'content_hash',           '중복 확인 · 신규만 처리', 0),
-  s('s1-embed',  0, 3, 'Gemini Embedding 2',     '1536차원 벡터 변환',      0),
-  d('db1',       0, 4, 'DB 저장: doc_chunks'),
+  // ── S1: 데이터 규격화 ── (4 nodes)
+  g('g1', 0, 4, 'STEP 1  ·  데이터 규격화', 0),
+  s('s1-parse',  0, 0, 'PDF / DOCX 파싱',    '청킹 · 괄호 블록 병합',            0),
+  s('s1-norm',   0, 1, '정규화 · 중복 확인',  '특수문자 정리 · 버전별 중복 체크',  0),
+  s('s1-embed',  0, 2, 'Gemini Embedding 2',  '1536차원 벡터 변환',               0),
+  d('db1',       0, 3, 'DB 저장: doc_chunks'),
 
-  // ── S2: 계층 태깅 ── (4 nodes)
-  g('g2', 1, 4, 'STEP 2  ·  계층 태깅', 1),
-  s('s2-p1', 1, 0, '단계 1 — H1 도출',    '대분류 카테고리 추출',    1),
-  s('s2-p2', 1, 1, '단계 2 — H2/H3 도출', '중·소분류 카테고리 추출', 1),
-  s('s2-p3', 1, 2, '단계 3 — 청크 태깅',  '청크별 계층 일괄 적용',   1),
-  d('db2',   1, 3, 'DB 저장: doc_chunks.metadata'),
+  // ── S2: 계층 태깅 ── (3 nodes)
+  g('g2', 1, 3, 'STEP 2  ·  계층 태깅', 1),
+  s('s2-master', 1, 0, '단계 1 — 계층 분석·생성', 'H1/H2/H3 전체 · 밀도 필터',  1),
+  s('s2-tag',    1, 1, '단계 2 — 청크 태깅',   'H1/H2/H3 태그 · 버전별 추적', 1),
+  d('db2',       1, 2, 'DB 저장: doc_chunks.metadata'),
 
   // ── S3: QA 생성 ── (4 nodes)
   g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
-  s('s3-filter', 2, 0, 'H1/H2 필터 조회', '계층 기반 청크 선별',     2),
-  s('s3-prof',   2, 1, '도메인 분석',      '대상 도메인 · 의도 파악', 2),
-  s('s3-gen',    2, 2, '병렬 QA 생성',     '다중 모델 동시 생성',     2),
+  s('s3-filter', 2, 0, 'H1/H2 필터 조회',  'content 기반 · chunk ID 조회',     2),
+  s('s3-prof',   2, 1, '도메인 분석',       '대상 도메인 · 의도 파악',           2),
+  s('s3-gen',    2, 2, 'QA 생성 (병렬처리)', '6종 의도 기반 · reasoning 포함',   2),
   d('db3',       2, 3, 'DB 저장: qa_gen_results'),
 
-  // ── S4: 4레이어 평가 ── (6 nodes)
-  g('g4', 3, 6, 'STEP 4  ·  QA 평가', 3),
-  s('s4-l1a',   3, 0, 'Layer 1-A  Syntax',     '필드 · 길이 검사',                3),
-  s('s4-l1b',   3, 1, 'Layer 1-B  Statistics', '다양성 · 중복률',                 3),
-  s('s4-l2',    3, 2, 'Layer 2  RAG Triad',    '관련성 · 근거성 · 명확성',         3),
-  s('s4-l3',    3, 3, 'Layer 3  Quality',      '사실성 · 완전성 · 구체성 · 간결성',  3),
-  s('s4-score', 3, 4, '최종 점수 집계',        '구문·통계 ×0.1 / RAG·품질 ×0.4',  3,
+  // ── S4: 평가 ── (5 nodes)
+  g('g4', 3, 5, 'STEP 4  ·  QA 평가', 3),
+  s('s4-syn',   3, 0, 'Syntax 검사',       '필드·reasoning·길이 검사',       3),
+  s('s4-stat',  3, 1, 'Statistics 검사',   '다양성 · 중복률',                 3),
+  s('s4-qual',  3, 2, '통합 품질 검사',    '관련성·근거성·명확성·완전성',      3,
+    { color: '#fff1f2', tx: '#9f1239', bd: '#fca5a5' }),
+  s('s4-score', 3, 3, '최종 점수 집계',   '구문·통계 ×0.1 / 품질 ×0.8',      3,
     { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
-  d('db4', 3, 5, 'DB 저장: qa_eval_results'),
+  d('db4', 3, 4, 'DB 저장: qa_eval_results'),
 
   // ── S5: 결과 확인 ── (3 nodes)
   g('g5', 4, 3, 'STEP 5  ·  결과 확인', 4),
@@ -174,19 +172,17 @@ const edges: Edge[] = [
 
   // S1 내부
   { id: 'e-1a',    source: 's1-parse',  target: 's1-norm',   style: iv },
-  { id: 'e-1b',    source: 's1-norm',   target: 's1-dedup',  style: iv },
-  { id: 'e-1c',    source: 's1-dedup',  target: 's1-embed',  style: iv },
-  { id: 'e-1d',    source: 's1-embed',  target: 'db1',       style: iv },
+  { id: 'e-1b',    source: 's1-norm',   target: 's1-embed',  style: iv },
+  { id: 'e-1c',    source: 's1-embed',  target: 'db1',       style: iv },
 
   // S1 → S2 (cross)
-  { id: 'e-x12',   source: 'db1',    target: 's2-p1',
+  { id: 'e-x12',   source: 'db1',    target: 's2-master',
     sourceHandle: 'right', targetHandle: 'left',
     type: 'smoothstep', animated: true, style: xv },
 
   // S2 내부
-  { id: 'e-2a',    source: 's2-p1',    target: 's2-p2',     style: iv },
-  { id: 'e-2b',    source: 's2-p2',    target: 's2-p3',     style: iv },
-  { id: 'e-2c',    source: 's2-p3',    target: 'db2',       style: iv },
+  { id: 'e-2a',    source: 's2-master', target: 's2-tag',    style: iv },
+  { id: 'e-2b',    source: 's2-tag',    target: 'db2',       style: iv },
 
   // S2 → S3 (cross)
   { id: 'e-x23',   source: 'db2',    target: 's3-filter',
@@ -199,16 +195,15 @@ const edges: Edge[] = [
   { id: 'e-3c',    source: 's3-gen',    target: 'db3',       style: iv },
 
   // S3 → S4 (cross)
-  { id: 'e-x34',   source: 'db3',    target: 's4-l1a',
+  { id: 'e-x34',   source: 'db3',    target: 's4-syn',
     sourceHandle: 'right', targetHandle: 'left',
     type: 'smoothstep', animated: true, style: xv },
 
   // S4 내부
-  { id: 'e-4a',    source: 's4-l1a',   target: 's4-l1b',    style: iv },
-  { id: 'e-4b',    source: 's4-l1b',   target: 's4-l2',     style: iv },
-  { id: 'e-4c',    source: 's4-l2',    target: 's4-l3',     style: iv },
-  { id: 'e-4d',    source: 's4-l3',    target: 's4-score',  style: iv },
-  { id: 'e-4e',    source: 's4-score', target: 'db4',       style: iv },
+  { id: 'e-4a',    source: 's4-syn',   target: 's4-stat',   style: iv },
+  { id: 'e-4b',    source: 's4-stat',  target: 's4-qual',   style: iv },
+  { id: 'e-4c',    source: 's4-qual',  target: 's4-score',  style: iv },
+  { id: 'e-4d',    source: 's4-score', target: 'db4',       style: iv },
 
   // S4 → S5 (cross)
   { id: 'e-x45',   source: 'db4',      target: 's5-eval',

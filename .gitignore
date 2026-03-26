@@ -21,6 +21,7 @@ dashboard_sample/
 data_check/
 test/
 default.sqlite
+test_data/
 
 # output
 output/
@@ -38,3 +39,4 @@ analyze_pdf_structure.py
 sample/
 .python-version
 .claude/CLAUDE.md
+.env copy

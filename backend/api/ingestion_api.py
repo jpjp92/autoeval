@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -42,7 +43,6 @@ from ingestion.parsers import (
     build_sections,
     detect_chunk_type,
     detect_repeated_headers,
-    extract_keywords,
     extract_text_by_page,
     is_toc_chunk,
     make_splitter,
@@ -84,12 +84,14 @@ class HierarchyAnalysisResponse(BaseModel):
     h1_candidates: List[str]
     h2_h3_master: Dict[str, Any]
     anchor_ids: Optional[List[str]] = None
+    document_id: Optional[str] = None
 
 
 class GranularTaggingRequest(BaseModel):
     filename: str
     selected_h1_list: List[str]
     h2_h3_master: Optional[Dict[str, Dict[str, List[str]]]] = None
+    document_id: Optional[str] = None
 
 
 
@@ -193,7 +195,6 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
                 context_prefix = build_context_prefix(filename, section_path, sec["page"])
                 enriched_text = context_prefix + chunk_text
-                keywords = extract_keywords(chunk_text)
                 chunk_type = detect_chunk_type(chunk_text).lower()
                 normalized_section_title = heading.replace('\n', ' ').replace('  ', ' ').strip()
 
@@ -206,7 +207,6 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "section_path": section_path,
                     "section_level": level,
                     "chunk_type": chunk_type,
-                    "keywords": keywords,
                 })
 
         logger.info(f"[{filename}] {len(all_chunks_to_embed)} chunks ready. Filtered — {_filter_counts}")
@@ -245,7 +245,6 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "section_path": c["section_path"],
                     "section_level": c["section_level"],
                     "chunk_type": c["chunk_type"],
-                    "keywords": c["keywords"],
                     "page": c["page"],
                     "char_length": len(c["raw_text"]),
                     "chunk_index": i + idx,
@@ -268,6 +267,33 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
     except Exception as e:
         logger.error(f"❌ Ingestion pipeline failed for {filename}: {e}", exc_info=True)
+
+
+# ============================================================================
+# 헬퍼 — 행정 메타 청크 감지
+# ============================================================================
+
+_SENTENCE_RE = re.compile(r'[가-힣]{2,}[^.\n]{5,}[다요]\b')
+
+
+def _is_admin_anchor(content: str) -> bool:
+    """행정 메타 청크 여부 — 내용 밀도 기반 (문서 유형 무관).
+
+    판별 기준 (두 조건 중 하나 충족 시 True):
+      1) 한글 비율 < 30%  — 날짜·번호·코드·영문 식별자 위주
+      2) 완성 문장 0개    — 서술어(다/요)로 끝나는 절이 없는 조각 나열
+    단, 400자 이상 청크는 내용 있는 것으로 간주하고 통과.
+    """
+    stripped = content.strip()
+    if len(stripped) >= 400:
+        return False
+    korean_chars = len(re.findall(r'[가-힣]', stripped))
+    korean_ratio = korean_chars / max(len(stripped), 1)
+    if korean_ratio < 0.3:
+        return True
+    if not _SENTENCE_RE.search(stripped):
+        return True
+    return False
 
 
 # ============================================================================
@@ -339,13 +365,23 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
-    # anchor 균등 샘플링 (30개) — 이후 도메인분석/QA생성에 재사용
-    anchor_chunks = await get_doc_chunks_sampled(request.filename, n=30)
+    # anchor 균등 샘플링 — 행정 메타 청크 제거 후 사용
+    anchor_chunks = await get_doc_chunks_sampled(request.filename, n=40)
     if not anchor_chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
+
+    filtered = [c for c in anchor_chunks if not _is_admin_anchor(c["content"])]
+    if len(filtered) < 10:
+        filtered = anchor_chunks  # 필터 후 너무 적으면 원본 사용
+    anchor_chunks = filtered[:30]
     anchor_ids = [c["id"] for c in anchor_chunks]
 
-    concatenated_text = "\n\n---\n\n".join(c["content"][:600] for c in anchor_chunks)
+    # 동적 절단: 총 20,000자 한도 내에서 청크당 균등 배분
+    per_chunk_limit = max(400, 20000 // len(anchor_chunks))
+    concatenated_text = "\n\n---\n\n".join(c["content"][:per_chunk_limit] for c in anchor_chunks)
+
+    total_chunks = len(anchor_chunks)
+    h2_guide = "2~3" if total_chunks <= 50 else ("3~7" if total_chunks > 150 else "2~5")
 
     prompt = f"""
 <role>
@@ -354,14 +390,17 @@ You are an expert document classifier. Build a complete hierarchical taxonomy (H
 
 <constraints>
 - Identify exactly 3~5 distinct H1 domain categories covering the full document.
-- For each H1, create 2~5 H2 sub-categories covering distinct content themes.
+- For each H1, create {h2_guide} H2 sub-categories covering distinct content themes.
 - For each H2, create 2~4 specific H3 leaf labels.
 - All names in Korean (한국어), under 15 characters each.
-- H1 must represent content themes or domains — NOT section titles or headings.
+- H1 must represent LEARNABLE content themes — NOT administrative metadata.
+- H1 must NOT be: dates, ordinance numbers, contact info, department names, page headers.
+- Bad H1 examples: "시행일 관리", "담당부서", "고시번호"
+- Good H1 examples: "데이터 연계 기준", "정보시스템 운영", "보안 정책"
 </constraints>
 
 <context>
-{concatenated_text[:18000]}
+{concatenated_text[:20000]}
 </context>
 
 <task>
@@ -392,11 +431,14 @@ Return a JSON object with this exact structure:
             raise ValueError(f"Unexpected LLM response: {type(result.get('h2_h3_master'))}")
         h2_h3_master = result["h2_h3_master"]
         h1_candidates = list(h2_h3_master.keys())
+        # anchor 청크에서 document_id 추출 (동일 업로드 배치의 첫 청크 기준)
+        document_id = (anchor_chunks[0].get("metadata") or {}).get("document_id") if anchor_chunks else None
         return HierarchyAnalysisResponse(
             domain_analysis=result.get("domain_analysis", ""),
             h1_candidates=h1_candidates,
             h2_h3_master=h2_h3_master,
             anchor_ids=anchor_ids,
+            document_id=document_id,
         )
     except Exception as e:
         logger.error(f"❌ Hierarchy analysis failed: {e}")
@@ -408,10 +450,19 @@ Return a JSON object with this exact structure:
 @router.post("/apply-granular-tagging")
 async def apply_granular_tagging(request: GranularTaggingRequest):
     """Pass 3: 청크별 hierarchy 일괄 적용 (동기 처리)."""
-    logger.info(f"🚀 Granular Tagging: {request.filename}")
+    if not request.h2_h3_master:
+        raise HTTPException(
+            status_code=400,
+            detail="h2_h3_master is required. Run /analyze-hierarchy first.",
+        )
+    logger.info(f"🚀 Granular Tagging: {request.filename} (document_id={request.document_id or 'all'})")
 
     async def run_tagging() -> list:
-        all_chunks = await get_document_chunks(request.filename, limit=2000)
+        all_chunks = await get_document_chunks(
+            request.filename,
+            limit=2000,
+            document_id=request.document_id,
+        )
         if not all_chunks:
             return []
 
@@ -430,9 +481,14 @@ Select H1, H2, H3 values EXCLUSIVELY from master_hierarchy. Do NOT generate new 
 </role>
 
 <constraints>
+- Classify each chunk INDEPENDENTLY. Do not compare chunks within this batch.
 - H1: select ONE from top-level keys of master_hierarchy
 - H2: select ONE from H2 keys under selected H1
 - H3: select ONE from H3 list under selected H2
+- EXCEPTION: If a chunk contains ONLY administrative metadata (dates, ordinance numbers,
+  phone numbers, department names, page headers) with NO learnable content,
+  set h1="__admin__", h2="__admin__", h3="__admin__".
+  Use __admin__ sparingly — only when the chunk has absolutely no subject matter content.
 </constraints>
 
 <master_hierarchy>
@@ -453,8 +509,12 @@ Return ONLY a JSON array — no explanation:
 <role>You are a document taxonomy classifier.</role>
 
 <constraints>
+- Classify each chunk INDEPENDENTLY. Do not compare chunks within this batch.
 - H1: select ONE from h1_master
 - H2/H3: Korean, under 15 characters each
+- EXCEPTION: If a chunk contains ONLY administrative metadata (dates, ordinance numbers,
+  phone numbers, department names) with NO learnable content,
+  set h1="__admin__", h2="__admin__", h3="__admin__".
 </constraints>
 
 <h1_master>
@@ -475,8 +535,13 @@ Return ONLY a JSON array — no explanation:
             nonlocal completed
             async with semaphore:
                 def _make_chunk_entry(i: int, c: dict) -> dict:
-                    entry = {"idx": i, "content": c["content"][:800]}
                     meta = c.get("metadata") or {}
+                    entry = {
+                        "idx": i,
+                        "content": c["content"][:800],
+                        "chunk_type": meta.get("chunk_type", "body"),
+                        "char_length": meta.get("char_length", len(c["content"])),
+                    }
                     sp = (meta.get("section_path") or "").strip()
                     st = (meta.get("section_title") or "").strip()
                     if sp:

@@ -6,23 +6,31 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 
 const INTENT_KR: Record<string, string> = {
-  factoid:   '사실형',
-  numeric:   '수치형',
-  procedure: '절차형',
-  why:       '이유형',
-  how:       '방법형',
-  definition:'정의형',
-  list:      '목록형',
-  boolean:   '확인형',
+  // 신규 6종 (2026-03-25~)
+  fact:       '사실형',
+  purpose:    '원인형',
+  how:        '방법형',
+  condition:  '조건형',
+  comparison: '비교형',
+  list:       '열거형',
+  // 구형 8종 (하위 호환)
+  factoid:    '사실형',
+  numeric:    '수치형',
+  procedure:  '절차형',
+  why:        '원인형',
+  definition: '정의형',
+  boolean:    '확인형',
 };
 
 const FAILURE_KR: Record<string, string> = {
-  hallucination:      '환각',
-  faithfulness_error: '충실도오류',
-  retrieval_miss:     '검색미스',
-  ambiguous_question: '모호',
+  hallucination:      '환각오류',
+  faithfulness_error: '근거오류',
+  retrieval_miss:     '검색오류',
+  ambiguous_question: '질문모호',
   bad_chunk:          '불량청크',
   evaluation_error:   '평가오류',
+  low_quality:        '품질미달',
+  syntax_error:       '구문오류',
 };
 
 export interface EvaluationData {
@@ -261,9 +269,9 @@ ${grid}${axes}${polygon}${dots}${labels}
 }
 
 function svgBars(items: Array<{ name: string; nameEn?: string; score: number; group?: 'rag' | 'quality' }>): string {
-  const W = 340; const barH = 20; const gap = 10; const labelW = 88; const barMaxW = 210;
+  const W = 340; const barH = 20; const gap = items.length <= 4 ? 22 : 10; const labelW = 88; const barMaxW = 210;
   const barsH = gap + items.length * (barH + gap);
-  const legendY = barsH + 10;
+  const legendY = barsH + (items.length <= 4 ? 56 : 10);
   const totalH = legendY + 16;
 
   let bars = '';
@@ -312,9 +320,12 @@ function buildHTMLContent(data: EvaluationData): string {
   const source    = data.metadata?.source ?? 'N/A';
 
   const intentColorsMap: Record<string, string> = {
-    factoid: '#06b6d4', numeric: '#eab308', procedure: '#3b82f6',
-    why: '#d946ef', how: '#22c55e', definition: '#0ea5e9',
-    list: '#f59e0b', boolean: '#c026d3',
+    // 신규 6종
+    fact: '#3b82f6', purpose: '#d946ef', how: '#22c55e',
+    condition: '#f59e0b', comparison: '#6366f1', list: '#06b6d4',
+    // 구형 8종 (하위 호환)
+    factoid: '#3b82f6', numeric: '#eab308', procedure: '#6366f1',
+    why: '#d946ef', definition: '#0ea5e9', boolean: '#c026d3',
   };
 
   const donutSVG  = svgDonut(data.intentDistribution, intentColorsMap);
@@ -343,8 +354,14 @@ function buildHTMLContent(data: EvaluationData): string {
         .stat-value { font-size: 22px; font-weight: 700; }
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
         thead { background: #f1f5f9; }
-        th { padding: 12px 14px; text-align: left; font-weight: 600; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+        th { padding: 12px 14px; text-align: center; font-weight: 600; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; cursor: pointer; user-select: none; white-space: nowrap; }
+        th:hover { background: #e2e8f0; }
+        th .sort-icon { margin-left: 4px; font-size: 10px; color: #94a3b8; }
+        th.sort-active { color: #4f46e5; }
+        th.sort-active .sort-icon { color: #4f46e5; }
         td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+        .cell-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .cell-center { text-align: center; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background: #f8fafc; }
         .intent-badge { display: inline-block; padding: 3px 0; border-radius: 5px; font-size: 11px; font-weight: 700; border: 1px solid; min-width: 52px; text-align: center; }
@@ -359,15 +376,23 @@ function buildHTMLContent(data: EvaluationData): string {
         .failure-ambiguous_question { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fef08a; background: #fefce8; color: #854d0e; }
         .failure-bad_chunk          { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }
         .failure-evaluation_error   { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e9d5ff; background: #faf5ff; color: #7e22ce; }
+        .failure-low_quality        { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fbcfe8; background: #fdf2f8; color: #be185d; }
+        .failure-syntax_error       { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fca5a5; background: #fef2f2; color: #b91c1c; }
         .failure-none { color: #cbd5e1; font-size: 12px; }
+        .failure-callout { border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid; }
+        .failure-callout .fc-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: .65; margin-bottom: 4px; }
+        .failure-callout .fc-type  { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+        .failure-callout .fc-reason{ font-size: 12px; opacity: .8; line-height: 1.5; }
         footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px; }
         tbody tr.qa-row { cursor: pointer; }
         tbody tr.qa-row:hover { background: #f0f9ff !important; }
         .pg-wrap { display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:0 2px; }
-        .pg-btn { display:inline-flex;align-items:center;padding:6px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer;font-size:13px;font-weight:500;color:#475569;transition:all .15s; }
+        .pg-range { font-size:13px;color:#64748b; }
+        .pg-nav { display:flex;align-items:center;gap:6px; }
+        .pg-btn { display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e8f0;border-radius:6px;background:white;cursor:pointer;font-size:14px;color:#475569;transition:all .15s;line-height:1; }
         .pg-btn:hover:not(:disabled) { background:#f1f5f9;color:#1e293b; }
-        .pg-btn:disabled { opacity:.38;cursor:not-allowed; }
-        .pg-info { font-size:13px;color:#64748b;font-weight:500; }
+        .pg-btn:disabled { opacity:.35;cursor:not-allowed; }
+        .pg-info { font-size:13px;color:#475569;font-weight:500;min-width:48px;text-align:center; }
         #qa-detail-view { background:white;border-radius:12px;padding:28px 32px;box-shadow:0 1px 3px rgba(0,0,0,.08); }
         .detail-back { display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid #e2e8f0;border-radius:8px;background:white;cursor:pointer;font-size:13px;font-weight:500;color:#475569;margin-bottom:20px;transition:all .15s; }
         .detail-back:hover { background:#f1f5f9; }
@@ -463,13 +488,25 @@ function buildHTMLContent(data: EvaluationData): string {
         <h2>📋 QA 상세 평가 결과</h2>
         <div id="qa-list-view">
             <table id="qa-table">
-                <thead><tr><th>ID</th><th>의도</th><th>질문</th><th>답변</th><th>품질</th><th>Triad</th><th>상태</th><th>실패유형</th></tr></thead>
+                <thead><tr>
+                  <th onclick="sortTable('id')"      id="th-id">ID<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('intent')"  id="th-intent">의도<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('q')"       id="th-q">질문<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('a')"       id="th-a">답변<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('quality')" id="th-quality">품질<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('triad')"   id="th-triad">Triad<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('status')"  id="th-status">상태<span class="sort-icon">⇅</span></th>
+                  <th onclick="sortTable('failure')" id="th-failure">실패유형<span class="sort-icon">⇅</span></th>
+                </tr></thead>
                 <tbody id="qa-tbody"></tbody>
             </table>
             <div class="pg-wrap">
-                <button class="pg-btn" id="pg-prev" onclick="changePage(-1)">← 이전</button>
-                <span class="pg-info" id="pg-info"></span>
-                <button class="pg-btn" id="pg-next" onclick="changePage(1)">다음 →</button>
+                <span class="pg-range" id="pg-range"></span>
+                <div class="pg-nav">
+                    <button class="pg-btn" id="pg-prev" onclick="changePage(-1)">&#8249;</button>
+                    <span class="pg-info" id="pg-info"></span>
+                    <button class="pg-btn" id="pg-next" onclick="changePage(1)">&#8250;</button>
+                </div>
             </div>
         </div>
         <div id="qa-detail-view" style="display:none"></div>
@@ -543,88 +580,164 @@ function animateBars(){
 var QA_DATA=${JSON.stringify(data.detailedQA).replace(/<\/script>/gi,'<\\/script>')};
 var QA_PAGE_SIZE=5;
 var qaCurrentPage=0;
-var INTENT_KR_JS={factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'이유형',how:'방법형',definition:'정의형',list:'목록형',boolean:'확인형'};
-var INTENT_COLORS_JS={factoid:'#06b6d4',numeric:'#eab308',procedure:'#3b82f6',why:'#d946ef',how:'#22c55e',definition:'#0ea5e9',list:'#f59e0b',boolean:'#c026d3'};
-var FAILURE_KR_JS={hallucination:'환각',faithfulness_error:'충실도오류',retrieval_miss:'검색미스',ambiguous_question:'모호',bad_chunk:'불량청크',evaluation_error:'평가오류'};
+var qaSortCol=null;
+var qaSortDir='asc';
+var qaSortedData=QA_DATA.slice();
+var INTENT_KR_JS={fact:'사실형',purpose:'원인형',how:'방법형',condition:'조건형',comparison:'비교형',list:'열거형',factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'원인형',definition:'정의형',boolean:'확인형'};
+var INTENT_COLORS_JS={fact:'#3b82f6',purpose:'#d946ef',how:'#22c55e',condition:'#f59e0b',comparison:'#6366f1',list:'#06b6d4',factoid:'#3b82f6',numeric:'#eab308',procedure:'#6366f1',why:'#d946ef',definition:'#0ea5e9',boolean:'#c026d3'};
+var FAILURE_KR_JS={hallucination:'환각오류',faithfulness_error:'근거오류',retrieval_miss:'검색오류',ambiguous_question:'질문모호',bad_chunk:'불량청크',evaluation_error:'평가오류',low_quality:'품질미달',syntax_error:'구문오류'};
+var STATUS_ORDER={성공:0,보류:1,실패:2};
 
 function escHtml(s){if(!s)return'-';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function scoreColor(v){return v>=0.85?'#059669':v>=0.7?'#d97706':'#dc2626';}
+function qaStatus(qa){var qF=qa.l2_avg<0.7,rF=qa.triad_avg<0.7;return qF&&rF?'실패':(qF||rF)?'보류':'성공';}
+
+function sortTable(col){
+  if(qaSortCol===col){qaSortDir=qaSortDir==='asc'?'desc':'asc';}
+  else{qaSortCol=col;qaSortDir='asc';}
+  qaSortedData=QA_DATA.slice().sort(function(a,b){
+    var av,bv;
+    if(col==='id'){av=a.id;bv=b.id;}
+    else if(col==='intent'){av=a.intent||'';bv=b.intent||'';}
+    else if(col==='q'){av=a.q||'';bv=b.q||'';}
+    else if(col==='a'){av=a.a||'';bv=b.a||'';}
+    else if(col==='quality'){av=a.l2_avg??-1;bv=b.l2_avg??-1;}
+    else if(col==='triad'){av=a.triad_avg??-1;bv=b.triad_avg??-1;}
+    else if(col==='status'){av=STATUS_ORDER[qaStatus(a)]??9;bv=STATUS_ORDER[qaStatus(b)]??9;}
+    else if(col==='failure'){av=a.primary_failure||'';bv=b.primary_failure||'';}
+    else return 0;
+    if(av<bv)return qaSortDir==='asc'?-1:1;
+    if(av>bv)return qaSortDir==='asc'?1:-1;
+    return 0;
+  });
+  document.querySelectorAll('thead th').forEach(function(th){
+    th.classList.remove('sort-active');
+    var icon=th.querySelector('.sort-icon');
+    if(icon)icon.textContent='⇅';
+  });
+  var activeTh=document.getElementById('th-'+col);
+  if(activeTh){
+    activeTh.classList.add('sort-active');
+    var icon=activeTh.querySelector('.sort-icon');
+    if(icon)icon.textContent=qaSortDir==='asc'?'▲':'▼';
+  }
+  renderQATable(0);
+}
 
 function renderQATable(page){
   qaCurrentPage=page;
-  var start=page*QA_PAGE_SIZE,end=Math.min(start+QA_PAGE_SIZE,QA_DATA.length);
-  var totalPages=Math.ceil(QA_DATA.length/QA_PAGE_SIZE)||1;
+  var data=qaSortedData;
+  var start=page*QA_PAGE_SIZE,end=Math.min(start+QA_PAGE_SIZE,data.length);
+  var totalPages=Math.ceil(data.length/QA_PAGE_SIZE)||1;
   var rows='';
   for(var i=start;i<end;i++){
-    var qa=QA_DATA[i];
+    var qa=data[i];
     var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
     var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
     var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
     var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
     var failKey=qa.primary_failure||null;
     var failBadge=failKey?'<span class="failure-'+failKey+'">'+(FAILURE_KR_JS[failKey]||failKey)+'</span>':'<span class="failure-none">-</span>';
-    rows+='<tr class="qa-row" onclick="showQADetail('+i+')">'
-      +'<td><strong>'+qa.id+'</strong></td>'
-      +'<td><div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div></td>'
-      +'<td style="max-width:280px">'+escHtml(qa.q)+'</td>'
-      +'<td style="max-width:240px;color:#475569">'+escHtml(qa.a||'-')+'</td>'
-      +'<td><span class="'+(qFail?'score-fail':'score-pass')+'">'+qa.l2_avg.toFixed(3)+'</span></td>'
-      +'<td><span class="'+(rFail?'score-fail':'score-pass')+'">'+qa.triad_avg.toFixed(3)+'</span></td>'
-      +'<td><span class="'+statusCls+'">'+statusLabel+'</span></td>'
-      +'<td>'+failBadge+'</td>'
+    var origIdx=QA_DATA.indexOf(qa);
+    rows+='<tr class="qa-row" onclick="showQADetail('+origIdx+')">'
+      +'<td class="cell-center"><strong>'+qa.id+'</strong></td>'
+      +'<td class="cell-center"><div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div></td>'
+      +'<td style="max-width:260px"><div class="cell-clamp">'+escHtml(qa.q)+'</div></td>'
+      +'<td style="max-width:240px;color:#475569"><div class="cell-clamp">'+escHtml(qa.a||'-')+'</div></td>'
+      +'<td class="cell-center"><span class="'+(qFail?'score-fail':'score-pass')+'">'+qa.l2_avg.toFixed(3)+'</span></td>'
+      +'<td class="cell-center"><span class="'+(rFail?'score-fail':'score-pass')+'">'+qa.triad_avg.toFixed(3)+'</span></td>'
+      +'<td class="cell-center"><span class="'+statusCls+'">'+statusLabel+'</span></td>'
+      +'<td class="cell-center">'+failBadge+'</td>'
       +'</tr>';
   }
   document.getElementById('qa-tbody').innerHTML=rows;
-  document.getElementById('pg-info').textContent=(page+1)+' / '+totalPages+' 페이지 · 총 '+QA_DATA.length+'개';
+  document.getElementById('pg-info').textContent=(page+1)+' / '+totalPages;
+  document.getElementById('pg-range').textContent=(start+1)+'–'+end+' / '+data.length+'개';
   document.getElementById('pg-prev').disabled=page===0;
-  document.getElementById('pg-next').disabled=end>=QA_DATA.length;
+  document.getElementById('pg-next').disabled=end>=data.length;
   document.getElementById('qa-list-view').style.display='';
   document.getElementById('qa-detail-view').style.display='none';
 }
 
 function changePage(delta){
-  var total=Math.ceil(QA_DATA.length/QA_PAGE_SIZE)||1;
+  var total=Math.ceil(qaSortedData.length/QA_PAGE_SIZE)||1;
   var next=qaCurrentPage+delta;
   if(next>=0&&next<total)renderQATable(next);
 }
 
+var qaCurrentDetailOrigIdx=0;
+
 function showQADetail(idx){
+  qaCurrentDetailOrigIdx=idx;
   var qa=QA_DATA[idx];
   var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
   var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
   var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
   var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
   var failKey=qa.primary_failure||null;
+  // failure 타입별 callout 배경/보더/텍스트 색상
+  var FAILURE_CALLOUT_STYLE={
+    hallucination:      {bg:'#fff1f2',bd:'#fecaca',tx:'#be123c'},
+    faithfulness_error: {bg:'#fff7ed',bd:'#fed7aa',tx:'#c2410c'},
+    retrieval_miss:     {bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},
+    ambiguous_question: {bg:'#fefce8',bd:'#fef08a',tx:'#854d0e'},
+    bad_chunk:          {bg:'#f8fafc',bd:'#e2e8f0',tx:'#475569'},
+    evaluation_error:   {bg:'#faf5ff',bd:'#e9d5ff',tx:'#7e22ce'},
+    low_quality:        {bg:'#fdf2f8',bd:'#fbcfe8',tx:'#be185d'},
+    syntax_error:       {bg:'#fef2f2',bd:'#fca5a5',tx:'#b91c1c'},
+  };
   var failureCallout='';
+  if(failKey){
+    var fcs=FAILURE_CALLOUT_STYLE[failKey]||{bg:'#f8fafc',bd:'#e2e8f0',tx:'#475569'};
+    failureCallout='<div class="failure-callout" style="background:'+fcs.bg+';border-color:'+fcs.bd+';color:'+fcs.tx+'">'
+      +'<p class="fc-label">주요 실패 유형</p>'
+      +'<p class="fc-type">'+(FAILURE_KR_JS[failKey]||failKey)+'</p>'
+      +(qa.failure_reason?'<p class="fc-reason">'+escHtml(qa.failure_reason)+'</p>':'')
+      +'</div>';
+  }
+  // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
+  var isLegacy=!!(qa.factuality_reason||qa.specificity_reason||qa.conciseness_reason);
   var ragMetrics=[
-    {name:'관련성 (Context Relevance)',reason:qa.relevance_reason},
+    {name:'관련성 (Relevance)',reason:qa.relevance_reason},
     {name:'근거성 (Groundedness)',reason:qa.groundedness_reason},
     {name:'명확성 (Clarity)',reason:qa.clarity_reason}
   ];
-  var ragRows=ragMetrics.map(function(m){
-    return '<div class="detail-metric">'
-      +'<div class="detail-metric-name">'+m.name+'</div>'
-      +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
-      +'</div>';
-  }).join('');
-  var qualMetrics=[
+  // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
+  var qualMetrics=isLegacy?[
     {name:'사실성 (Factuality)',reason:qa.factuality_reason},
     {name:'완전성 (Completeness)',reason:qa.completeness_reason},
     {name:'구체성 (Specificity)',reason:qa.specificity_reason},
     {name:'간결성 (Conciseness)',reason:qa.conciseness_reason}
+  ]:[
+    {name:'완전성 (Completeness)',reason:qa.completeness_reason}
   ];
-  var qualRows=qualMetrics.map(function(m){
+  var allMetrics=ragMetrics.concat(qualMetrics);
+  var allRows=allMetrics.map(function(m){
     return '<div class="detail-metric">'
       +'<div class="detail-metric-name">'+m.name+'</div>'
       +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
       +'</div>';
   }).join('');
+  var scoreHeader='';
+  if(isLegacy){
+    // 구형(7개): RAG + 품질 각각 표시
+    scoreHeader=''
+      +(qa.triad_avg!=null?'<span style="font-size:10px;color:#64748b">RAG</span> <span style="font-family:monospace;font-size:12px;font-weight:700;color:#0284c7">'+qa.triad_avg.toFixed(3)+'</span>':'')
+      +(qa.triad_avg!=null&&qa.l2_avg!=null?' <span style="color:#cbd5e1;margin:0 4px">·</span> ':'')
+      +(qa.l2_avg!=null?'<span style="font-size:10px;color:#64748b">품질</span> <span style="font-family:monospace;font-size:12px;font-weight:700;color:#7c3aed">'+qa.l2_avg.toFixed(3)+'</span>':'');
+  } else {
+    // 신규(4개): (rag×3 + quality) / 4 단일 점수
+    var unifiedScore=((qa.triad_avg||0)*3+(qa.l2_avg||0))/4;
+    var uColor=unifiedScore>=0.85?'#059669':unifiedScore>=0.7?'#d97706':'#e11d48';
+    scoreHeader='<span style="font-family:monospace;font-size:14px;font-weight:900;color:'+uColor+'">'+unifiedScore.toFixed(3)+'</span>';
+  }
   var html='<button class="detail-back" onclick="showQAList()">← 목록으로</button>'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">'
     +'<strong style="font-size:20px;color:#1e293b">#'+qa.id+'</strong>'
     +'<div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div>'
     +'<span class="'+statusCls+'">'+statusLabel+'</span>'
     +'</div>'
+    +failureCallout
     +'<div class="detail-qa-box detail-qa-box-q">'
     +'<p class="detail-qa-label detail-qa-label-q">질문</p>'
     +'<p class="detail-qa-text">'+escHtml(qa.q)+'</p>'
@@ -634,16 +747,24 @@ function showQADetail(idx){
     +'<p class="detail-qa-text" style="color:#475569">'+escHtml(qa.a||'-')+'</p>'
     +'</div>'
     +(qa.context?'<div class="detail-qa-box detail-qa-box-ctx"><p class="detail-qa-label detail-qa-label-ctx">컨텍스트</p><p class="detail-context-text">'+escHtml(qa.context)+'</p></div>':'')
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px">'
-    +'<div class="detail-section detail-section-rag">'
-    +'<div class="detail-section-header"><p class="detail-section-title">RAG Triad</p><span style="font-family:monospace;font-size:12px;color:#0284c7;font-weight:600">'+qa.triad_avg.toFixed(3)+'</span></div>'
-    +'<div class="detail-section-body">'+ragRows+'</div>'
-    +'</div>'
+    +'<div style="margin-top:4px">'
     +'<div class="detail-section detail-section-qual">'
-    +'<div class="detail-section-header"><p class="detail-section-title">품질 평가</p><span style="font-family:monospace;font-size:12px;color:#7c3aed;font-weight:600">'+qa.l2_avg.toFixed(3)+'</span></div>'
-    +'<div class="detail-section-body">'+qualRows+'</div>'
+    +'<div class="detail-section-header"><p class="detail-section-title">품질 평가</p><div style="display:flex;align-items:center;gap:4px">'+scoreHeader+'</div></div>'
+    +'<div class="detail-section-body">'+allRows+'</div>'
     +'</div>'
-    +'</div>';
+    +'</div>'
+    +(function(){
+      var sortedPos=qaSortedData.indexOf(QA_DATA[idx]);
+      var hasPrev=sortedPos>0;
+      var hasNext=sortedPos<qaSortedData.length-1;
+      var prevIdx=hasPrev?QA_DATA.indexOf(qaSortedData[sortedPos-1]):-1;
+      var nextIdx=hasNext?QA_DATA.indexOf(qaSortedData[sortedPos+1]):-1;
+      return '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid #f1f5f9">'
+        +'<span style="font-size:12px;color:#94a3b8">'+(sortedPos+1)+' / '+qaSortedData.length+'</span>'
+        +'<button class="pg-btn" '+(hasPrev?'onclick="showQADetail('+prevIdx+')"':'disabled')+'>&#8592;</button>'
+        +'<button class="pg-btn" '+(hasNext?'onclick="showQADetail('+nextIdx+')"':'disabled')+'>&#8594;</button>'
+        +'</div>';
+    })();
   document.getElementById('qa-detail-view').innerHTML=html;
   document.getElementById('qa-list-view').style.display='none';
   document.getElementById('qa-detail-view').style.display='';
