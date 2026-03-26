@@ -451,7 +451,7 @@ async def run_qa_generation_real(
 
     # [2단계] 청크별 QA 생성 (domain_profile 기반 프롬프트 적용)
     max_workers = _get_generation_workers(model)
-    logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 문서 × workers={max_workers} ({model})")
+    logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 청크 × workers={max_workers} ({model})")
 
     results_map: Dict[int, Any] = {}
     total_input_tokens  = 0

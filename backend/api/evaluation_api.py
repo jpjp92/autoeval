@@ -310,9 +310,10 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "quality_avg":         q.get("avg_quality"),
                 "pass":                q.get("pass", False),
                 # RAG reason
-                "relevance_reason":    r.get("relevance_reason", ""),
-                "groundedness_reason": r.get("groundedness_reason", ""),
-                "clarity_reason":      r.get("clarity_reason", ""),
+                "relevance_reason":          r.get("relevance_reason", ""),
+                "groundedness_reason":       r.get("groundedness_reason", ""),
+                "clarity_reason":            r.get("clarity_reason", ""),            # 구형
+                "context_relevance_reason":  r.get("context_relevance_reason", ""), # 신형 (맥락성)
                 # Quality reason (completeness — 신규 / factuality·specificity·conciseness — legacy 하위호환)
                 "completeness_reason":  q.get("completeness_reason", ""),
                 "factuality_reason":    q.get("factuality_reason", ""),

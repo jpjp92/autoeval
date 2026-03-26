@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import numpy as np
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from google import genai as google_genai
 from pydantic import BaseModel
 
@@ -41,15 +41,14 @@ from config.supabase_client import (
 from ingestion.parsers import (
     build_context_prefix,
     build_sections,
+    chunk_blocks_aware,
     detect_chunk_type,
     detect_repeated_headers,
     extract_text_by_page,
     is_toc_chunk,
-    make_splitter,
     merge_adjacent_short_blocks,
     normalize_for_hash,
     remove_footer_noise,
-    strip_leading_fragment,
     strip_redundant_headings,
     _is_colophon_chunk,
     _is_symbol_noise_chunk,
@@ -133,7 +132,6 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
             logger.warning(f"[{filename}] No sections built.")
             return
 
-        splitter = make_splitter()
         section_stack: List[str] = []
         all_chunks_to_embed = []
         seen_hashes: set = set()
@@ -150,6 +148,7 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
 
             section_path = " > ".join(section_stack) if section_stack else "Document"
 
+            # page 역추적용 offset 계산 (page resolution에 필요)
             block_page_offsets = []
             section_text_parts = []
             cur_offset = 0
@@ -160,9 +159,9 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 cur_offset += len(b_text) + 1
             section_text = "\n".join(section_text_parts)
 
-            raw_chunks = splitter.split_text(section_text)
-            raw_chunks = [strip_leading_fragment(c) for c in raw_chunks]
-            raw_chunks = _merge_short_chunks(raw_chunks, min_chars=200, max_chars=1200)
+            # 블록 경계 보존 청킹 (문장 중간 컷 없음)
+            raw_chunks = chunk_blocks_aware(sec["blocks"])
+            raw_chunks = _merge_short_chunks(raw_chunks, min_chars=300, max_chars=1200)
 
             for chunk_text in raw_chunks:
                 stripped = chunk_text.lstrip()
@@ -182,8 +181,11 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 chunk_text = remove_footer_noise(chunk_text, repeated_headers)
                 chunk_text = strip_redundant_headings(chunk_text, heading)
 
-                if len(chunk_text.strip()) < 50:
+                if len(chunk_text.strip()) < 60:
                     _filter_counts["too_short"] += 1
+                    _filter_counts.setdefault("_too_short_samples", [])
+                    if len(_filter_counts["_too_short_samples"]) < 10:
+                        _filter_counts["_too_short_samples"].append(chunk_text.strip()[:80])
                     continue
 
                 norm_text = normalize_for_hash(chunk_text)
@@ -193,10 +195,14 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     continue
                 seen_hashes.add(content_hash)
 
-                context_prefix = build_context_prefix(filename, section_path, sec["page"])
-                enriched_text = context_prefix + chunk_text
                 chunk_type = detect_chunk_type(chunk_text).lower()
                 normalized_section_title = heading.replace('\n', ' ').replace('  ', ' ').strip()
+                # 법률 조문 제목 정규화: '제2조(정의) 이 법에서...' → '제2조(정의)'
+                _law_title_re = re.compile(r'^(제\d+조(?:의\d+)?(?:\([^)]{1,30}\))?)')
+                _m = _law_title_re.match(normalized_section_title)
+                prefix_title = _m.group(1) if _m else normalized_section_title
+                context_prefix = build_context_prefix(filename, prefix_title, sec["page"])
+                enriched_text = context_prefix + chunk_text
 
                 all_chunks_to_embed.append({
                     "text": enriched_text,
@@ -209,7 +215,10 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "chunk_type": chunk_type,
                 })
 
+        too_short_samples = _filter_counts.pop("_too_short_samples", [])
         logger.info(f"[{filename}] {len(all_chunks_to_embed)} chunks ready. Filtered — {_filter_counts}")
+        if too_short_samples:
+            logger.info(f"[{filename}] too_short samples: {too_short_samples}")
 
         if len(all_chunks_to_embed) == 0:
             logger.error(f"❌ [{filename}] 0 chunks produced. Filtered — {_filter_counts}")
@@ -302,13 +311,12 @@ def _is_admin_anchor(content: str) -> bool:
 
 @router.post("/upload", response_model=IngestionResponse)
 async def upload_document(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     hierarchy_h1: Optional[str] = Form(None),
     hierarchy_h2: Optional[str] = Form(None),
     hierarchy_h3: Optional[str] = Form(None),
 ):
-    """문서 업로드 및 벡터화 인제스션 시작."""
+    """문서 업로드 및 벡터화 인제스션 (동기 — 완료 후 응답)."""
     if not is_supabase_available():
         raise HTTPException(status_code=500, detail="Supabase 설정이 구성되지 않았습니다.")
 
@@ -342,11 +350,11 @@ async def upload_document(
             "hierarchy_h3": hierarchy_h3,
             "filename": file.filename,
         }
-        background_tasks.add_task(process_and_ingest, file.filename, pages, metadata)
+        await process_and_ingest(file.filename, pages, metadata)
 
         return IngestionResponse(
             success=True,
-            message="문서 업로드가 완료되었습니다. 백그라운드에서 벡터화 작업이 진행됩니다.",
+            message="문서 업로드 및 벡터화가 완료되었습니다.",
             file_name=file.filename,
         )
 
@@ -389,7 +397,9 @@ You are an expert document classifier. Build a complete hierarchical taxonomy (H
 </role>
 
 <constraints>
-- Identify exactly 3~5 distinct H1 domain categories covering the full document.
+- H1 COUNT RULE (STRICTLY ENFORCED): You MUST output between 3 and 5 H1 keys — no fewer than 3, no more than 5.
+  If you identify more than 5 themes, MERGE the most similar or overlapping ones until you have at most 5.
+  Think of H1 as broad domain pillars, not chapter titles.
 - For each H1, create {h2_guide} H2 sub-categories covering distinct content themes.
 - For each H2, create 2~4 specific H3 leaf labels.
 - All names in Korean (한국어), under 15 characters each.
@@ -431,6 +441,17 @@ Return a JSON object with this exact structure:
             raise ValueError(f"Unexpected LLM response: {type(result.get('h2_h3_master'))}")
         h2_h3_master = result["h2_h3_master"]
         h1_candidates = list(h2_h3_master.keys())
+
+        # H1 개수 검증 — LLM이 제약을 초과한 경우 앞 5개로 절단
+        H1_MAX = 5
+        if len(h1_candidates) > H1_MAX:
+            logger.warning(
+                f"H1 over-generation: {len(h1_candidates)}개 → {H1_MAX}개로 절단 "
+                f"(제거: {h1_candidates[H1_MAX:]})"
+            )
+            h1_candidates = h1_candidates[:H1_MAX]
+            h2_h3_master  = {k: h2_h3_master[k] for k in h1_candidates}
+
         # anchor 청크에서 document_id 추출 (동일 업로드 배치의 첫 청크 기준)
         document_id = (anchor_chunks[0].get("metadata") or {}).get("document_id") if anchor_chunks else None
         return HierarchyAnalysisResponse(

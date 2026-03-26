@@ -33,6 +33,21 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
         response = query.execute()
         chunks = response.data or []
 
+        # filename별 최신 document_id만 사용 (재인제스션 시 구버전 H1 누적 방지)
+        latest_doc_ids: dict[str, tuple[str, str]] = {}  # filename → (document_id, ingested_at)
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            fn = meta.get("filename", "")
+            did = meta.get("document_id", "")
+            iat = meta.get("ingested_at", "")
+            if fn and did:
+                prev = latest_doc_ids.get(fn)
+                if prev is None or iat > prev[1]:
+                    latest_doc_ids[fn] = (did, iat)
+        latest_ids = {v[0] for v in latest_doc_ids.values()}
+        if latest_ids:
+            chunks = [c for c in chunks if c.get("metadata", {}).get("document_id") in latest_ids]
+
         h2_by_h1: Dict[str, set] = {}
         h3_by_h1_h2: Dict[str, set] = {}
         admin_count = 0

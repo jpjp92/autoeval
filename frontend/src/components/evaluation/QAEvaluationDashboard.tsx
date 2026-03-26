@@ -92,9 +92,10 @@ interface QAPreviewItem {
   primary_failure?: string | null;
   failure_reason?:  string;
   // reason — RAG
-  relevance_reason?:    string;
-  groundedness_reason?: string;
-  clarity_reason?:      string;
+  relevance_reason?:         string;
+  groundedness_reason?:      string;
+  clarity_reason?:           string;  // 구형 (명확성)
+  context_relevance_reason?: string;  // 신형 (맥락성)
   // reason — Quality
   factuality_reason?:   string;
   completeness_reason?: string;
@@ -116,7 +117,7 @@ interface EvalReport {
       skewness:         { score: number };
       data_sufficiency: { score: number };
     };
-    rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_clarity: number; avg_score: number } };
+    rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_clarity?: number; avg_context_relevance?: number; avg_score: number } };
     quality?: { pass_count: number; pass_rate: number; summary: { avg_completeness: number; avg_quality: number; avg_factuality?: number; avg_specificity?: number; avg_conciseness?: number } };
   };
   summary: {
@@ -181,11 +182,15 @@ function buildChartData(report: EvalReport) {
     value:   value as number,
   }));
 
-  const isLegacyQuality = !!(qua?.summary?.avg_factuality);
+  const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
+  const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
     { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
     { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity      ?? 0, group: 'rag' as const },
+    ...(isLegacyClarity
+      ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
+      : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]
+    ),
     ...(isLegacyQuality ? [
       { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
       { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
@@ -226,11 +231,15 @@ function buildChartDataFromHistory(item: HistoryItem) {
     name, label: name.charAt(0).toUpperCase() + name.slice(1), krLabel: INTENT_KR[name] ?? name, value: value as number,
   }));
 
-  const isLegacyQuality = !!(qua?.summary?.avg_factuality);
+  const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
+  const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
     { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
     { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity      ?? 0, group: 'rag' as const },
+    ...(isLegacyClarity
+      ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
+      : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]
+    ),
     ...(isLegacyQuality ? [
       { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
       { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
@@ -402,7 +411,13 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   const ragDimensions = [
     { label: '관련성', reason: qa.relevance_reason },
     { label: '근거성', reason: qa.groundedness_reason },
-    { label: '명확성', reason: qa.clarity_reason },
+    // 구형: 명확성(clarity) / 신형: 맥락성(context_relevance)
+    ...(qa.clarity_reason
+      ? [{ label: '명확성', reason: qa.clarity_reason }]
+      : qa.context_relevance_reason
+        ? [{ label: '맥락성', reason: qa.context_relevance_reason }]
+        : []
+    ),
   ].filter(r => r.reason);
 
   // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
@@ -712,7 +727,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types, relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, clarity_reason: q.clarity_reason, factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, failure_reason: q.failure_reason })),
+    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types, relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, clarity_reason: q.clarity_reason, context_relevance_reason: q.context_relevance_reason, factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, failure_reason: q.failure_reason })),
     metadata: {
       qa_model: (() => {
         const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;

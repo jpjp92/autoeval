@@ -419,7 +419,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">문서당 샘플 수</label>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">청크 샘플 수</label>
               <input
                 type="number" min="1" max="50" placeholder="1 – 50"
                 value={sampleInputValue}
@@ -485,21 +485,21 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H1 카테고리</label>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H1 대분류</label>
                   <select value={selectedH1} onChange={e => handleH1Change(e.target.value)} disabled={isGenerating} className={selectCls(isGenerating)}>
                     <option value="">전체</option>
                     {hierarchyH1List.map(h1 => <option key={h1} value={h1}>{h1}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H2 섹션</label>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H2 중분류</label>
                   <select value={selectedH2} onChange={e => handleH2Change(e.target.value)} disabled={isGenerating || !selectedH1} className={selectCls(isGenerating || !selectedH1)}>
                     <option value="">전체</option>
                     {(hierarchyH2Map[selectedH1] || []).map(h2 => <option key={h2} value={h2}>{h2}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H3 항목</label>
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H3 소분류</label>
                   <select value={selectedH3} onChange={e => setSelectedH3(e.target.value)} disabled={isGenerating || !selectedH2} className={selectCls(isGenerating || !selectedH2)}>
                     <option value="">전체</option>
                     {(hierarchyH3Map[`${selectedH1}__${selectedH2}`] || []).map(h3 => <option key={h3} value={h3}>{h3}</option>)}
