@@ -14,25 +14,37 @@ import { getEvalStatus, getEvalHistory, getEvalExport, getEvalExportById } from 
 
 // ─── Intent 레이블 ────────────────────────────────────────────────────────────
 const INTENT_KR: Record<string, string> = {
-  factoid:   '사실형',
-  numeric:   '수치형',
-  procedure: '절차형',
-  why:       '원인형',
-  how:       '방법형',
-  definition:'정의형',
-  list:      '목록형',
-  boolean:   '확인형',
+  // 신규 6종 (2026-03-25~)
+  fact:       '사실형',
+  purpose:    '원인형',
+  how:        '방법형',
+  condition:  '조건형',
+  comparison: '비교형',
+  list:       '열거형',
+  // 구형 8종 (하위 호환)
+  factoid:    '사실형',
+  numeric:    '수치형',
+  procedure:  '절차형',
+  why:        '원인형',
+  definition: '정의형',
+  boolean:    '확인형',
 };
 
 const INTENT_COLORS: Record<string, string> = {
-  factoid:   '#06b6d4',
-  numeric:   '#eab308',
-  procedure: '#3b82f6',
-  why:       '#d946ef',
-  how:       '#22c55e',
-  definition:'#0ea5e9',
-  list:      '#f59e0b',
-  boolean:   '#c026d3',
+  // 신규 6종
+  fact:       '#3b82f6',
+  purpose:    '#d946ef',
+  how:        '#22c55e',
+  condition:  '#f59e0b',
+  comparison: '#6366f1',
+  list:       '#06b6d4',
+  // 구형 8종 (하위 호환)
+  factoid:    '#3b82f6',
+  numeric:    '#eab308',
+  procedure:  '#6366f1',
+  why:        '#d946ef',
+  definition: '#0ea5e9',
+  boolean:    '#c026d3',
 };
 
 // ─── 상태 로직 ────────────────────────────────────────────────────────────────
@@ -55,12 +67,14 @@ const STATUS_CONFIG: Record<QAStatus, { label: string; className: string; dotCol
 
 // ─── Failure Type ─────────────────────────────────────────────────────────────
 const FAILURE_CONFIG: Record<string, { label: string; className: string }> = {
-  hallucination:      { label: '환각',    className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  faithfulness_error: { label: '충실도오류', className: 'bg-orange-50 text-orange-700 border-orange-200' },
-  retrieval_miss:     { label: '검색미스',  className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  ambiguous_question: { label: '모호',    className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  bad_chunk:          { label: '불량청크', className: 'bg-slate-100 text-slate-600 border-slate-200' },
-  evaluation_error:   { label: '평가오류', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+  hallucination:      { label: '환각오류',   className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  faithfulness_error: { label: '근거오류',   className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  retrieval_miss:     { label: '검색오류',   className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  ambiguous_question: { label: '질문모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  bad_chunk:          { label: '불량청크',   className: 'bg-slate-100 text-slate-600 border-slate-200' },
+  evaluation_error:   { label: '평가오류',   className: 'bg-purple-50 text-purple-700 border-purple-200' },
+  low_quality:        { label: '품질미달',   className: 'bg-pink-50 text-pink-700 border-pink-200' },
+  syntax_error:       { label: '구문오류',   className: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -103,7 +117,7 @@ interface EvalReport {
       data_sufficiency: { score: number };
     };
     rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_clarity: number; avg_score: number } };
-    quality?: { pass_count: number; pass_rate: number; summary: { avg_factuality: number; avg_completeness: number; avg_specificity: number; avg_conciseness: number; avg_quality: number } };
+    quality?: { pass_count: number; pass_rate: number; summary: { avg_completeness: number; avg_quality: number; avg_factuality?: number; avg_specificity?: number; avg_conciseness?: number } };
   };
   summary: {
     syntax_pass_rate: number;
@@ -167,14 +181,19 @@ function buildChartData(report: EvalReport) {
     value:   value as number,
   }));
 
+  const isLegacyQuality = !!(qua?.summary?.avg_factuality);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0, group: 'rag' as const },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0, group: 'rag' as const },
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0, group: 'quality' as const },
-    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0, group: 'quality' as const },
-    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0, group: 'quality' as const },
-    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0, group: 'quality' as const },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity      ?? 0, group: 'rag' as const },
+    ...(isLegacyQuality ? [
+      { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
+      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
+      { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity  ?? 0, group: 'quality' as const },
+      { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness  ?? 0, group: 'quality' as const },
+    ] : [
+      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
+    ]),
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -207,14 +226,19 @@ function buildChartDataFromHistory(item: HistoryItem) {
     name, label: name.charAt(0).toUpperCase() + name.slice(1), krLabel: INTENT_KR[name] ?? name, value: value as number,
   }));
 
+  const isLegacyQuality = !!(qua?.summary?.avg_factuality);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance     ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness  ?? 0, group: 'rag' as const },
-    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity       ?? 0, group: 'rag' as const },
-    { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality    ?? 0, group: 'quality' as const },
-    { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness  ?? 0, group: 'quality' as const },
-    { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity   ?? 0, group: 'quality' as const },
-    { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness   ?? 0, group: 'quality' as const },
+    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
+    { name: '명확성', nameEn: 'Clarity',      score: rag?.summary?.avg_clarity      ?? 0, group: 'rag' as const },
+    ...(isLegacyQuality ? [
+      { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
+      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
+      { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity  ?? 0, group: 'quality' as const },
+      { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness  ?? 0, group: 'quality' as const },
+    ] : [
+      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
+    ]),
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -307,7 +331,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
   }, []);
 
   return (
-    <div ref={containerRef} className="space-y-2.5 py-1">
+    <div ref={containerRef} className={cn("py-1", data.length <= 4 ? "space-y-5" : "space-y-2.5")}>
       {data.map((item, i) => {
         const color = item.score >= 0.85 ? 'bg-emerald-500' : item.score >= 0.7 ? 'bg-amber-400' : 'bg-rose-400';
         const textColor = item.score >= 0.85 ? 'text-emerald-600' : item.score >= 0.7 ? 'text-amber-600' : 'text-rose-500';
@@ -355,7 +379,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
         );
       })}
       {/* 범례 — 우측 정렬 */}
-      <div className="flex justify-end pt-2">
+      <div className={cn("flex justify-end", data.length <= 4 ? "pt-16" : "pt-2")}>
         <div className="flex gap-3 text-[9px] text-slate-400 items-center">
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />≥ 0.85</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />≥ 0.70</span>
@@ -371,18 +395,30 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   const status = getQAStatus(qa.quality_avg, qa.rag_avg);
   const cfg    = STATUS_CONFIG[status];
 
+  // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
+  const isLegacy = !!(qa.factuality_reason || qa.specificity_reason || qa.conciseness_reason);
+
+  // RAG 차원 (신·구 공통)
   const ragDimensions = [
     { label: '관련성', reason: qa.relevance_reason },
     { label: '근거성', reason: qa.groundedness_reason },
     { label: '명확성', reason: qa.clarity_reason },
   ].filter(r => r.reason);
 
-  const qualityDimensions = [
-    { label: '사실성', reason: qa.factuality_reason },
-    { label: '완전성', reason: qa.completeness_reason },
-    { label: '구체성', reason: qa.specificity_reason },
-    { label: '간결성', reason: qa.conciseness_reason },
-  ].filter(r => r.reason);
+  // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
+  const qualityDimensions = isLegacy
+    ? [
+        { label: '사실성', reason: qa.factuality_reason },
+        { label: '완전성', reason: qa.completeness_reason },
+        { label: '구체성', reason: qa.specificity_reason },
+        { label: '간결성', reason: qa.conciseness_reason },
+      ].filter(r => r.reason)
+    : [
+        { label: '완전성', reason: qa.completeness_reason },
+      ].filter(r => r.reason);
+
+  // 통합 차원 목록
+  const allDimensions = [...ragDimensions, ...qualityDimensions];
 
   const scoreColor = (v: number) =>
     v >= 0.85 ? 'text-emerald-600' : v >= 0.7 ? 'text-amber-500' : 'text-rose-600';
@@ -460,44 +496,50 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
         )}
       </div>
 
-      {/* RAG Triad 섹션 — avg + 차원별 reason */}
-      {(qa.rag_avg != null || ragDimensions.length > 0) && (
-        <div className="bg-sky-50/40 rounded-xl border border-sky-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-sky-100">
-            <p className="text-xs font-semibold text-sky-600 uppercase tracking-wide">RAG Triad</p>
-            {qa.rag_avg != null && (
-              <span className={cn('text-lg font-black font-mono', scoreColor(qa.rag_avg))}>
-                {qa.rag_avg.toFixed(3)}
-              </span>
-            )}
-          </div>
-          {ragDimensions.length > 0 && (
-            <div className="divide-y divide-sky-100">
-              {ragDimensions.map(({ label, reason }) => (
-                <div key={label} className="flex gap-3 px-4 py-3 text-xs">
-                  <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
-                  <span className="text-slate-600 leading-relaxed">{reason}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 품질 평가 섹션 — avg + 차원별 reason */}
-      {(qa.quality_avg != null || qualityDimensions.length > 0) && (
+      {/* 품질 평가 — RAG Triad + Quality 통합 섹션 */}
+      {(qa.rag_avg != null || qa.quality_avg != null || allDimensions.length > 0) && (
         <div className="bg-violet-50/40 rounded-xl border border-violet-200 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-violet-100">
             <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">품질 평가</p>
-            {qa.quality_avg != null && (
-              <span className={cn('text-lg font-black font-mono', scoreColor(qa.quality_avg))}>
-                {qa.quality_avg.toFixed(3)}
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {isLegacy ? (
+                // 구형(7개): RAG + 품질 각각 표시
+                <>
+                  {qa.rag_avg != null && (
+                    <span className="flex items-center gap-1 text-[10px]">
+                      <span className="text-slate-400 font-medium">RAG</span>
+                      <span className={cn('font-black font-mono text-sm', scoreColor(qa.rag_avg))}>
+                        {qa.rag_avg.toFixed(3)}
+                      </span>
+                    </span>
+                  )}
+                  {qa.quality_avg != null && (
+                    <span className="flex items-center gap-1 text-[10px]">
+                      <span className="text-slate-400 font-medium">품질</span>
+                      <span className={cn('font-black font-mono text-sm', scoreColor(qa.quality_avg))}>
+                        {qa.quality_avg.toFixed(3)}
+                      </span>
+                    </span>
+                  )}
+                </>
+              ) : (
+                // 신규(4개): 4지표 단순 평균 단일 표시
+                (() => {
+                  const r = qa.rag_avg ?? 0;
+                  const q = qa.quality_avg ?? 0;
+                  const unified = (r * 3 + q) / 4;
+                  return (
+                    <span className={cn('font-black font-mono text-lg', scoreColor(unified))}>
+                      {unified.toFixed(3)}
+                    </span>
+                  );
+                })()
+              )}
+            </div>
           </div>
-          {qualityDimensions.length > 0 && (
+          {allDimensions.length > 0 && (
             <div className="divide-y divide-violet-100">
-              {qualityDimensions.map(({ label, reason }) => (
+              {allDimensions.map(({ label, reason }) => (
                 <div key={label} className="flex gap-3 px-4 py-3 text-xs">
                   <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
                   <span className="text-slate-600 leading-relaxed">{reason}</span>
@@ -539,6 +581,8 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [qaPage, setQaPage]                   = useState(0);
   const [statusFilter, setStatusFilter]       = useState<QAStatus | null>(null);
+  const [sortCol, setSortCol]                 = useState<string | null>(null);
+  const [sortDir, setSortDir]                 = useState<'asc' | 'desc'>('asc');
   const [selectedQA, setSelectedQA]           = useState<QAPreviewItem | null>(null);
   const prevEvalJobId = useRef<string | null>(null);
 
@@ -635,8 +679,23 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   const filteredQA   = statusFilter
     ? qaPreview.filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === statusFilter)
     : qaPreview;
-  const totalPages   = Math.max(1, Math.ceil(filteredQA.length / QA_PAGE_SIZE));
-  const pagedQA      = filteredQA.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
+  const sortedQA = sortCol ? [...filteredQA].sort((a, b) => {
+    let av: any, bv: any;
+    if (sortCol === 'id')       { av = a.qa_index; bv = b.qa_index; }
+    else if (sortCol === 'intent')  { av = a.intent ?? ''; bv = b.intent ?? ''; }
+    else if (sortCol === 'q')       { av = a.q ?? ''; bv = b.q ?? ''; }
+    else if (sortCol === 'a')       { av = a.a ?? ''; bv = b.a ?? ''; }
+    else if (sortCol === 'quality') { av = a.quality_avg ?? -1; bv = b.quality_avg ?? -1; }
+    else if (sortCol === 'triad')   { av = a.rag_avg ?? -1; bv = b.rag_avg ?? -1; }
+    else if (sortCol === 'status')  { av = getQAStatus(a.quality_avg, a.rag_avg); bv = getQAStatus(b.quality_avg, b.rag_avg); }
+    else if (sortCol === 'failure') { av = a.primary_failure ?? ''; bv = b.primary_failure ?? ''; }
+    else return 0;
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  }) : filteredQA;
+  const totalPages   = Math.max(1, Math.ceil(sortedQA.length / QA_PAGE_SIZE));
+  const pagedQA      = sortedQA.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
 
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
@@ -917,11 +976,15 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
               </RadarChart>
             </ResponsiveContainer>
           </div>
-          {activeReport?.pipeline_results?.stats?.integrated_score != null && (
-            <p className="text-center text-xs text-slate-500 mt-1">
-              통합 점수: <span className="font-semibold text-indigo-600">{activeReport.pipeline_results.stats.integrated_score.toFixed(1)} / 10</span>
-            </p>
-          )}
+          {(() => {
+            const intScore = activeReport?.pipeline_results?.stats?.integrated_score
+              ?? activeItem?.pipeline_results?.layers?.stats?.integrated_score;
+            return intScore != null ? (
+              <p className="text-center text-xs text-slate-500 mt-1">
+                통합 점수: <span className="font-semibold text-indigo-600">{(intScore as number).toFixed(1)} / 10</span>
+              </p>
+            ) : null;
+          })()}
         </div>
 
         {/* 품질 점수 — 커스텀 인터랙티브 바 */}
@@ -938,7 +1001,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
               items={[
                 { text: 'LLM 기반 평가 점수입니다 (0–1).' },
                 { label: 'RAG Triad', text: '관련성 · 근거성 · 명확성' },
-                { label: '품질 평가', text: '사실성 · 완전성 · 구체성 · 간결성' },
+                { label: '품질 평가', text: '완전성' },
                 { label: '등급', text: '0.85↑ 우수 / 0.70↑ 양호 / 미만 미흡' },
               ]}
             />
@@ -1001,14 +1064,32 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 font-medium w-10">#</th>
-                    <th className="px-4 py-3 font-medium w-24">의도</th>
-                    <th className="px-4 py-3 font-medium">질문</th>
-                    <th className="px-4 py-3 font-medium">답변</th>
-                    <th className="px-4 py-3 font-medium text-center w-24">품질 점수</th>
-                    <th className="px-4 py-3 font-medium text-center w-24">Triad 점수</th>
-                    <th className="px-4 py-3 font-medium text-center w-20">상태</th>
-                    <th className="px-4 py-3 font-medium text-center w-24">실패유형</th>
+                    {([
+                      { col: 'id',      label: 'ID',       cls: 'w-10'  },
+                      { col: 'intent',  label: '의도',      cls: 'w-24'  },
+                      { col: 'q',       label: '질문',      cls: ''      },
+                      { col: 'a',       label: '답변',      cls: ''      },
+                      { col: 'quality', label: '품질 점수',  cls: 'w-24'  },
+                      { col: 'triad',   label: 'Triad 점수', cls: 'w-24' },
+                      { col: 'status',  label: '상태',      cls: 'w-20'  },
+                      { col: 'failure', label: '실패유형',   cls: 'w-24'  },
+                    ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
+                      <th
+                        key={col}
+                        onClick={() => {
+                          if (sortCol === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setQaPage(0); }
+                          else { setSortCol(col); setSortDir('asc'); setQaPage(0); }
+                        }}
+                        className={cn('px-4 py-3 font-medium text-center cursor-pointer select-none hover:bg-slate-100 transition-colors', cls)}
+                      >
+                        <span className="inline-flex items-center justify-center gap-1">
+                          {label}
+                          <span className="text-[10px] text-slate-300">
+                            {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                          </span>
+                        </span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1031,8 +1112,8 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                         onClick={() => setSelectedQA(row)}
                         className="hover:bg-indigo-50/40 transition-colors cursor-pointer group"
                       >
-                        <td className="px-4 py-3.5 text-slate-400 font-mono text-xs">{row.qa_index + 1}</td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-3.5 text-slate-400 font-mono text-xs text-center">{row.qa_index + 1}</td>
+                        <td className="px-4 py-3.5 text-center">
                           <span
                             className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border inline-block"
                             style={{
@@ -1044,12 +1125,12 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                             {(INTENT_KR[row.intent] ?? row.intent) || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-slate-700 font-medium max-w-[200px]">
-                          <p className="truncate text-xs" title={row.q}>{row.q}</p>
+                        <td className="px-4 py-3.5 text-slate-700 font-medium w-[200px] max-w-[200px]">
+                          <p className="line-clamp-3 text-xs leading-relaxed">{row.q}</p>
                         </td>
-                        <td className="px-4 py-3.5 text-slate-500 max-w-[200px]">
+                        <td className="px-4 py-3.5 text-slate-500 w-[200px] max-w-[200px]">
                           {row.a
-                            ? <p className="truncate text-xs" title={row.a}>{row.a}</p>
+                            ? <p className="line-clamp-3 text-xs leading-relaxed">{row.a}</p>
                             : <span className="text-slate-300 text-xs">-</span>}
                         </td>
                         <td className="px-4 py-3.5 text-center font-mono text-xs">

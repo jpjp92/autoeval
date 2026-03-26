@@ -93,16 +93,16 @@ class QAQualityEvaluator:
         return "openai"
 
     def _call_llm_combined(self, prompt: str) -> str:
-        """4개 지표를 단일 호출로 평가 — JSON 응답 (score + reason)"""
+        """completeness 단일 지표 평가 — JSON 응답 (score + reason)"""
         sys_msg = """\
 <role>
 You are a strict but fair data quality auditor evaluating QA pairs.
-Evaluate all four dimensions objectively based solely on the provided context.
+Evaluate completeness objectively based solely on the provided context.
 </role>
 <output_format>
 Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
-For each reason, write exactly 1 concise sentence in Korean explaining the score.
-{"factuality": <int 0-10>, "factuality_reason": "<1 sentence in Korean>", "completeness": <int 0-10>, "completeness_reason": "<1 sentence in Korean>", "specificity": <int 0-10>, "specificity_reason": "<1 sentence in Korean>", "conciseness": <int 0-10>, "conciseness_reason": "<1 sentence in Korean>"}
+For the reason, write exactly 1 concise sentence in Korean explaining the score.
+{"completeness": <int 0-10>, "completeness_reason": "<1 sentence in Korean>"}
 </output_format>"""
         try:
             if self.provider == "openai" and self.client:
@@ -133,7 +133,7 @@ For each reason, write exactly 1 concise sentence in Korean explaining the score
         return "{}"
 
     def _parse_combined(self, raw: str) -> dict:
-        """JSON 응답에서 4개 점수 + reason 파싱 — 실패 시 0.5 fallback"""
+        """JSON 응답에서 completeness 점수 + reason 파싱 — 실패 시 0.5 fallback"""
         text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             data = json.loads(text)
@@ -141,26 +141,15 @@ For each reason, write exactly 1 concise sentence in Korean explaining the score
                 val = data.get(key, 5)
                 return min(10, max(0, int(val))) / 10.0
             return {
-                "factuality":          _score("factuality"),
-                "factuality_reason":   str(data.get("factuality_reason", "")),
                 "completeness":        _score("completeness"),
                 "completeness_reason": str(data.get("completeness_reason", "")),
-                "specificity":         _score("specificity"),
-                "specificity_reason":  str(data.get("specificity_reason", "")),
-                "conciseness":         _score("conciseness"),
-                "conciseness_reason":  str(data.get("conciseness_reason", "")),
             }
         except Exception:
             logger.warning(f"Combined parse failed, raw: {raw[:200]}")
-            return {
-                "factuality": 0.5, "factuality_reason": "",
-                "completeness": 0.5, "completeness_reason": "",
-                "specificity": 0.5, "specificity_reason": "",
-                "conciseness": 0.5, "conciseness_reason": "",
-            }
+            return {"completeness": 0.5, "completeness_reason": ""}
 
     def evaluate_all(self, question: str, answer: str, context: str, intent: str = "") -> dict:
-        """사실성·완전성·구체성·간결성을 단일 LLM 호출로 평가 (intent 타입 반영)"""
+        """완전성을 단일 LLM 호출로 평가 (intent 타입 반영)"""
         clean_ctx = clean_markdown(context)
         intent_tag = f"\n<intent_type>{intent}</intent_type>" if intent else ""
         prompt = f"""<context>
@@ -171,36 +160,21 @@ For each reason, write exactly 1 concise sentence in Korean explaining the score
 <answer>{answer}</answer>{intent_tag}
 
 <scoring_dimensions>
-1. factuality (0-10): Are the answer's claims factually consistent with the context?
-   - 10: All claims match context semantically
-   - 6-7: Core claims match, minor gaps
-   - 0-3: Claims contradict or cannot be derived from context
-
-2. completeness (0-10): Does the answer fully address the question given its intent type?
+completeness (0-10): Does the answer fully address the question given its intent type?
    Intent-specific rubrics:
    - list / procedure: 10 = all items/steps enumerated; 5 = partial list; 0 = single sentence
    - boolean: 10 = clear yes/no + brief reason from context; 5 = yes/no only; 0 = hedged non-answer
    - numeric: 10 = exact figure cited with unit; 5 = approximate; 0 = no figure present
    - factoid / definition / how / why / (other): 10 = comprehensive; 6-7 = main point covered; 0-3 = barely addresses
-
-3. specificity (0-10): Is the answer precise rather than vague or generic?
-   - 10: Concrete, uses specific entities/numbers/procedures from context
-   - 5-6: Partially specific, some vague phrases
-   - 0-3: Generic filler language ("it depends", "various methods", "as appropriate")
-
-4. conciseness (0-10): Is the answer appropriately sized for the question type?
-   - list / procedure: 10 = enumerated items without padding; 5 = correct but verbose
-   - boolean: 10 = answer within 3 sentences; 5 = over-explained; 0 = key answer buried
-   - others: 10 = complete in ≤5 sentences without repetition; 5 = some padding; 0 = excessive
 </scoring_dimensions>
 
 <task>
-Evaluate the QA pair on all four dimensions. Score each 0-10.
+Evaluate the QA pair on completeness. Score 0-10.
 Return ONLY valid JSON:
-{{"factuality": <0-10>, "completeness": <0-10>, "specificity": <0-10>, "conciseness": <0-10>}}
+{{"completeness": <0-10>, "completeness_reason": "<1 sentence in Korean>"}}
 </task>"""
         try:
             raw = self._call_llm_combined(prompt)
             return self._parse_combined(raw)
         except Exception:
-            return {"factuality": 0.5, "completeness": 0.5, "specificity": 0.5, "conciseness": 0.5}
+            return {"completeness": 0.5, "completeness_reason": ""}

@@ -35,21 +35,29 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
 
         h2_by_h1: Dict[str, set] = {}
         h3_by_h1_h2: Dict[str, set] = {}
+        admin_count = 0
         for chunk in chunks:
             meta = chunk.get("metadata", {})
             h1 = meta.get("hierarchy_h1")
             h2 = meta.get("hierarchy_h2")
             h3 = meta.get("hierarchy_h3")
-            if h1:
-                if h1 not in h2_by_h1:
-                    h2_by_h1[h1] = set()
-                if h2:
-                    h2_by_h1[h1].add(h2)
-                    if h3:
-                        key = f"{h1}__{h2}"
-                        if key not in h3_by_h1_h2:
-                            h3_by_h1_h2[key] = set()
-                        h3_by_h1_h2[key].add(h3)
+            if not h1:
+                continue
+            if h1 == "__admin__":
+                admin_count += 1
+                continue
+            if h1 not in h2_by_h1:
+                h2_by_h1[h1] = set()
+            if h2 and h2 != "__admin__":
+                h2_by_h1[h1].add(h2)
+                if h3 and h3 != "__admin__":
+                    key = f"{h1}__{h2}"
+                    if key not in h3_by_h1_h2:
+                        h3_by_h1_h2[key] = set()
+                    h3_by_h1_h2[key].add(h3)
+
+        if admin_count:
+            logger.info(f"⏭️ __admin__ chunks excluded from hierarchy list: {admin_count} (filename={filename!r})")
 
         return {
             "h1_list": sorted(h2_by_h1.keys()),

@@ -64,12 +64,12 @@ BASE_DIR = Path(__file__).parent.parent
 logger = logging.getLogger("autoeval.generation")
 
 # 프로바이더별 최대 동시 생성 workers
-# 생성은 평가보다 요청당 토큰이 무거우므로 평가보다 낮게 설정
-#   - gemini-3.1-flash: RPM 1,000 / TPM 2M, 문서당 ~5K tok → 5
-#   - claude-sonnet:    RPM 50 / Output TPM 8K (병목) → 2
-#   - gpt-5.2:          RPM 500 / TPM 500K, 문서당 ~5K tok → 5
+# 청크당 추정: input ~1,600 + output ~700 tokens, 호출 1회 ~25초
+#   - gemini-3.1-flash: RPM 1,000 / TPM 2M  → workers=5 (RPM ~12, TPM ~8.4K)
+#   - claude-sonnet-4.6: RPM 50 / TPM 30K   → workers=4 (RPM ~10, TPM ~6.7K) ※구형 8K 기준 아님
+#   - gpt-5.2:           RPM 500 / TPM 500K → workers=5 (RPM ~12, TPM ~8.4K)
 GENERATION_MAX_WORKERS: Dict[str, int] = {
-    "anthropic": 2,   # claude-sonnet Output TPM 8K 병목
+    "anthropic": 4,   # claude-sonnet-4.6: RPM 50 / TPM 30K → workers=4 (한도 20% 이내)
     "google":    5,   # gemini-3.1-flash Tier 1 Paid
     "openai":    5,   # gpt-5.1 / gpt-5.2
 }
@@ -112,6 +112,9 @@ class GenerateRequest(BaseModel):
 
     # anchor_ids: analyze-hierarchy에서 고정된 균등 샘플 청크 ID 목록
     anchor_ids: Optional[list] = None
+
+    # document_id: 업로드 버전 식별자 — fallback 경로에서 버전 격리용
+    document_id: Optional[str] = None
 
 class GenerationStatus(BaseModel):
     job_id: str
@@ -278,8 +281,9 @@ async def run_qa_generation_real(
     r_query = config.get("retrieval_query")
     doc_filename = config.get("filename")
     anchor_ids = config.get("anchor_ids") or []
+    document_id = config.get("document_id")
 
-    logger.info(f"[{job_id}] Config: filename={doc_filename!r}, h1={h1!r}, h2={h2!r}, h3={h3!r}")
+    logger.info(f"[{job_id}] Config: filename={doc_filename!r}, h1={h1!r}, h2={h2!r}, h3={h3!r}, document_id={document_id!r}")
 
     items = []
 
@@ -335,6 +339,7 @@ async def run_qa_generation_real(
                         hierarchy_h2=h2,
                         hierarchy_h3=h3,
                         filename=doc_filename,
+                        document_id=document_id,
                         limit=samples - len(chunks),
                         exclude_ids=[c["id"] for c in chunks],
                     )
@@ -346,6 +351,7 @@ async def run_qa_generation_real(
                     hierarchy_h2=h2,
                     hierarchy_h3=h3,
                     filename=doc_filename,
+                    document_id=document_id,
                     limit=max(samples * 3, 30),
                 )
             if not chunks and (h1 or h2 or h3):
@@ -371,6 +377,8 @@ async def run_qa_generation_real(
             meta    = chunk.get("metadata", {})
             content = chunk.get("content", "")
             if meta.get("chunk_type") == "heading":
+                return True
+            if meta.get("hierarchy_h1") == "__admin__":
                 return True
             if sum(1 for kw in _COLOPHON_KEYWORDS if kw in content) >= 2:
                 return True

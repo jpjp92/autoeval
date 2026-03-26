@@ -356,15 +356,6 @@ def detect_chunk_type(text: str) -> str:
     return "Body"
 
 
-def extract_keywords(text: str, top_n: int = 5) -> List[str]:
-    """간이 빈도 기반 키워드 추출 (불용어 제외)."""
-    words = re.findall(r'[가-힣]{2,}', text)
-    if not words:
-        return []
-    counts = Counter(words)
-    return [w for w, _ in counts.most_common(top_n)]
-
-
 def build_context_prefix(filename: str, section_path: str, page: int) -> str:
     """RAG 검색 품질 향상을 위한 표준 컨텍스트 프리픽스."""
     return f"문서: {filename}\n섹션: {section_path}\n페이지: {page}\n\n"
@@ -571,6 +562,29 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                         }))
 
                 page_items.sort(key=lambda x: x[0])
+
+                # 괄호형 영문 용어 절단 방지:
+                # PDF 레이아웃에서 "ROI\n(Return on Investment)" 또는
+                # "결과 왜곡\n(Distortion)을" 처럼 블록이 분리된 경우
+                # 이전 블록에 공백으로 병합.
+                # 패턴 ①: 블록이 "(영문자..." 로 시작 (여는 괄호형)
+                # 패턴 ②: 블록이 "영문대소문자+)..." 로 시작 (닫는 괄호형)
+                _PAREN_CONT = re.compile(r'^(\([A-Za-z]|[A-Z][a-z]+\))')
+                merged_items: list = []
+                for item in page_items:
+                    y_pos, text, block_dict = item
+                    if (
+                        merged_items
+                        and _PAREN_CONT.match(text.strip())
+                        and not block_dict.get("is_table")
+                    ):
+                        py, prev_text, prev_block = merged_items[-1]
+                        joined = prev_text.rstrip() + " " + text.strip()
+                        merged_items[-1] = (py, joined, {**prev_block, "text": joined})
+                    else:
+                        merged_items.append(item)
+                page_items = merged_items
+
                 blocks_data = [item[2] for item in page_items]
                 page_text_parts = [item[1] for item in page_items]
                 page_full_text = "\n\n".join(page_text_parts)

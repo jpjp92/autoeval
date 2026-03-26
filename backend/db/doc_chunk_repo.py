@@ -55,8 +55,9 @@ async def save_doc_chunk(
 async def save_doc_chunks_batch(chunks: list) -> list:
     """
     배치 단위로 doc_chunks 저장.
-    - content_hash 목록 1회 SELECT로 중복 확인
-    - 신규 청크만 1회 배치 INSERT
+    - (content_hash, document_id) 쌍 1회 SELECT로 중복 확인
+    - 동일 content + 동일 document_id 조합만 skip (exact duplicate)
+    - 동일 content + 새 document_id → 새 버전 row INSERT (이전 버전 보존)
     chunks: [{"content": str, "embedding": list, "metadata": dict}]
     """
     if not supabase or not chunks:
@@ -70,8 +71,8 @@ async def save_doc_chunks_batch(chunks: list) -> list:
             ) if h
         ]
 
-        # 2. 기존 hash 1회 SELECT
-        existing_hashes: set = set()
+        # 2. 기존 (content_hash, document_id) 쌍 1회 SELECT
+        existing_pairs: set = set()
         if hash_list:
             existing_res = (
                 supabase.table("doc_chunks")
@@ -80,24 +81,28 @@ async def save_doc_chunks_batch(chunks: list) -> list:
                 .execute()
             )
             for r in (existing_res.data or []):
-                h = (r.get("metadata") or {}).get("content_hash")
-                if h:
-                    existing_hashes.add(h)
+                meta = r.get("metadata") or {}
+                h = meta.get("content_hash")
+                d = meta.get("document_id")
+                if h and d:
+                    existing_pairs.add((h, d))
 
-        # 3. 신규 청크만 필터링
+        # 3. 신규 청크만 필터링 — 동일 (hash, doc_id) 쌍만 skip
         now = datetime.utcnow().isoformat()
         new_rows = []
         skipped = 0
         for c in chunks:
-            content_hash = (c.get("metadata") or {}).get("content_hash")
-            if content_hash and content_hash in existing_hashes:
-                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]})")
+            meta = c.get("metadata") or {}
+            content_hash = meta.get("content_hash")
+            document_id = meta.get("document_id")
+            if content_hash and document_id and (content_hash, document_id) in existing_pairs:
+                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
                 skipped += 1
                 continue
             new_rows.append({
                 "content":    c["content"],
                 "embedding":  c["embedding"],
-                "metadata":   c.get("metadata") or {},
+                "metadata":   meta,
                 "created_at": now,
             })
 
@@ -158,10 +163,12 @@ async def get_doc_chunks_by_filter(
     hierarchy_h2: Optional[str] = None,
     hierarchy_h3: Optional[str] = None,
     filename: Optional[str] = None,
+    document_id: Optional[str] = None,
     limit: int = 20,
     exclude_ids: Optional[list] = None,
 ) -> list:
     """metadata 필터 기반 doc_chunks 직접 조회 (vector similarity 없음).
+    document_id: 지정 시 해당 업로드 버전 청크만 반환 (버전 격리).
     exclude_ids: anchor_ids coverage gap 보충 시 중복 제외용.
     """
     if not supabase:
@@ -170,6 +177,8 @@ async def get_doc_chunks_by_filter(
         query = supabase.table("doc_chunks").select("id, content, metadata")
         if filename:
             query = query.eq("metadata->>filename", filename)
+        if document_id:
+            query = query.eq("metadata->>document_id", document_id)
         if hierarchy_h1:
             query = query.eq("metadata->>hierarchy_h1", hierarchy_h1)
         if hierarchy_h2:
@@ -224,19 +233,26 @@ async def get_doc_chunks_by_ids(chunk_ids: list) -> list:
         return []
 
 
-async def get_document_chunks(source_name: str, limit: int = 10) -> list:
-    """특정 문서의 청크 조회 (계층 구조 분석용)"""
+async def get_document_chunks(
+    source_name: str,
+    limit: int = 10,
+    document_id: Optional[str] = None,
+) -> list:
+    """특정 문서의 청크 조회 (계층 구조 분석용).
+    document_id 지정 시 해당 업로드 버전 청크만 반환.
+    미지정 시 filename 기준 전체 조회 (하위 호환).
+    """
     if not supabase:
         return []
     try:
-        response = (
+        query = (
             supabase.table("doc_chunks")
             .select("id, content, metadata")
             .eq("metadata->>filename", source_name)
-            .order("created_at")
-            .limit(limit)
-            .execute()
         )
+        if document_id:
+            query = query.eq("metadata->>document_id", document_id)
+        response = query.order("created_at").limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
         logger.error(f"❌ Failed to get document chunks: {e}")

@@ -71,29 +71,27 @@ export function SettingsPanel({ section }: { section?: string } = {}) {
   }, [section]);
 
   return (
-    <div className="bg-white/60 backdrop-blur-sm overflow-hidden flex h-full border-t border-slate-200/40">
-      {/* 좌측 내비 */}
-      <div className="w-64 bg-slate-50/80 border-r border-slate-200/60 p-6 flex flex-col shrink-0">
-        <nav className="space-y-1 flex-1">
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActiveSection(s.id)}
-              className={cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                activeSection === s.id
-                  ? "bg-white text-indigo-600 shadow-sm border border-slate-200"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-              )}
-            >
-              <s.icon className="w-4 h-4 shrink-0" />
-              {s.label}
-            </button>
-          ))}
-        </nav>
+    <div className="bg-white/60 backdrop-blur-sm overflow-hidden flex flex-col h-full border-t border-slate-200/40">
+      {/* 상단 탭 바 */}
+      <div className="flex border-b border-slate-200 px-6 shrink-0 bg-white/80">
+        {sections.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setActiveSection(s.id)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors border-b-2 -mb-px",
+              activeSection === s.id
+                ? "border-indigo-500 text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            )}
+          >
+            <s.icon className="w-4 h-4 shrink-0" />
+            {s.label}
+          </button>
+        ))}
       </div>
 
-      {/* 우측 콘텐츠 */}
+      {/* 콘텐츠 */}
       <div className="flex-1 p-8 overflow-y-auto">
 
         {/* Profile */}
@@ -189,7 +187,7 @@ export function SettingsPanel({ section }: { section?: string } = {}) {
               <h3 className="text-lg font-semibold text-slate-800 mb-1">Pipeline</h3>
               <p className="text-sm text-slate-500">전체 데이터 처리 파이프라인 구조입니다.</p>
             </div>
-            <div style={{ height: 'calc(100% - 88px)' }}>
+            <div style={{ height: 'calc(100% - 80px)' }}>
               <PipelineFlow />
             </div>
           </div>

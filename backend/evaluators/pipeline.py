@@ -103,7 +103,8 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
     groundedness = rag.get("groundedness", 1.0)
     relevance    = rag.get("relevance",    1.0)
 
-    if quality.get("factuality", 1.0) < 0.6:
+    # groundedness < 0.5: 컨텍스트에 전혀 근거하지 않는 수준 → hallucination 가능성
+    if groundedness < 0.5:
         failure_types.append("hallucination")
     # groundedness 낮고 relevance 괜찮으면 → 컨텍스트 오해석(faithfulness_error)
     # relevance 낮으면 → 컨텍스트 자체가 안 검색됨(retrieval_miss)
@@ -137,7 +138,7 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
     primary = next((p for p in PRIORITY if p in failure_types), failure_types[0])
 
     reason_map = {
-        "hallucination":      quality.get("factuality_reason", ""),
+        "hallucination":      rag.get("groundedness_reason", ""),
         "faithfulness_error": rag.get("groundedness_reason", ""),
         "retrieval_miss":     rag.get("relevance_reason", "") or rag.get("groundedness_reason", ""),
         "ambiguous_question": rag.get("clarity_reason", ""),
@@ -179,7 +180,7 @@ def _rag_worker(args):
 
 
 def _quality_worker(args):
-    """Layer 3: 단일 QA Quality 평가 worker (4 차원, 단일 LLM 호출)"""
+    """Layer 3: 단일 QA Quality 평가 worker (completeness 단일 지표, 단일 LLM 호출)"""
     i, qa, quality_evaluator, job_id = args
     try:
         scores = quality_evaluator.evaluate_all(
@@ -188,24 +189,13 @@ def _quality_worker(args):
             context=qa.get("context", ""),
             intent=qa.get("intent", ""),
         )
-        factuality   = scores["factuality"]
         completeness = scores["completeness"]
-        specificity  = scores["specificity"]
-        conciseness  = scores["conciseness"]
-
-        avg_quality = (factuality + completeness + specificity + conciseness) / 4
         return i, {
             "qa_index":            i,
-            "factuality":          round(factuality, 3),
-            "factuality_reason":   scores.get("factuality_reason", ""),
             "completeness":        round(completeness, 3),
             "completeness_reason": scores.get("completeness_reason", ""),
-            "specificity":         round(specificity, 3),
-            "specificity_reason":  scores.get("specificity_reason", ""),
-            "conciseness":         round(conciseness, 3),
-            "conciseness_reason":  scores.get("conciseness_reason", ""),
-            "avg_quality":         round(avg_quality, 3),
-            "pass":                avg_quality >= 0.70,
+            "avg_quality":         round(completeness, 3),
+            "pass":                completeness >= 0.70,
         }
     except Exception as e:
         logger.warning(f"[{job_id}] Quality evaluation error at index {i}: {e}")
@@ -373,7 +363,7 @@ def run_full_evaluation_pipeline(
         logger.info(f"[{job_id}] ⭐ Layer 3: Quality Evaluation starting (workers={max_api_workers})...")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
-            eval_manager.update_layer_status(job_id, "quality", "running", 5, f"사실성, 완전성, 구체성, 간결성 CoT 평가 중... (0/{len(valid_qa)})")
+            eval_manager.update_layer_status(job_id, "quality", "running", 5, f"완전성 CoT 평가 중... (0/{len(valid_qa)})")
 
         quality_evaluator = QAQualityEvaluator(evaluator_model)
         quality_scores: Dict[int, dict] = {}
@@ -407,7 +397,7 @@ def run_full_evaluation_pipeline(
         quality_scores_list = [quality_scores[i] for i in range(len(valid_qa))]
         passed = sum(1 for s in quality_scores_list if s.get("pass", False))
         pass_rate = round(passed / max(len(valid_qa), 1) * 100, 2)
-        valid_qs = [s["avg_quality"] for s in quality_scores_list if "factuality" in s]
+        valid_qs = [s["avg_quality"] for s in quality_scores_list if "completeness" in s]
 
         results["layers"]["quality"] = {
             "evaluated_count": len(valid_qa),
@@ -415,16 +405,10 @@ def run_full_evaluation_pipeline(
             "pass_rate":   pass_rate,
             "qa_scores":   quality_scores_list,
             "summary": {
-                "avg_factuality":   round(sum(s.get("factuality",   0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
                 "avg_completeness": round(sum(s.get("completeness", 0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
-                "avg_specificity":  round(sum(s.get("specificity",  0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
-                "avg_conciseness":  round(sum(s.get("conciseness",  0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
                 "avg_quality":      round(sum(valid_qs) / max(len(valid_qs), 1), 3),
                 "distribution": {
-                    "factuality":   _distribution_stats(quality_scores_list, "factuality"),
                     "completeness": _distribution_stats(quality_scores_list, "completeness"),
-                    "specificity":  _distribution_stats(quality_scores_list, "specificity"),
-                    "conciseness":  _distribution_stats(quality_scores_list, "conciseness"),
                     "overall":      _distribution_stats(quality_scores_list, "avg_quality"),
                 },
             },
@@ -435,6 +419,23 @@ def run_full_evaluation_pipeline(
             eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 완료: {quality_avg:.3f} (통과: {pass_rate}%)", progress=85)
             eval_manager.update_layer_status(job_id, "quality", "completed", 100, f"✓ 점수: {quality_avg:.3f}, 통과율: {pass_rate}%")
         logger.info(f"[{job_id}] ✓ Layer 3 completed: {passed}/{len(valid_qa)} passed ({pass_rate}%)")
+
+    # ===== Failure Classification: quality.qa_scores에 failure 필드 추가 =====
+    # rag + quality 두 레이어가 모두 완료된 후 한 번 순회하여 계산 → Supabase 저장 시 포함됨
+    rag_layer     = results["layers"].get("rag")
+    quality_layer = results["layers"].get("quality")
+    if rag_layer and quality_layer:
+        rag_scores_map: dict = {s["qa_index"]: s for s in rag_layer.get("qa_scores", [])}
+        for q_score in quality_layer.get("qa_scores", []):
+            if "primary_failure" in q_score:
+                continue  # 이미 있으면 스킵 (재실행 방지)
+            idx = q_score.get("qa_index", -1)
+            r   = rag_scores_map.get(idx, {})
+            ctx = valid_qa[idx].get("context", "") if 0 <= idx < len(valid_qa) else ""
+            fi  = _classify_failure_types(r, q_score, ctx)
+            q_score["failure_types"]   = fi.get("failure_types", [])
+            q_score["primary_failure"] = fi.get("primary_failure")
+            q_score["failure_reason"]  = fi.get("failure_reason", "")
 
     results["overall_score"] = {
         "status":         "completed",
@@ -484,6 +485,11 @@ def run_evaluation(
                 # qa_list 컬럼 = [{docId, text, qa_list: [{q,a,intent}]}, ...]
                 # 로컬 파일 fallback과 동일하게 flatten + context 주입
                 raw_results = gen_data.get("qa_list", [])
+                logger.info(
+                    f"[{job_id}] raw_results 수: {len(raw_results)}, "
+                    f"첫번째 result qa_list 수: {len(raw_results[0].get('qa_list', [])) if raw_results else 'N/A'}, "
+                    f"첫번째 result keys: {list(raw_results[0].keys()) if raw_results else []}"
+                )
                 for result_idx, result in enumerate(raw_results):
                     context = result.get("text", "")
                     for qa_idx, qa in enumerate(result.get("qa_list", [])):
@@ -590,10 +596,7 @@ def run_evaluation(
                 "groundedness_reason": r.get("groundedness_reason", ""),
                 "clarity_reason":      r.get("clarity_reason", ""),
                 # Quality reason
-                "factuality_reason":   q.get("factuality_reason", ""),
                 "completeness_reason": q.get("completeness_reason", ""),
-                "specificity_reason":  q.get("specificity_reason", ""),
-                "conciseness_reason":  q.get("conciseness_reason", ""),
                 # Failure classification
                 **failure_info,
             })
@@ -631,8 +634,6 @@ def run_evaluation(
                 "quality_pass_rate":     quality_pass_rate,
                 "final_score":           round(final_score, 3),
                 "grade":                 grade,
-                "avg_specificity":       round(quality_data["summary"].get("avg_specificity", 0.65), 3) if quality_data else None,
-                "avg_conciseness":       round(quality_data["summary"].get("avg_conciseness", 0.65), 3) if quality_data else None,
                 "rag_distribution":      rag_data["summary"].get("distribution", {}) if rag_data else {},
                 "quality_distribution":  quality_data["summary"].get("distribution", {}) if quality_data else {},
             },
