@@ -15,13 +15,20 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 - 시행일·고시번호·대통령령 번호 등 식별자만 나열된 경우
 - 전화번호·담당부서·주소 등 연락처 목록만 있는 경우
 - 목차·제목만 있고 본문 내용이 없는 경우
+  (예: "목차 서론 1. 개요 1.1 배경 1.2 범위 2. 분석 2.1 ..." 형태의 섹션 번호 나열)
 - 날짜·코드·번호만 나열된 표
+판별 기준: 컨텍스트에 완성된 서술 문장(주어+서술어 구조)이 없고 항목 나열만 있으면 빈 목록 반환.
 </context_screening>
 
 <principles>
 1. 근거성(Groundedness): 모든 질문은 반드시 제공된 컨텍스트 내에서 명확한 답변이 가능해야 합니다.
 2. 관련성(Relevance): 질문과 답변이 주제적으로 일치해야 합니다.
-3. 원자성(Atomicity): 질문 하나는 하나의 개념/과업만 묻습니다. 복합 질문 금지.
+3. 단일성(Single-scope): 질문 하나는 하나의 질문 차원(What/Why/How/조건/비교)만 다룹니다.
+   서로 다른 질문 차원을 한 질문에 혼합하는 것은 금지합니다.
+   - 금지(차원 혼합): "이 제도의 적용 대상 범위와 도입된 목적은 무엇입니까?" ← What(범위) + Why(목적) 혼합 — 각각은 유효한 질문이지만 차원이 다른 두 질문을 하나로 결합
+   - 허용(단일 차원 + 복수 항목): "단백질이 세포 내에서 수행하는 기능은 무엇입니까?" ← What(기능) 차원 하나, 항목(효소 촉매·구조 지지·신호 전달 등) 여러 개 가능
+   - 허용(비교형): "A와 B의 역할은 어떻게 구분됩니까?" ← '비교'라는 단일 차원 안에서 두 대상을 다루는 것은 단일성 위반이 아님
+   단, 같은 차원 안에서 컨텍스트에 여러 항목이 있으면 그 항목들을 모두 묻고 답변에서도 모두 서술해야 합니다.
 4. 명확성: 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
 5. 깊이(Depth): 단순 값 1개 반환 질문 금지. 요건·범위·조건·이유 중 최소 2가지를 연결하세요.
    - 금지: "시행일은 언제입니까?" / "담당 기관은 어디입니까?"
@@ -74,6 +81,13 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 [답변 스타일]
 - "컨텍스트에 따르면", "문서에 의하면" 등 메타 표현으로 시작 금지
 - 직접적인 사실 진술로 시작할 것 (예: "연계를 요청할 수 있는 기관은 ...")
+
+[답변 완전성 — 필수]
+- 질문이 "어떠한", "무엇", "모두", "항목별로", "범위", "전체" 등 복수 항목을 암시하면,
+  컨텍스트에 명시된 모든 관련 항목을 빠짐없이 나열하십시오.
+- 열거형(list) 질문의 답변은 컨텍스트에 존재하는 해당 항목을 전부 포함해야 합니다.
+- 컨텍스트에 N개 항목이 있는데 M < N 개만 언급하는 불완전 답변은 생성하지 마십시오.
+- 예) 컨텍스트에 ①·②·③·④ 네 가지 행위가 있으면 답변도 네 가지를 모두 서술하십시오.
 </constraints>"""
 
 SYSTEM_PROMPT_EN_V1 = """<role>
@@ -93,7 +107,12 @@ If the context contains ONLY the following, immediately return {"qa_list": []}:
 <principles>
 1. Groundedness: Every question must be answerable with clear evidence from the context.
 2. Relevance: Questions and answers must match topically.
-3. Atomicity: Each question targets exactly one concept or task. No compound questions.
+3. Single-scope: Each question addresses exactly one question dimension (What/Why/How/Condition/Comparison).
+   Do NOT mix different question dimensions in a single question.
+   - Forbidden (dimension mix): "What is the scope of eligible subjects and the purpose of this system?" ← What(scope) + Why(purpose) — each is individually valid but mixing two different question dimensions into one
+   - Allowed (single dimension, multiple items): "What functions does a protein perform inside a cell?" ← single What(function)-dimension, multiple items expected (enzyme catalysis, structural support, signal transduction, etc.)
+   - Allowed (comparison): "How do methods A and B differ in role?" ← 'comparison' is a single dimension; two subjects within one comparative frame do NOT violate single-scope
+   Within a single dimension, if the context contains multiple items, the question must ask about ALL of them and the answer must cover ALL of them.
 4. Clarity: Avoid vague pronouns or overly broad scope. Answer boundary must be clear.
 5. Depth: No single-value lookup questions. Connect at least 2 requirements, conditions, or effects.
    - Forbidden: "When did this take effect?" / "Which department handles this?"
@@ -216,13 +235,20 @@ _CORE_PRINCIPLES_KO = """
 - 시행일·고시번호·대통령령 번호 등 식별자만 나열된 경우
 - 전화번호·담당부서·주소 등 연락처 목록만 있는 경우
 - 목차·제목만 있고 본문 내용이 없는 경우
+  (예: "목차 서론 1. 개요 1.1 배경 1.2 범위 2. 분석 2.1 ..." 형태의 섹션 번호 나열)
 - 날짜·코드·번호만 나열된 표
+판별 기준: 컨텍스트에 완성된 서술 문장(주어+서술어 구조)이 없고 항목 나열만 있으면 빈 목록 반환.
 </context_screening>
 
 <principles>
 1. 근거성(Groundedness): 모든 질문은 반드시 제공된 컨텍스트 내에서 명확한 답변이 가능해야 합니다.
 2. 관련성(Relevance): 질문과 답변이 주제적으로 일치해야 합니다.
-3. 원자성(Atomicity): 질문 하나는 하나의 개념/과업만 묻습니다. 복합 질문 금지.
+3. 단일성(Single-scope): 질문 하나는 하나의 질문 차원(What/Why/How/조건/비교)만 다룹니다.
+   서로 다른 질문 차원을 한 질문에 혼합하는 것은 금지합니다.
+   - 금지(차원 혼합): "이 제도의 적용 대상 범위와 도입된 목적은 무엇입니까?" ← What(범위) + Why(목적) 혼합 — 각각은 유효한 질문이지만 차원이 다른 두 질문을 하나로 결합
+   - 허용(단일 차원 + 복수 항목): "단백질이 세포 내에서 수행하는 기능은 무엇입니까?" ← What(기능) 차원 하나, 항목(효소 촉매·구조 지지·신호 전달 등) 여러 개 가능
+   - 허용(비교형): "A와 B의 역할은 어떻게 구분됩니까?" ← '비교'라는 단일 차원 안에서 두 대상을 다루는 것은 단일성 위반이 아님
+   단, 같은 차원 안에서 컨텍스트에 여러 항목이 있으면 그 항목들을 모두 묻고 답변에서도 모두 서술해야 합니다.
 4. 명확성: 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
 5. 깊이(Depth): 단순 값 1개 반환 질문 금지. 요건·범위·조건·이유 중 최소 2가지를 연결하세요.
    - 금지: "시행일은 언제입니까?" / "담당 기관은 어디입니까?"

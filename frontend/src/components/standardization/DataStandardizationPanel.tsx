@@ -74,7 +74,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const res = await fetch(`${API_BASE}/api/ingestion/upload`, { method: "POST", body: formData });
       const data = await res.json();
       if (res.ok) {
-        setUploadMessage({ text: `"${fileName}" 업로드 완료. 백그라운드에서 벡터화 중입니다.`, type: "success" });
+        setUploadMessage({ text: `"${fileName}" 업로드 및 벡터화 완료.`, type: "success" });
         setUploadedFilename(fileName);
         clearAnchorIds(fileName); // 재업로드 시 기존 anchor_ids 무효화
         onUploadComplete?.(fileName);
@@ -248,7 +248,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               )}
             >
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-              {isUploading ? "업로드 중..." : "업로드 및 벡터화"}
+              {isUploading ? "벡터화 중..." : "업로드 및 벡터화"}
             </button>
           </div>
         )}

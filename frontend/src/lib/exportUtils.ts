@@ -51,7 +51,8 @@ export interface EvaluationData {
     failure_types?: string[];
     relevance_reason?: string;
     groundedness_reason?: string;
-    clarity_reason?: string;
+    clarity_reason?: string;           // 구형 (명확성)
+    context_relevance_reason?: string; // 신형 (맥락성)
     factuality_reason?: string;
     completeness_reason?: string;
     specificity_reason?: string;
@@ -700,7 +701,12 @@ function showQADetail(idx){
   var ragMetrics=[
     {name:'관련성 (Relevance)',reason:qa.relevance_reason},
     {name:'근거성 (Groundedness)',reason:qa.groundedness_reason},
-    {name:'명확성 (Clarity)',reason:qa.clarity_reason}
+    ...(qa.clarity_reason
+      ? [{name:'명확성 (Clarity)',reason:qa.clarity_reason}]
+      : qa.context_relevance_reason
+        ? [{name:'맥락성 (Context Relevance)',reason:qa.context_relevance_reason}]
+        : []
+    )
   ];
   // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
   var qualMetrics=isLegacy?[

@@ -191,13 +191,15 @@ Step 4: DETERMINE GROUNDING LEVEL:
             logger.warning(f"Groundedness evaluation error: {e}")
             return 0.65
 
-    def evaluate_clarity(self, question: str, answer: str) -> float:
-        """답변의 명확성 평가 (0-1)"""
-        if not self.judge_model or not answer:
+    def evaluate_context_relevance(self, question: str, context: str) -> float:
+        """맥락성 평가 (0-1) — 컨텍스트가 질문에 답하기에 충분한가 (검색 품질)"""
+        if not self.judge_model or not question:
             return 0.7
         try:
+            ctx_text = clean_markdown(context)[:8000] if context else ""
             prompt = f"""<role>
-You are a strict QA evaluator assessing question-answer pair clarity and comprehensibility.
+You are a strict RAG evaluator. Assess whether the retrieved context contains sufficient
+information to answer the question.
 </role>
 
 <constraints>
@@ -205,19 +207,21 @@ You are a strict QA evaluator assessing question-answer pair clarity and compreh
 - Return ONLY the final integer on the last line, no explanation
 </constraints>
 
+<context>{ctx_text}</context>
 <question>{question}</question>
-<answer>{answer}</answer>
 
 <task>
-Rate clarity on a 0-10 scale:
-- Is the question well-formed and understandable?
-- Is the answer clearly written without ambiguities?
-- Is the answer properly structured?
+Rate context relevance on a 0-10 scale:
+- Does the context contain the specific information needed to answer the question?
+- 10: Context directly and completely contains the answer
+- 7-9: Context mostly contains the needed information, minor gaps
+- 4-6: Context is related but missing key specifics to fully answer
+- 0-3: Context does not contain enough information; the question cannot be answered from this context alone
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
-            logger.warning(f"Clarity evaluation error: {e}")
+            logger.warning(f"Context relevance evaluation error: {e}")
             return 0.65
 
     def _parse_rag_json(self, raw: str) -> dict:
@@ -229,19 +233,19 @@ Rate clarity on a 0-10 scale:
                 val = data.get(key, 6)
                 return min(10, max(0, int(val))) / 10.0
             return {
-                "relevance":           _score("relevance"),
-                "relevance_reason":    str(data.get("relevance_reason", "")),
-                "groundedness":        _score("groundedness"),
-                "groundedness_reason": str(data.get("groundedness_reason", "")),
-                "clarity":             _score("clarity"),
-                "clarity_reason":      str(data.get("clarity_reason", "")),
+                "relevance":                _score("relevance"),
+                "relevance_reason":         str(data.get("relevance_reason", "")),
+                "groundedness":             _score("groundedness"),
+                "groundedness_reason":      str(data.get("groundedness_reason", "")),
+                "context_relevance":        _score("context_relevance"),
+                "context_relevance_reason": str(data.get("context_relevance_reason", "")),
             }
         except Exception:
             logger.warning(f"RAG JSON parse failed, raw: {raw[:200]}")
             return {
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
-                "clarity": 0.65, "clarity_reason": "",
+                "context_relevance": 0.65, "context_relevance_reason": "",
             }
 
     def evaluate_all_with_reasons(self, question: str, answer: str, context: str) -> dict:
@@ -250,7 +254,7 @@ Rate clarity on a 0-10 scale:
             return {
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
-                "clarity": 0.65, "clarity_reason": "",
+                "context_relevance": 0.65, "context_relevance_reason": "",
             }
         try:
             import json as _json
@@ -268,20 +272,44 @@ based solely on the provided context.
 <answer>{answer}</answer>
 
 <scoring_dimensions>
-1. relevance (0-10): Does the answer directly address what the question asks, within the domain?
-   - 10: Perfectly on-point / 6-7: Mostly relevant, minor drift / 0-3: Off-topic or ignores question
+1. relevance (0-10): Does the answer FULLY and COMPLETELY address ALL aspects of the question?
+   - 10: All aspects of the question are answered; no missing items, no unrequested claims
+   - 8-9: Mostly complete; one minor aspect missing or slight scope drift
+   - 6-7: Core intent addressed but at least one meaningful aspect of the question is missing
+   - 4-5: Answers only part of what was asked; multiple aspects omitted
+   - 0-3: Off-topic, ignores the question, or answers a fundamentally different question
+   Note: a partial answer (covers 1 of N items the question asks about) must score ≤ 6.
 
-2. groundedness (0-10): Are all answer claims supported by the context? (use flexible matching)
-   - 10: All claims traceable to context / 7-9: Mostly supported / 5-6: Partial / 0-4: Hallucinated
+2. groundedness (0-10): Are ALL claims in the answer EXPLICITLY stated in the context?
+   Reasoning steps (do internally before writing the score and reason):
+   a. Extract each atomic claim from the answer
+   b. For each claim, check if it can be directly quoted or clearly paraphrased from the context
+      - supported=true ONLY IF: direct quote OR unambiguous paraphrase (same meaning, different words)
+      - supported=false IF: requires inference, interpretation, deduction, or is not in context
+      (Do NOT use flexible matching that treats implied conclusions as supported)
+   c. score = round(supported_count / total_claims * 10)
+   - 10: All claims directly traceable to context text
+   - 7-9: Mostly direct, one minor inference
+   - 5-6: Half inferred / half directly supported
+   - 0-4: Mostly inferred, hallucinated, or added from outside context
+   For groundedness_reason: write 1 concise Korean prose sentence that synthesizes the claim
+   verification results and naturally includes a direct context quote for the key claim.
+   Do NOT use bullet points or lists in the reason.
 
-3. clarity (0-10): Is the Q-A pair well-formed and unambiguous?
-   - 10: Question precise + answer clearly structured / 5-6: Somewhat vague / 0-3: Confusing or ambiguous
+3. context_relevance (0-10): Does the retrieved context contain sufficient information to answer the question?
+   — This measures RETRIEVAL quality, not the answer itself.
+   - 10: Context directly and completely contains all facts needed to answer
+   - 7-9: Context mostly sufficient; one minor gap
+   - 4-6: Context is topically related but missing key specifics; LLM must infer or hallucinate to answer
+   - 0-3: Context does not contain the information needed; question cannot be answered from this context alone
+   For context_relevance_reason: 1 concise Korean sentence explaining what the context does or does not provide.
 </scoring_dimensions>
 
 <task>
-Evaluate all three dimensions. For each reason, write exactly 1 concise sentence in Korean explaining the score.
+For groundedness, reason through claims step by step internally, then write the synthesized reason.
+For relevance and context_relevance, write exactly 1 concise sentence in Korean explaining the score.
 Return ONLY valid JSON:
-{{"relevance": <0-10>, "relevance_reason": "<1 sentence in Korean>", "groundedness": <0-10>, "groundedness_reason": "<1 sentence in Korean>", "clarity": <0-10>, "clarity_reason": "<1 sentence in Korean>"}}
+{{"relevance": <0-10>, "relevance_reason": "<1 sentence in Korean>", "groundedness": <0-10>, "groundedness_reason": "<1 concise Korean prose sentence with context quote, no bullets>", "context_relevance": <0-10>, "context_relevance_reason": "<1 sentence in Korean>"}}
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._parse_rag_json(response.content or "")
@@ -290,5 +318,5 @@ Return ONLY valid JSON:
             return {
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
-                "clarity": 0.65, "clarity_reason": "",
+                "context_relevance": 0.65, "context_relevance_reason": "",
             }

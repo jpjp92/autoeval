@@ -90,6 +90,53 @@ def normalize_for_hash(text: str) -> str:
     return text
 
 
+# 원형 숫자 기호 (①-⑳, ㉑-㊿)
+_CIRCLE_NUM_RE = re.compile(r'[\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]')
+
+
+def _span_text_with_spaces(span: dict) -> str:
+    """rawdict span의 chars bbox 간격을 분석해 누락된 공백 복원.
+
+    rawdict 모드에서 span["text"]는 존재하지 않으므로 chars에서 항상 재구성.
+    한글이 포함된 경우 문자 간 gap이 평균 문자 폭의 40% 이상이면 공백 삽입.
+    chars가 없으면 span["text"] fallback (dict 모드 호환).
+    """
+    chars = span.get("chars", [])
+
+    # chars 없으면 dict 모드 fallback
+    if not chars:
+        return span.get("text", "")
+
+    has_korean = any(re.search(r'[가-힣]', c.get("c", "")) for c in chars)
+
+    if not has_korean:
+        # 한글 없으면 단순 chars 재구성 (공백 감지 불필요)
+        return "".join(c.get("c", "") for c in chars)
+
+    # 한글 포함: 문자 너비 기반 공백 감지
+    widths = [c["bbox"][2] - c["bbox"][0] for c in chars if c["bbox"][2] > c["bbox"][0]]
+    if not widths:
+        return "".join(c.get("c", "") for c in chars)
+    avg_w = sum(widths) / len(widths)
+    threshold = avg_w * 0.4
+
+    result = ""
+    prev_x1: Optional[float] = None
+    for char in chars:
+        c = char.get("c", "")
+        if not c:
+            continue
+        if c == ' ':
+            result += c
+            prev_x1 = char["bbox"][2]
+            continue
+        if prev_x1 is not None and (char["bbox"][0] - prev_x1) > threshold:
+            result += " "
+        result += c
+        prev_x1 = char["bbox"][2]
+    return result if result else "".join(c.get("c", "") for c in chars)
+
+
 # ============================================================================
 # 섹션 감지 & 구조화
 # ============================================================================
@@ -99,9 +146,9 @@ def detect_section_level(title: str) -> Optional[int]:
     patterns = [
         (r'^[0-9]+\.[0-9]+\.[0-9]+', 3),
         (r'^[0-9]+\.[0-9]+', 2),
-        (r'^[0-9]+\.', 1),
         (r'^제\s*[0-9]+\s*장', 1),
         (r'^제\s*[0-9]+\s*절', 2),
+        (r'^제\s*[0-9]+\s*조', 2),   # 법률 조문: 章(1) > 條(2)
         (r'^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]', 1),
         (r'^\[[^\]]{2,}\]', 1),
         (r'^\d+\s+\S', 2),
@@ -121,6 +168,17 @@ def detect_heading(text: str, font_size: float, prev_font_size: float) -> Option
     if re.match(r'^[-•ŸŸ∙]\s', clean_text):
         return None
 
+    # 괄호 주석 패턴 제외: (정확성과 신뢰성), (별첨1) 등 → 본문 소항목
+    if re.match(r'^\([가-힣a-zA-Z]', clean_text):
+        return None
+
+    # 법률 개정 주석 블록 제외: '여야 한다.<신설 2023. 3. 14.>' 등 → 앞 조문의 꼬리
+    # 단, 제X조 패턴이 있는 조문 제목은 허용 (e.g. '제2조(정의) ... <개정 2023. 3. 14.>')
+    _amendment_re = re.compile(r'<(신설|개정|삭제)')
+    _article_re   = re.compile(r'^제\s*\d+')
+    if _amendment_re.search(clean_text) and not _article_re.match(clean_text):
+        return None
+
     if re.search(r'[·\.]{3,}', clean_text) or re.search(r'\.{5,}', clean_text):
         return None
 
@@ -133,13 +191,13 @@ def detect_heading(text: str, font_size: float, prev_font_size: float) -> Option
         r'^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]',
         r'^제\s*\d+\s*장',
         r'^제\s*\d+\s*절',
-        r'^\d+\.',
-        r'^\d+\.\d+(\.\d+)?',
+        r'^제\s*\d+\s*조',        # 법률 조문 (제2조, 제3조...)
+        r'^\d+\.\d+(\.\d+)?',    # 보고서 섹션 번호 (1.1, 1.1.1)
         r'^부\s*칙',
     ]
 
     is_pattern_match = any(re.match(p, clean_text) for p in heading_patterns)
-    is_font_boost = font_size > prev_font_size + 1.5 and font_size > 11.0
+    is_font_boost = font_size > prev_font_size + 1.5 and font_size > 12.5
 
     if is_pattern_match or is_font_boost:
         if len(clean_text) < 2 or clean_text.isdigit():
@@ -189,6 +247,8 @@ def is_toc_chunk(text: str) -> bool:
     - Layer 1: 가운뎃점(·) 밀도
     - Layer 2: 연속 가운뎃점 패턴
     - Layer 3: 점선 + 페이지번호 라인 비율
+    - Layer 4: "목차" 키워드 + 다수 섹션 번호 패턴 (번호 목차 형식)
+    - Layer 5: 섹션 번호 밀도만으로 판단 (목차 키워드 없어도)
     """
     if not text or len(text) < 20:
         return False
@@ -212,6 +272,25 @@ def is_toc_chunk(text: str) -> bool:
                 and any(c.isdigit() for c in line[-5:])
             )
             if toc_lines / len(lines) >= 0.6:
+                return True
+
+    # Layer 4: "목차" 키워드 + 섹션 번호 5개 이상
+    # 예: "목 차 서론 1. 개요 1.1 배경 1.2 ..." 형태 감지
+    if re.search(r'목\s*차', text):
+        section_nums = re.findall(r'\b\d+\.\d+', text)
+        if len(section_nums) >= 5:
+            return True
+
+    # Layer 5: 섹션 번호 밀도 높고 문장 부호(마침표로 끝나는 완성 문장) 거의 없음
+    # → 설명 없이 항목 나열만 있는 경우
+    if not is_table_content:
+        section_nums = re.findall(r'\b\d+\.\d+', text)
+        word_count = len(text.split())
+        # 단어 20개 당 섹션 번호 1개 이상이면 목차성 높음
+        if word_count > 0 and len(section_nums) / word_count >= 0.05 and len(section_nums) >= 8:
+            # 실제 문장(마침표·물음표로 끝나는 한국어 문장)이 거의 없으면 목차로 판정
+            sentences = re.findall(r'[가-힣][^。.!?]{10,}[。.!?]', text)
+            if len(sentences) <= 2:
                 return True
 
     return False
@@ -240,14 +319,25 @@ def _is_symbol_noise_chunk(text: str) -> bool:
 # 청크 후처리
 # ============================================================================
 
+_ARTICLE_BOUNDARY_RE = re.compile(r'^제\s*\d+조')  # 제X조 시작 — 병합 금지 경계
+
+
 def _merge_short_chunks(chunks: list, min_chars: int = 200, max_chars: int = 1200) -> list:
-    """같은 섹션 내 min_chars 미만 청크를 인접 청크와 병합 (최대 max_chars까지)."""
+    """같은 섹션 내 min_chars 미만 청크를 인접 청크와 병합 (최대 max_chars까지).
+
+    제X조 시작 청크는 병합하지 않음 — 이전 조문 꼬리가 새 조문 앞에 붙는 현상 방지.
+    """
     if not chunks:
         return chunks
     merged = []
     buf = chunks[0]
     for chunk in chunks[1:]:
-        if len(buf) < min_chars and len(buf) + len(chunk) <= max_chars:
+        next_is_article = bool(_ARTICLE_BOUNDARY_RE.match(chunk.lstrip()))
+        if (
+            not next_is_article
+            and len(buf) < min_chars
+            and len(buf) + len(chunk) <= max_chars
+        ):
             buf = buf + "\n" + chunk
         else:
             merged.append(buf)
@@ -256,7 +346,7 @@ def _merge_short_chunks(chunks: list, min_chars: int = 200, max_chars: int = 120
     return merged
 
 
-def detect_repeated_headers(pages: List[Dict[str, Any]], threshold: int = 3) -> set:
+def detect_repeated_headers(pages: List[Dict[str, Any]], threshold: int = 5) -> set:
     """여러 페이지에 반복 등장하는 텍스트(header/footer)를 감지."""
     line_counter: Counter = Counter()
     for page_data in pages:
@@ -283,8 +373,15 @@ def remove_footer_noise(text: str, repeated_headers: set = None) -> str:
     return "\n".join(cleaned)
 
 
+_NUMBERED_ITEM_RE = re.compile(r'^(\d+[\.의]|[가-힣]\.)\s')
+
 def strip_redundant_headings(chunk_text: str, section_title: str) -> str:
-    """청크에서 이미 metadata에 포함된 section heading 라인 제거."""
+    """청크에서 이미 metadata에 포함된 section heading 라인 제거.
+
+    번호 붙은 정의항목(예: '7. "고정형 영상정보처리기기"란...')은 내용 라인이므로 제거하지 않음.
+    """
+    if _NUMBERED_ITEM_RE.match(section_title.strip()):
+        return chunk_text
     lines = chunk_text.split('\n')
     if not lines:
         return chunk_text
@@ -356,9 +453,9 @@ def detect_chunk_type(text: str) -> str:
     return "Body"
 
 
-def build_context_prefix(filename: str, section_path: str, page: int) -> str:
+def build_context_prefix(filename: str, section_title: str, page: int) -> str:
     """RAG 검색 품질 향상을 위한 표준 컨텍스트 프리픽스."""
-    return f"문서: {filename}\n섹션: {section_path}\n페이지: {page}\n\n"
+    return f"문서: {filename}\n섹션: {section_title}\n페이지: {page}\n\n"
 
 
 def _resolve_chunk_page(
@@ -501,7 +598,7 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
             doc = fitz.open(stream=file_content, filetype="pdf")
             for page_index, page in enumerate(doc):
                 page_num = page_index + 1
-                page_dict = page.get_text("dict")
+                page_dict = page.get_text("rawdict")
                 blocks = page_dict.get("blocks", [])
                 blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
                 page_height = page.rect.height
@@ -517,7 +614,7 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
                 for t in table_list:
                     ty0, ty1 = t.bbox[1], t.bbox[3]
-                    if ty0 < page_height * 0.08 or ty1 > page_height * 0.92:
+                    if ty0 < page_height * 0.05 or ty1 > page_height * 0.92:
                         continue
                     table_text = format_table_as_text(t.extract(), page=page, table_obj=t)
                     if table_text:
@@ -533,7 +630,7 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                     if b["type"] != 0:
                         continue
                     y0, y1 = b["bbox"][1], b["bbox"][3]
-                    if y0 < page_height * 0.08 or y1 > page_height * 0.92:
+                    if y0 < page_height * 0.05 or y1 > page_height * 0.92:
                         continue
                     if table_bboxes and is_inside_table(b["bbox"], table_bboxes):
                         continue
@@ -546,7 +643,7 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                         for span in line["spans"]:
                             if prev_x is not None and span["bbox"][0] - prev_x > 20:
                                 line_text += " | "
-                            line_text += span["text"]
+                            line_text += _span_text_with_spaces(span)
                             max_font_size = max(max_font_size, span["size"])
                             prev_x = span["bbox"][2]
                         block_lines.append(line_text)
@@ -563,26 +660,52 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
                 page_items.sort(key=lambda x: x[0])
 
-                # 괄호형 영문 용어 절단 방지:
-                # PDF 레이아웃에서 "ROI\n(Return on Investment)" 또는
-                # "결과 왜곡\n(Distortion)을" 처럼 블록이 분리된 경우
-                # 이전 블록에 공백으로 병합.
-                # 패턴 ①: 블록이 "(영문자..." 로 시작 (여는 괄호형)
-                # 패턴 ②: 블록이 "영문대소문자+)..." 로 시작 (닫는 괄호형)
+                # 블록 분리 보정:
+                # ① 괄호형 영문 용어: "ROI\n(Return on Investment)" → 이전 블록에 병합
+                #    패턴 A: 블록이 "(영문자..." 로 시작 (여는 괄호형)
+                #    패턴 B: 블록이 "영문대소문자+)..." 로 시작 (닫는 괄호형)
+                # ② 한국어 어미/조사 절단: PyMuPDF가 시각적 줄바꿈 경계를
+                #    블록으로 분리할 때 "하여야 한" + "니 된다." 처럼
+                #    어절 중간에서 잘리는 경우. 직전 블록이 한글로 끝나고
+                #    현 블록이 1-4자 한글 + 구두점/공백으로 시작하면 병합.
                 _PAREN_CONT = re.compile(r'^(\([A-Za-z]|[A-Z][a-z]+\))')
+                # ② 패턴 개선:
+                #  - 1-4자 한글 + 구두점/공백 OR 문자열 끝 (단독 음절 "발" 등 포함)
+                _KOR_CONT   = re.compile(r'^[가-힣]{1,4}(?:[\s.,。;!?]|$)')
+                #  - 한글 뒤에 원형 번호/공백이 오는 경우도 허용
+                #    예: "알고리즘개 ③" → 끝이 한글이 아니지만 절단된 케이스
+                _KOR_TAIL   = re.compile(r'[가-힣][\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]*$')
                 merged_items: list = []
                 for item in page_items:
                     y_pos, text, block_dict = item
-                    if (
-                        merged_items
-                        and _PAREN_CONT.match(text.strip())
-                        and not block_dict.get("is_table")
-                    ):
+                    stripped = text.strip()
+                    if merged_items and not block_dict.get("is_table"):
                         py, prev_text, prev_block = merged_items[-1]
-                        joined = prev_text.rstrip() + " " + text.strip()
-                        merged_items[-1] = (py, joined, {**prev_block, "text": joined})
-                    else:
-                        merged_items.append(item)
+                        is_paren = _PAREN_CONT.match(stripped)
+                        is_kor = (
+                            _KOR_CONT.match(stripped)
+                            and _KOR_TAIL.search(prev_text.rstrip())
+                        )
+                        if is_paren or is_kor:
+                            prev_stripped = prev_text.rstrip()
+                            if is_kor:
+                                # 원형 번호가 끝에 붙은 경우: 번호 앞에 음절 삽입
+                                # "알고리즘개 ③" + "발" → "알고리즘개발 ③"
+                                circle_m = re.search(
+                                    r'([\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]+)$',
+                                    prev_stripped,
+                                )
+                                if circle_m:
+                                    base = prev_stripped[:circle_m.start()]
+                                    joined = base + stripped + circle_m.group(0)
+                                else:
+                                    joined = prev_stripped + stripped
+                            else:
+                                # 괄호형은 공백 삽입
+                                joined = prev_stripped + " " + stripped
+                            merged_items[-1] = (py, joined, {**prev_block, "text": joined})
+                            continue
+                    merged_items.append(item)
                 page_items = merged_items
 
                 blocks_data = [item[2] for item in page_items]
@@ -603,14 +726,48 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
         elif ext in ['doc', 'docx']:
             doc = Document(io.BytesIO(file_content))
-            WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            WNS    = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            MC_NS  = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+            _FALLBACK_TAG = f"{{{MC_NS}}}Fallback"
+            _WNS_T        = f"{{{WNS}}}t"
+
+            def _iter_t(elm):
+                """w:t 노드 수집 — mc:Fallback 하위 트리 제외.
+                mc:AlternateContent 는 Choice(현대 Word)와 Fallback(구버전 호환)을
+                동시에 포함하므로, Fallback을 건너뛰어 텍스트 중복을 방지한다.
+                """
+                for child in elm:
+                    if child.tag == _FALLBACK_TAG:
+                        continue
+                    if child.tag == _WNS_T:
+                        yield child
+                    yield from _iter_t(child)
 
             def _cell_text(cell_elm) -> str:
-                return normalize_text(
-                    "".join(node.text or "" for node in cell_elm.iter() if node.tag == f"{{{WNS}}}t")
-                )
+                """셀 내 단락(w:p)별로 정규화 후 병합.
+                멀티-단락 셀의 구조를 보존하며, 라벨(≤20자)+값(≤30자) 쌍은 공백으로 합침.
+                Fallback 중복 방지를 위해 _iter_t() 사용.
+                """
+                paragraphs = []
+                for p in cell_elm.findall(f"{{{WNS}}}p"):
+                    raw = "".join(node.text or "" for node in _iter_t(p))
+                    normed = normalize_text(raw.strip())
+                    if normed:
+                        paragraphs.append(normed)
+                # 연속하는 짧은 단락(라벨+값 형태)은 공백으로 합침
+                merged: list = []
+                for para in paragraphs:
+                    if merged and len(merged[-1]) <= 20 and len(para) <= 30:
+                        merged[-1] = merged[-1] + " " + para
+                    else:
+                        merged.append(para)
+                return " ".join(merged) if merged else ""
 
             def _extract_table(tbl_elm) -> str:
+                """각 행을 '| cell | cell |' 형태로 변환.
+                행 사이를 \\n\\n으로 구분해 RecursiveCharacterTextSplitter가
+                행 경계에서만 분할하도록 보장.
+                """
                 rows_text = []
                 for tr in tbl_elm.findall(f"{{{WNS}}}tr"):
                     cells = []
@@ -622,17 +779,14 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                             cells.append(ct)
                     if cells:
                         rows_text.append("| " + " | ".join(cells) + " |")
-                return "\n".join(rows_text)
+                return "\n\n".join(rows_text)
 
             blocks = []
             for idx, child in enumerate(doc.element.body):
                 local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
 
                 if local == 'p':
-                    raw = "".join(
-                        node.text or "" for node in child.iter()
-                        if node.tag == f"{{{WNS}}}t"
-                    )
+                    raw = "".join(node.text or "" for node in _iter_t(child))
                     text = normalize_text(raw)
                     if not text.strip():
                         continue
@@ -688,10 +842,10 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
 
 # ============================================================================
-# 청킹 파이프라인 헬퍼 (splitter factory)
+# 청킹 파이프라인 헬퍼 (splitter factory + block-aware chunker)
 # ============================================================================
 
-def make_splitter(chunk_size: int = 1200, chunk_overlap: int = 300) -> RecursiveCharacterTextSplitter:
+def make_splitter(chunk_size: int = 1000, chunk_overlap: int = 50) -> RecursiveCharacterTextSplitter:
     return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -703,6 +857,71 @@ def make_splitter(chunk_size: int = 1200, chunk_overlap: int = 300) -> Recursive
             "\n",          # 줄바꿈
         ],
     )
+
+
+# 법조문 경계 패턴
+_LAW_ARTICLE_RE = re.compile(r'^제\s*\d+조')                        # 제X조
+_LAW_CLAUSE_RE  = re.compile(r'^[\u2460-\u2473\u24EA\u3251-\u325F]')  # ①-⑳, ㊑-㊟
+
+
+def chunk_blocks_aware(
+    blocks: List[Dict[str, Any]],
+    max_chars: int = 900,
+    min_chars: int = 150,
+) -> List[str]:
+    """
+    블록 경계를 보존하는 청킹 — RecursiveCharacterTextSplitter 대체.
+
+    분리 우선순위:
+    1. 제X조 시작: 항상 새 청크 (조항 단위 보장)
+    2. ①②③ 시작: 현재 청크 >= min_chars 이면 새 청크 (항 단위 분리)
+    3. max_chars 초과: 다음 블록 경계에서 분리 (문장 중간 컷 없음)
+
+    RecursiveCharacterTextSplitter와 달리 문자 단위 강제 컷이 없으므로
+    블록(PDF 텍스트 유닛) 경계에서만 분리 → 문장 항상 완전 보존.
+    """
+    # 서술어 끝 조각 패턴: "말한다.", "한다.", "이다." 등 단독으로 의미 없는 짧은 조각
+    _TAIL_FRAG_RE = re.compile(
+        r'^[가-힣]{1,6}(한다|된다|이다|있다|없다|말한다|아니한다|합니다|됩니다)[.。]?\s*$'
+    )
+
+    chunks: List[str] = []
+    buf: List[str] = []
+    buf_chars: int = 0
+
+    def _flush() -> None:
+        nonlocal buf, buf_chars
+        text = "\n".join(buf).strip()
+        if not text:
+            buf.clear(); buf_chars = 0; return
+        # 짧은 서술어 조각(≤40자)은 이전 청크 뒤에 붙임 (다음 청크 오염 방지)
+        if buf_chars <= 40 and chunks and _TAIL_FRAG_RE.search(text):
+            chunks[-1] = chunks[-1] + "\n" + text
+        else:
+            chunks.append(text)
+        buf.clear()
+        buf_chars = 0
+
+    for block in blocks:
+        text = block.get("text", "").strip()
+        if not text:
+            continue
+
+        is_article = bool(_LAW_ARTICLE_RE.match(text))
+        is_clause  = bool(_LAW_CLAUSE_RE.match(text))
+
+        if is_article and buf:
+            _flush()
+        elif is_clause and buf_chars >= min_chars:
+            _flush()
+        elif buf_chars + len(text) > max_chars and buf:
+            _flush()
+
+        buf.append(text)
+        buf_chars += len(text) + 1  # +1 for \n separator
+
+    _flush()
+    return chunks
 
 
 # 법조문 서술어 조각 패턴 (청크 시작에 남는 잔여 서술어 + 마침표까지 포함)

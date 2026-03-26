@@ -116,8 +116,8 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
         # relevance 경계값(0.6)이고 groundedness도 낮으면 둘 다 추가
         failure_types.append("faithfulness_error")
         failure_types.append("retrieval_miss")
-    if rag.get("clarity", 1.0) < 0.6:
-        failure_types.append("ambiguous_question")
+    if rag.get("context_relevance", 1.0) < 0.6:
+        failure_types.append("poor_context")
     ctx_len = len(context.strip()) if context else 0
     if ctx_len < 100:
         failure_types.append("bad_chunk")
@@ -141,7 +141,7 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
         "hallucination":      rag.get("groundedness_reason", ""),
         "faithfulness_error": rag.get("groundedness_reason", ""),
         "retrieval_miss":     rag.get("relevance_reason", "") or rag.get("groundedness_reason", ""),
-        "ambiguous_question": rag.get("clarity_reason", ""),
+        "poor_context":       rag.get("context_relevance_reason", ""),
         "bad_chunk":          f"컨텍스트 길이 {ctx_len}자 — 재생성 불가" if ctx_len < 100 else "",
         "evaluation_error":   quality.get("error", "") or rag.get("error", ""),
         "low_quality":        f"품질 점수 미달 (avg_quality={avg_quality:.2f}, 기준 0.70) — 개선 필요",
@@ -163,16 +163,21 @@ def _rag_worker(args):
 
     try:
         result = rag_evaluator.evaluate_all_with_reasons(question, answer, context)
-        avg_score = (result["relevance"] + result["groundedness"] + result["clarity"]) / 3
+        # 표준 RAG Triad: 관련성(answer) × 0.3 + 근거성 × 0.5 + 맥락성(context) × 0.2
+        avg_score = (
+            result["relevance"]           * 0.3
+            + result["groundedness"]      * 0.5
+            + result["context_relevance"] * 0.2
+        )
         return i, {
-            "qa_index":            i,
-            "relevance":           round(result["relevance"], 3),
-            "relevance_reason":    result.get("relevance_reason", ""),
-            "groundedness":        round(result["groundedness"], 3),
-            "groundedness_reason": result.get("groundedness_reason", ""),
-            "clarity":             round(result["clarity"], 3),
-            "clarity_reason":      result.get("clarity_reason", ""),
-            "avg_score":           round(avg_score, 3),
+            "qa_index":                    i,
+            "relevance":                   round(result["relevance"], 3),
+            "relevance_reason":            result.get("relevance_reason", ""),
+            "groundedness":                round(result["groundedness"], 3),
+            "groundedness_reason":         result.get("groundedness_reason", ""),
+            "context_relevance":           round(result["context_relevance"], 3),
+            "context_relevance_reason":    result.get("context_relevance_reason", ""),
+            "avg_score":                   round(avg_score, 3),
         }
     except Exception as e:
         logger.warning(f"[{job_id}] RAG evaluation error at index {i}: {e}")
@@ -339,15 +344,15 @@ def run_full_evaluation_pipeline(
             "evaluated_count": len(valid_qa),
             "qa_scores": rag_scores_list,
             "summary": {
-                "avg_relevance":    round(sum(s.get("relevance",    0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
-                "avg_groundedness": round(sum(s.get("groundedness", 0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
-                "avg_clarity":      round(sum(s.get("clarity",      0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
-                "avg_score":        round(sum(s.get("avg_score",    0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "avg_relevance":         round(sum(s.get("relevance",         0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "avg_groundedness":      round(sum(s.get("groundedness",      0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "avg_context_relevance": round(sum(s.get("context_relevance", 0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "avg_score":             round(sum(s.get("avg_score",         0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "distribution": {
-                    "relevance":    _distribution_stats(rag_scores_list, "relevance"),
-                    "groundedness": _distribution_stats(rag_scores_list, "groundedness"),
-                    "clarity":      _distribution_stats(rag_scores_list, "clarity"),
-                    "overall":      _distribution_stats(rag_scores_list, "avg_score"),
+                    "relevance":         _distribution_stats(rag_scores_list, "relevance"),
+                    "groundedness":      _distribution_stats(rag_scores_list, "groundedness"),
+                    "context_relevance": _distribution_stats(rag_scores_list, "context_relevance"),
+                    "overall":           _distribution_stats(rag_scores_list, "avg_score"),
                 },
             },
         }
@@ -436,6 +441,11 @@ def run_full_evaluation_pipeline(
             q_score["failure_types"]   = fi.get("failure_types", [])
             q_score["primary_failure"] = fi.get("primary_failure")
             q_score["failure_reason"]  = fi.get("failure_reason", "")
+            # hallucination / faithfulness_error 시 pass 취소
+            # completeness가 높아도 근거 오류가 있으면 최종 통과 불가
+            _HARD_FAIL = {"hallucination", "faithfulness_error"}
+            if _HARD_FAIL & set(q_score["failure_types"]):
+                q_score["pass"] = False
 
     results["overall_score"] = {
         "status":         "completed",
@@ -536,11 +546,14 @@ def run_evaluation(
         quality_avg       = quality_data["summary"]["avg_quality"]    if quality_data  else 0.65
         quality_pass_rate = quality_data["pass_rate"]                 if quality_data  else 0
 
+        # completeness(quality_avg)를 rag 점수의 곱셈형 게이트로 처리:
+        # 부분 답변일수록 rag 점수 전체가 비례해서 낮아짐.
+        # 예) rag=0.87, completeness=0.60 → 0.87*0.60*0.8 + 0.2 = 0.617 (실패)
+        # 예) rag=0.87, completeness=1.00 → 0.87*1.00*0.8 + 0.2 = 0.896 (통과)
         final_score = (
             (syntax_pass_rate / 100) * 0.1
             + (min(dataset_quality, 10) / 10) * 0.1
-            + rag_avg     * 0.4
-            + quality_avg * 0.4
+            + (rag_avg * quality_avg) * 0.8
         )
 
         if   final_score >= 0.95: grade = "A+"
@@ -594,7 +607,7 @@ def run_evaluation(
                 # RAG reason
                 "relevance_reason":    r.get("relevance_reason", ""),
                 "groundedness_reason": r.get("groundedness_reason", ""),
-                "clarity_reason":      r.get("clarity_reason", ""),
+                "context_relevance_reason": r.get("context_relevance_reason", ""),
                 # Quality reason
                 "completeness_reason": q.get("completeness_reason", ""),
                 # Failure classification
