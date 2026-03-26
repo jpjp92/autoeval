@@ -313,8 +313,11 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "relevance_reason":    r.get("relevance_reason", ""),
                 "groundedness_reason": r.get("groundedness_reason", ""),
                 "clarity_reason":      r.get("clarity_reason", ""),
-                # Quality reason
-                "completeness_reason": q.get("completeness_reason", ""),
+                # Quality reason (completeness — 신규 / factuality·specificity·conciseness — legacy 하위호환)
+                "completeness_reason":  q.get("completeness_reason", ""),
+                "factuality_reason":    q.get("factuality_reason", ""),
+                "specificity_reason":   q.get("specificity_reason", ""),
+                "conciseness_reason":   q.get("conciseness_reason", ""),
                 # Failure classification
                 "failure_types":       failure_types   or [],
                 "primary_failure":     primary_failure or None,
