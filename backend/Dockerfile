@@ -3,7 +3,7 @@ FROM python:3.12-slim
 # 타임존 및 기본 유틸 설정 (curl은 docker-compose healthcheck에서 사용)
 ENV TZ=Asia/Seoul
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl tzdata default-jre-headless \
+    curl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # uv 설치
