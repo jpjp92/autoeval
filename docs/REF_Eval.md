@@ -3,11 +3,14 @@
 ## 최종 점수 계산
 
 ```
-final_score = 0.10 × syntax_score
-            + 0.10 × stats_score
-            + 0.40 × rag_score
-            + 0.40 × quality_score
+final_score = 0.05 × syntax_score
+            + 0.05 × stats_score
+            + 0.65 × rag_score          ← RAG Triad (Answer Relevance·Groundedness·Context Relevance)
+            + 0.25 × completeness       ← 품질 평가 (완전성 단일 지표)
 ```
+
+> **RAG Triad 내부 가중치**
+> `rag_score = relevance×0.3 + groundedness×0.5 + context_relevance×0.2`
 
 ## 등급 기준
 

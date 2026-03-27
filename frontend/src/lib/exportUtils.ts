@@ -699,7 +699,7 @@ function showQADetail(idx){
   // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
   var isLegacy=!!(qa.factuality_reason||qa.specificity_reason||qa.conciseness_reason);
   var ragMetrics=[
-    {name:'관련성 (Relevance)',reason:qa.relevance_reason},
+    {name:'관련성 (Answer Relevance)',reason:qa.relevance_reason},
     {name:'근거성 (Groundedness)',reason:qa.groundedness_reason},
     ...(qa.clarity_reason
       ? [{name:'명확성 (Clarity)',reason:qa.clarity_reason}]
