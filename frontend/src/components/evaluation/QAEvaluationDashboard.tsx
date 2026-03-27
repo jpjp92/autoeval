@@ -185,8 +185,8 @@ function buildChartData(report: EvalReport) {
   const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
   const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
+    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
     ...(isLegacyClarity
       ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
       : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]
@@ -234,8 +234,8 @@ function buildChartDataFromHistory(item: HistoryItem) {
   const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
   const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Relevance',    score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness', score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
+    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
     ...(isLegacyClarity
       ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
       : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]

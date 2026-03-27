@@ -546,14 +546,15 @@ def run_evaluation(
         quality_avg       = quality_data["summary"]["avg_quality"]    if quality_data  else 0.65
         quality_pass_rate = quality_data["pass_rate"]                 if quality_data  else 0
 
-        # completeness(quality_avg)를 rag 점수의 곱셈형 게이트로 처리:
-        # 부분 답변일수록 rag 점수 전체가 비례해서 낮아짐.
-        # 예) rag=0.87, completeness=0.60 → 0.87*0.60*0.8 + 0.2 = 0.617 (실패)
-        # 예) rag=0.87, completeness=1.00 → 0.87*1.00*0.8 + 0.2 = 0.896 (통과)
+        # 가중 합산 방식 (additive):
+        #   Syntax 5% + Stats 5% + RAG Triad 65% + Completeness 25%
+        # 예) rag=0.87, completeness=0.60 → 0.05+0.05+0.566+0.150 = 0.816 (B+)
+        # 예) rag=0.87, completeness=1.00 → 0.05+0.05+0.566+0.250 = 0.916 (A+)
         final_score = (
-            (syntax_pass_rate / 100) * 0.1
-            + (min(dataset_quality, 10) / 10) * 0.1
-            + (rag_avg * quality_avg) * 0.8
+            (syntax_pass_rate / 100)        * 0.05
+            + (min(dataset_quality, 10) / 10) * 0.05
+            + rag_avg                         * 0.65
+            + quality_avg                     * 0.25
         )
 
         if   final_score >= 0.95: grade = "A+"
