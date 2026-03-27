@@ -126,23 +126,24 @@ const nodes: Node[] = [
 
   // ── S1: 데이터 규격화 ── (4 nodes)
   g('g1', 0, 4, 'STEP 1  ·  데이터 규격화', 0),
-  s('s1-parse',  0, 0, 'PDF / DOCX 파싱',    '청킹 · 괄호 블록 병합',            0),
+  s('s1-parse',  0, 0, 'PDF / DOCX 파싱',    'LLM 청킹 (기본) · 노이즈 정제',    0),
   s('s1-norm',   0, 1, '정규화 · 중복 확인',  '특수문자 정리 · 버전별 중복 체크',  0),
   s('s1-embed',  0, 2, 'Gemini Embedding 2',  '1536차원 벡터 변환',               0),
   d('db1',       0, 3, 'DB 저장: doc_chunks'),
 
-  // ── S2: 계층 태깅 ── (3 nodes)
-  g('g2', 1, 3, 'STEP 2  ·  계층 태깅', 1),
-  s('s2-master', 1, 0, '단계 1 — 계층 분석·생성', 'H1/H2/H3 전체 · 밀도 필터',  1),
-  s('s2-tag',    1, 1, '단계 2 — 청크 태깅',   'H1/H2/H3 태그 · 버전별 추적', 1),
-  d('db2',       1, 2, 'DB 저장: doc_chunks.metadata'),
+  // ── S2: 계층 태깅 ── (4 nodes: master → doc_metadata → tag → doc_chunks.metadata)
+  g('g2', 1, 4, 'STEP 2  ·  계층 태깅', 1),
+  s('s2-master', 1, 0, '단계 1 — 계층 분석·생성', 'H1/H2/H3 생성 · 도메인 프로파일', 1),
+  d('db2a',      1, 1, 'DB 저장: doc_metadata'),
+  s('s2-tag',    1, 2, '단계 2 — 청크 태깅',   'H1/H2/H3 태그 · 버전별 추적', 1),
+  d('db2',       1, 3, 'DB 저장: doc_chunks.metadata'),
 
   // ── S3: QA 생성 ── (4 nodes)
   g('g3', 2, 4, 'STEP 3  ·  QA 생성', 2),
   s('s3-filter', 2, 0, 'H1/H2 필터 조회',  'content 기반 · chunk ID 조회',     2),
-  s('s3-prof',   2, 1, '도메인 분석',       '대상 도메인 · 의도 파악',           2),
-  s('s3-gen',    2, 2, 'QA 생성 (병렬처리)', '6종 의도 기반 · reasoning 포함',   2),
-  d('db3',       2, 3, 'DB 저장: qa_gen_results'),
+  s('s3-prof',   2, 1, '도메인 분석',       'doc_metadata 캐시 우선',            2),
+  s('s3-gen',    2, 2, 'QA 생성 (병렬처리)', '8종 의도 기반 · reasoning 포함',   2),
+  d('db3',       2, 3, 'DB 저장: qa_generation_results'),
 
   // ── S4: 평가 ── (5 nodes)
   g('g4', 3, 5, 'STEP 4  ·  QA 평가', 3),
@@ -150,14 +151,14 @@ const nodes: Node[] = [
   s('s4-stat',  3, 1, 'Statistics 검사',   '다양성 · 중복률',                 3),
   s('s4-qual',  3, 2, '통합 품질 검사',    '관련성·근거성·맥락성·완전성',      3,
     { color: '#fff1f2', tx: '#9f1239', bd: '#fca5a5' }),
-  s('s4-score', 3, 3, '최종 점수 집계',   '구문·통계 ×0.1 / 품질 ×0.8',      3,
+  s('s4-score', 3, 3, '최종 점수 집계',   'RAG ×0.65 / 품질 ×0.25 / 구문·통계 ×0.1', 3,
     { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
-  d('db4', 3, 4, 'DB 저장: qa_eval_results'),
+  d('db4', 3, 4, 'DB 저장: qa_evaluation_scores'),
 
   // ── S5: 결과 확인 ── (3 nodes)
   g('g5', 4, 3, 'STEP 5  ·  결과 확인', 4),
   s('s5-eval',   4, 0, '평가 결과 확인',   'QA 상세 · 레이어별 점수',       4),
-  s('s5-export', 4, 1, '리포트 내보내기',  'XLSX / HTML 다운로드',           4),
+  s('s5-export', 4, 1, '리포트 내보내기',  'HTML / CSV / JSON / ZIP',        4),
   s('s5-dash',   4, 2, '대시보드',         '집계 지표 · 점수 추이 · 등급 분포', 4,
     { color: '#e0e7ff', tx: '#3730a3', bd: '#6366f1' }),
 ];
@@ -181,7 +182,8 @@ const edges: Edge[] = [
     type: 'smoothstep', animated: true, style: xv },
 
   // S2 내부
-  { id: 'e-2a',    source: 's2-master', target: 's2-tag',    style: iv },
+  { id: 'e-2a',    source: 's2-master', target: 'db2a',      style: iv },
+  { id: 'e-2a2',   source: 'db2a',      target: 's2-tag',    style: iv },
   { id: 'e-2b',    source: 's2-tag',    target: 'db2',       style: iv },
 
   // S2 → S3 (cross)
