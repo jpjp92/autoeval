@@ -72,7 +72,7 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
                     h3_by_h1_h2[key].add(h3)
 
         if admin_count:
-            logger.info(f"⏭️ __admin__ chunks excluded from hierarchy list: {admin_count} (filename={filename!r})")
+            logger.info(f"Admin chunks excluded from hierarchy list: {admin_count} (filename={filename!r})")
 
         return {
             "h1_list": sorted(h2_by_h1.keys()),
@@ -80,7 +80,7 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
             "h3_by_h1_h2": {k: sorted(v) for k, v in h3_by_h1_h2.items()},
         }
     except Exception as e:
-        logger.error(f"❌ Failed to get hierarchy list: {e}")
+        logger.error(f"Failed to get hierarchy list: {e}")
         return {"h1_list": [], "h2_by_h1": {}, "h3_by_h1_h2": {}}
 
 
@@ -105,5 +105,5 @@ async def update_document_hierarchy(source_name: str, h1: str, h2: str, h3: str)
 
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to update document hierarchy: {e}")
+        logger.error(f"Failed to update document hierarchy: {e}")
         return False

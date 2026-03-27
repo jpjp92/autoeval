@@ -38,7 +38,7 @@ MODEL_CONFIG = {
         "model_id": "gemini-3-flash-preview",
         "cost_input": 0.3 / 1_000_000,      # $0.3 per MTok
         "cost_output": 1.2 / 1_000_000,     # $1.2 per MTok
-        "name": "Gemini 3.1 Flash",
+        "name": "Gemini 3 Flash",
     },
     "claude-haiku": {
         "provider": "anthropic",

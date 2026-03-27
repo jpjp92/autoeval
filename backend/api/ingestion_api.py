@@ -30,6 +30,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from google import genai as google_genai
 from pydantic import BaseModel
 
+from config.models import MODEL_CONFIG
 from config.supabase_client import (
     get_document_chunks,
     get_doc_chunks_sampled,
@@ -55,6 +56,8 @@ from ingestion.parsers import (
     _merge_short_chunks,
     _resolve_chunk_page,
 )
+from ingestion.llm_chunker import run_llm_chunking
+from db.doc_metadata_repo import upsert_doc_metadata
 
 logger = logging.getLogger("autoeval.ingestion")
 
@@ -82,6 +85,7 @@ class HierarchyAnalysisResponse(BaseModel):
     domain_analysis: str
     h1_candidates: List[str]
     h2_h3_master: Dict[str, Any]
+    domain_profile: Optional[Dict[str, Any]] = None
     anchor_ids: Optional[List[str]] = None
     document_id: Optional[str] = None
 
@@ -99,11 +103,21 @@ class GranularTaggingRequest(BaseModel):
 # 핵심 처리 파이프라인 (Background Task)
 # ============================================================================
 
-async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadata: Dict[str, Any]):
-    """Section-First 청킹 → Gemini Embedding 2 → Supabase 저장."""
+async def process_and_ingest(
+    filename: str,
+    pages: List[Dict[str, Any]],
+    metadata: Dict[str, Any],
+    chunking_method: str = "llm",
+):
+    """청킹 → Gemini Embedding 2 → Supabase 저장.
+
+    chunking_method:
+      "llm"  — Gemini 2.5 Flash LLM 청킹 (기본, 품질 우선)
+      "rule" — rule-based 청킹 (parsers.chunk_blocks_aware, 하위 호환)
+    """
     try:
         if not gemini_client:
-            logger.error("Gemini client not initialized.")
+            logger.error("Gemini client not initialized")
             return
 
         doc_id = str(uuid4())
@@ -121,112 +135,24 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
             logger.warning(f"[{filename}] No blocks extracted.")
             return
 
-        all_blocks_text = [b.get("text", "") for b in all_blocks]
-        merged_blocks_data, _ = merge_adjacent_short_blocks(all_blocks, all_blocks_text)
-        logger.info(f"[{filename}] Block merge: {len(all_blocks)} → {len(merged_blocks_data)}")
-        all_blocks = merged_blocks_data
-
-        sections = build_sections(all_blocks)
-        logger.info(f"[{filename}] Sections built: {len(sections)}")
-        if not sections:
-            logger.warning(f"[{filename}] No sections built.")
-            return
-
-        section_stack: List[str] = []
-        all_chunks_to_embed = []
-        seen_hashes: set = set()
-        _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
-
-        for sec in sections:
-            heading = sec["heading"]
-            level = sec["level"]
-            normalized_heading = heading.replace('\n', ' ').replace('  ', ' ').strip()
-
-            if normalized_heading != "Root":
-                section_stack = section_stack[:level - 1]
-                section_stack.append(normalized_heading)
-
-            section_path = " > ".join(section_stack) if section_stack else "Document"
-
-            # page 역추적용 offset 계산 (page resolution에 필요)
-            block_page_offsets = []
-            section_text_parts = []
-            cur_offset = 0
-            for b in sec["blocks"]:
-                b_text = b.get("text", "")
-                block_page_offsets.append((cur_offset, b.get("page", sec["page"])))
-                section_text_parts.append(b_text)
-                cur_offset += len(b_text) + 1
-            section_text = "\n".join(section_text_parts)
-
-            # 블록 경계 보존 청킹 (문장 중간 컷 없음)
-            raw_chunks = chunk_blocks_aware(sec["blocks"])
-            raw_chunks = _merge_short_chunks(raw_chunks, min_chars=300, max_chars=1200)
-
-            for chunk_text in raw_chunks:
-                stripped = chunk_text.lstrip()
-                if stripped.startswith("|") and "---" in stripped and not stripped.startswith("[표]"):
-                    chunk_text = "[표]\n" + stripped
-
-                if is_toc_chunk(chunk_text):
-                    _filter_counts["toc"] += 1
-                    continue
-                if _is_colophon_chunk(chunk_text):
-                    _filter_counts["colophon"] += 1
-                    continue
-                if _is_symbol_noise_chunk(chunk_text):
-                    _filter_counts["symbol"] += 1
-                    continue
-
-                chunk_text = remove_footer_noise(chunk_text, repeated_headers)
-                chunk_text = strip_redundant_headings(chunk_text, heading)
-
-                if len(chunk_text.strip()) < 60:
-                    _filter_counts["too_short"] += 1
-                    _filter_counts.setdefault("_too_short_samples", [])
-                    if len(_filter_counts["_too_short_samples"]) < 10:
-                        _filter_counts["_too_short_samples"].append(chunk_text.strip()[:80])
-                    continue
-
-                norm_text = normalize_for_hash(chunk_text)
-                content_hash = hashlib.sha1(norm_text.encode('utf-8')).hexdigest()
-                if content_hash in seen_hashes:
-                    _filter_counts["duplicate"] += 1
-                    continue
-                seen_hashes.add(content_hash)
-
-                chunk_type = detect_chunk_type(chunk_text).lower()
-                normalized_section_title = heading.replace('\n', ' ').replace('  ', ' ').strip()
-                # 법률 조문 제목 정규화: '제2조(정의) 이 법에서...' → '제2조(정의)'
-                _law_title_re = re.compile(r'^(제\d+조(?:의\d+)?(?:\([^)]{1,30}\))?)')
-                _m = _law_title_re.match(normalized_section_title)
-                prefix_title = _m.group(1) if _m else normalized_section_title
-                context_prefix = build_context_prefix(filename, prefix_title, sec["page"])
-                enriched_text = context_prefix + chunk_text
-
-                all_chunks_to_embed.append({
-                    "text": enriched_text,
-                    "raw_text": chunk_text,
-                    "page": _resolve_chunk_page(chunk_text, section_text, block_page_offsets, sec["page"]),
-                    "hash": content_hash,
-                    "section_title": normalized_section_title,
-                    "section_path": section_path,
-                    "section_level": level,
-                    "chunk_type": chunk_type,
-                })
-
-        too_short_samples = _filter_counts.pop("_too_short_samples", [])
-        logger.info(f"[{filename}] {len(all_chunks_to_embed)} chunks ready. Filtered — {_filter_counts}")
-        if too_short_samples:
-            logger.info(f"[{filename}] too_short samples: {too_short_samples}")
+        # ── 청킹 분기 ──────────────────────────────────────────
+        if chunking_method == "llm":
+            all_chunks_to_embed = await _ingest_with_llm_chunking(
+                filename, pages, all_blocks, repeated_headers
+            )
+        else:
+            all_chunks_to_embed = _ingest_with_rule_chunking(
+                filename, all_blocks, repeated_headers
+            )
+        # ────────────────────────────────────────────────────────
 
         if len(all_chunks_to_embed) == 0:
-            logger.error(f"❌ [{filename}] 0 chunks produced. Filtered — {_filter_counts}")
+            logger.error(f"[{filename}] 0 chunks produced")
             return
 
-        batch_size = 64
-        for i in range(0, len(all_chunks_to_embed), batch_size):
-            batch = all_chunks_to_embed[i: i + batch_size]
+        embed_batch_size = 64
+        for i in range(0, len(all_chunks_to_embed), embed_batch_size):
+            batch = all_chunks_to_embed[i: i + embed_batch_size]
             batch_texts = [item["text"] for item in batch]
 
             res = await gemini_client.aio.models.embed_content(
@@ -251,13 +177,14 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                     "filename": filename,
                     "content_hash": c["hash"],
                     "section_title": c["section_title"],
-                    "section_path": c["section_path"],
-                    "section_level": c["section_level"],
+                    "section_path": c.get("section_path", ""),
+                    "section_level": c.get("section_level", 0),
                     "chunk_type": c["chunk_type"],
                     "page": c["page"],
                     "char_length": len(c["raw_text"]),
                     "chunk_index": i + idx,
                     "total_chunks": len(all_chunks_to_embed),
+                    "chunking_method": chunking_method,
                     "source": filename.split('.')[-1].lower() if '.' in filename else 'unknown',
                     "ingested_at": ingested_at,
                     "embedding_model": "gemini-embedding-2-preview",
@@ -270,12 +197,188 @@ async def process_and_ingest(filename: str, pages: List[Dict[str, Any]], metadat
                 })
 
             await save_doc_chunks_batch(batch_rows)
-            logger.info(f"   Batch {i // batch_size + 1} done ({len(batch)} chunks).")
+            logger.info(f"[{filename}] Embed batch {i // embed_batch_size + 1} done ({len(batch)} chunks)")
 
-        logger.info(f"✅ Ingestion complete: {filename} ({len(all_chunks_to_embed)} chunks)")
+        logger.info(f"Ingestion complete: {filename} ({len(all_chunks_to_embed)} chunks, method={chunking_method})")
 
     except Exception as e:
-        logger.error(f"❌ Ingestion pipeline failed for {filename}: {e}", exc_info=True)
+        logger.error(f"Ingestion pipeline failed for {filename}: {e}", exc_info=True)
+
+
+# ============================================================================
+# 청킹 헬퍼 — LLM / Rule-based
+# ============================================================================
+
+async def _ingest_with_llm_chunking(
+    filename: str,
+    pages: List[Dict[str, Any]],
+    all_blocks: List[Dict[str, Any]],
+    repeated_headers: set,
+) -> List[Dict[str, Any]]:
+    """LLM 청킹 경로: run_llm_chunking → 공통 필터 적용."""
+    page_count = max((p.get("page", 1) for p in pages), default=1)
+
+    # blocks에 연속 index 부여 (llm_chunker 요구사항)
+    indexed_blocks = [
+        {"index": i, "page": b.get("page", 1), "text": b.get("text", "").strip()}
+        for i, b in enumerate(all_blocks)
+        if b.get("text", "").strip()
+    ]
+
+    chunks = await run_llm_chunking(
+        blocks=indexed_blocks,
+        client=gemini_client,
+        model=MODEL_CONFIG["gemini-flash"]["model_id"],
+        page_count=page_count,
+    )
+
+    all_chunks_to_embed = []
+    seen_hashes: set = set()
+    _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
+
+    for chunk in chunks:
+        chunk_text = chunk.get("text", "").strip()
+        if not chunk_text:
+            continue
+
+        chunk_text = remove_footer_noise(chunk_text, repeated_headers)
+
+        if is_toc_chunk(chunk_text):
+            _filter_counts["toc"] += 1
+            continue
+        if _is_colophon_chunk(chunk_text):
+            _filter_counts["colophon"] += 1
+            continue
+        if _is_symbol_noise_chunk(chunk_text):
+            _filter_counts["symbol"] += 1
+            continue
+        if len(chunk_text) < 60:
+            _filter_counts["too_short"] += 1
+            continue
+
+        norm_text = normalize_for_hash(chunk_text)
+        content_hash = hashlib.sha1(norm_text.encode("utf-8")).hexdigest()
+        if content_hash in seen_hashes:
+            _filter_counts["duplicate"] += 1
+            continue
+        seen_hashes.add(content_hash)
+
+        chunk_type = detect_chunk_type(chunk_text).lower()
+        section_title = chunk.get("section_title", "") or chunk_text.split("\n")[0].strip()[:30]
+
+        all_chunks_to_embed.append({
+            "text": chunk_text,       # LLM 청킹은 context_prefix 없이 저장
+            "raw_text": chunk_text,
+            "page": chunk.get("page", 1),
+            "hash": content_hash,
+            "section_title": section_title,
+            "section_path": "",       # hierarchy tagging(Pass 3)에서 부여
+            "section_level": 0,
+            "chunk_type": chunk_type,
+        })
+
+    logger.info(f"[{filename}] LLM chunking: {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
+    return all_chunks_to_embed
+
+
+def _ingest_with_rule_chunking(
+    filename: str,
+    all_blocks: List[Dict[str, Any]],
+    repeated_headers: set,
+) -> List[Dict[str, Any]]:
+    """Rule-based 청킹 경로 (기존 파이프라인, 하위 호환)."""
+    all_blocks_text = [b.get("text", "") for b in all_blocks]
+    merged_blocks_data, _ = merge_adjacent_short_blocks(all_blocks, all_blocks_text)
+    logger.info(f"[{filename}] Block merge: {len(all_blocks)} → {len(merged_blocks_data)}")
+
+    sections = build_sections(merged_blocks_data)
+    logger.info(f"[{filename}] Sections built: {len(sections)}")
+    if not sections:
+        logger.warning(f"[{filename}] No sections built.")
+        return []
+
+    section_stack: List[str] = []
+    all_chunks_to_embed = []
+    seen_hashes: set = set()
+    _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
+    _law_title_re = re.compile(r'^(제\d+조(?:의\d+)?(?:\([^)]{1,30}\))?)')
+
+    for sec in sections:
+        heading = sec["heading"]
+        level = sec["level"]
+        normalized_heading = heading.replace('\n', ' ').replace('  ', ' ').strip()
+
+        if normalized_heading != "Root":
+            section_stack = section_stack[:level - 1]
+            section_stack.append(normalized_heading)
+
+        section_path = " > ".join(section_stack) if section_stack else "Document"
+
+        block_page_offsets = []
+        section_text_parts = []
+        cur_offset = 0
+        for b in sec["blocks"]:
+            b_text = b.get("text", "")
+            block_page_offsets.append((cur_offset, b.get("page", sec["page"])))
+            section_text_parts.append(b_text)
+            cur_offset += len(b_text) + 1
+        section_text = "\n".join(section_text_parts)
+
+        raw_chunks = chunk_blocks_aware(sec["blocks"])
+        raw_chunks = _merge_short_chunks(raw_chunks, min_chars=300, max_chars=1200)
+
+        for chunk_text in raw_chunks:
+            stripped = chunk_text.lstrip()
+            if stripped.startswith("|") and "---" in stripped and not stripped.startswith("[표]"):
+                chunk_text = "[표]\n" + stripped
+
+            if is_toc_chunk(chunk_text):
+                _filter_counts["toc"] += 1
+                continue
+            if _is_colophon_chunk(chunk_text):
+                _filter_counts["colophon"] += 1
+                continue
+            if _is_symbol_noise_chunk(chunk_text):
+                _filter_counts["symbol"] += 1
+                continue
+
+            chunk_text = remove_footer_noise(chunk_text, repeated_headers)
+            chunk_text = strip_redundant_headings(chunk_text, heading)
+
+            if len(chunk_text.strip()) < 60:
+                _filter_counts["too_short"] += 1
+                continue
+
+            norm_text = normalize_for_hash(chunk_text)
+            content_hash = hashlib.sha1(norm_text.encode('utf-8')).hexdigest()
+            if content_hash in seen_hashes:
+                _filter_counts["duplicate"] += 1
+                continue
+            seen_hashes.add(content_hash)
+
+            chunk_type = detect_chunk_type(chunk_text).lower()
+            normalized_section_title = heading.replace('\n', ' ').replace('  ', ' ').strip()
+            _m = _law_title_re.match(normalized_section_title)
+            prefix_title = _m.group(1) if _m else normalized_section_title
+            context_prefix = build_context_prefix(filename, prefix_title, sec["page"])
+            enriched_text = context_prefix + chunk_text
+
+            all_chunks_to_embed.append({
+                "text": enriched_text,
+                "raw_text": chunk_text,
+                "page": _resolve_chunk_page(chunk_text, section_text, block_page_offsets, sec["page"]),
+                "hash": content_hash,
+                "section_title": normalized_section_title,
+                "section_path": section_path,
+                "section_level": level,
+                "chunk_type": chunk_type,
+            })
+
+    too_short_samples = _filter_counts.pop("_too_short_samples", [])
+    logger.info(f"[{filename}] Rule chunking: {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
+    if too_short_samples:
+        logger.info(f"[{filename}] too_short samples: {too_short_samples}")
+    return all_chunks_to_embed
 
 
 # ============================================================================
@@ -315,8 +418,12 @@ async def upload_document(
     hierarchy_h1: Optional[str] = Form(None),
     hierarchy_h2: Optional[str] = Form(None),
     hierarchy_h3: Optional[str] = Form(None),
+    chunking_method: str = Form("llm"),
 ):
-    """문서 업로드 및 벡터화 인제스션 (동기 — 완료 후 응답)."""
+    """문서 업로드 및 벡터화 인제스션 (동기 — 완료 후 응답).
+
+    chunking_method: "llm" (기본) | "rule"
+    """
     if not is_supabase_available():
         raise HTTPException(status_code=500, detail="Supabase 설정이 구성되지 않았습니다.")
 
@@ -350,7 +457,7 @@ async def upload_document(
             "hierarchy_h3": hierarchy_h3,
             "filename": file.filename,
         }
-        await process_and_ingest(file.filename, pages, metadata)
+        await process_and_ingest(file.filename, pages, metadata, chunking_method=chunking_method)
 
         return IngestionResponse(
             success=True,
@@ -393,7 +500,8 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
 
     prompt = f"""
 <role>
-You are an expert document classifier. Build a complete hierarchical taxonomy (H1/H2/H3) for the provided document.
+You are an expert document classifier and domain analyst.
+Build a complete hierarchical taxonomy (H1/H2/H3) AND extract a domain profile for the provided document.
 </role>
 
 <constraints>
@@ -402,7 +510,7 @@ You are an expert document classifier. Build a complete hierarchical taxonomy (H
   Think of H1 as broad domain pillars, not chapter titles.
 - For each H1, create {h2_guide} H2 sub-categories covering distinct content themes.
 - For each H2, create 2~4 specific H3 leaf labels.
-- All names in Korean (한국어), under 15 characters each.
+- All taxonomy names in Korean (한국어), under 15 characters each.
 - H1 must represent LEARNABLE content themes — NOT administrative metadata.
 - H1 must NOT be: dates, ordinance numbers, contact info, department names, page headers.
 - Bad H1 examples: "시행일 관리", "담당부서", "고시번호"
@@ -414,9 +522,16 @@ You are an expert document classifier. Build a complete hierarchical taxonomy (H
 </context>
 
 <task>
-Return a JSON object with this exact structure:
+Return a JSON object with this exact structure (all string values in Korean):
 {{
   "domain_analysis": "한 문장으로 문서 전체 성격 요약",
+  "domain_profile": {{
+    "domain": "문서 분야/유형 (예: AI 데이터 구축 가이드라인)",
+    "domain_short": "짧은 도메인명, 10자 이내",
+    "target_audience": "주요 독자층 (예: 데이터 구축 작업자)",
+    "key_terms": ["전문용어1", "전문용어2", "전문용어3", "전문용어4", "전문용어5"],
+    "tone": "문서 문체 (예: 기술 문서 격식체)"
+  }},
   "h2_h3_master": {{
     "H1명A": {{
       "H2명1": ["H3명1", "H3명2"],
@@ -452,20 +567,82 @@ Return a JSON object with this exact structure:
             h1_candidates = h1_candidates[:H1_MAX]
             h2_h3_master  = {k: h2_h3_master[k] for k in h1_candidates}
 
+        # domain_profile 추출
+        domain_profile: Optional[Dict[str, Any]] = result.get("domain_profile")
+        if not (domain_profile and isinstance(domain_profile, dict)):
+            domain_profile = None
+
         # anchor 청크에서 document_id 추출 (동일 업로드 배치의 첫 청크 기준)
         document_id = (anchor_chunks[0].get("metadata") or {}).get("document_id") if anchor_chunks else None
+
+        # doc_metadata 저장 (document_id 있을 때만)
+        if document_id:
+            await upsert_doc_metadata(
+                document_id=document_id,
+                filename=request.filename,
+                domain_profile=domain_profile,
+                h2_h3_master=h2_h3_master,
+            )
+
         return HierarchyAnalysisResponse(
             domain_analysis=result.get("domain_analysis", ""),
             h1_candidates=h1_candidates,
             h2_h3_master=h2_h3_master,
+            domain_profile=domain_profile,
             anchor_ids=anchor_ids,
             document_id=document_id,
         )
     except Exception as e:
-        logger.error(f"❌ Hierarchy analysis failed: {e}")
+        logger.error(f"Hierarchy analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
+
+
+class TaggingSamplesRequest(BaseModel):
+    filename: str
+    selected_h1_list: List[str]
+
+
+@router.post("/analyze-tagging-samples")
+async def analyze_tagging_samples(request: TaggingSamplesRequest):
+    """이미 태깅된 청크에서 __admin__ 제외 샘플 5개를 반환한다."""
+    if not is_supabase_available():
+        return {"success": False, "samples": [], "message": "Supabase not available"}
+
+    all_chunks = await get_document_chunks(request.filename, limit=2000)
+
+    # Pass 1: one sample per unique h1 (excludes __admin__)
+    samples: list = []
+    seen_h1s: set = set()
+    remaining: list = []
+    for chunk in all_chunks:
+        meta = chunk.get("metadata") or {}
+        h1 = meta.get("hierarchy_h1")
+        if not h1 or h1 == "__admin__":
+            continue
+        if h1 not in seen_h1s and len(samples) < 5:
+            samples.append({
+                "id": chunk["id"],
+                "content_preview": chunk["content"][:150] + "...",
+                "hierarchy": {"h1": h1, "h2": meta.get("hierarchy_h2"), "h3": meta.get("hierarchy_h3")},
+            })
+            seen_h1s.add(h1)
+        elif len(samples) < 5:
+            remaining.append(chunk)
+
+    # Pass 2: fill up to 5 if needed
+    for chunk in remaining:
+        if len(samples) >= 5:
+            break
+        meta = chunk.get("metadata") or {}
+        samples.append({
+            "id": chunk["id"],
+            "content_preview": chunk["content"][:150] + "...",
+            "hierarchy": {"h1": meta.get("hierarchy_h1"), "h2": meta.get("hierarchy_h2"), "h3": meta.get("hierarchy_h3")},
+        })
+
+    return {"success": True, "samples": samples}
 
 
 @router.post("/apply-granular-tagging")
@@ -476,7 +653,7 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
             status_code=400,
             detail="h2_h3_master is required. Run /analyze-hierarchy first.",
         )
-    logger.info(f"🚀 Granular Tagging: {request.filename} (document_id={request.document_id or 'all'})")
+    logger.info(f"Granular tagging start: {request.filename} (document_id={request.document_id or 'all'})")
 
     async def run_tagging() -> list:
         all_chunks = await get_document_chunks(
@@ -573,7 +750,7 @@ Return ONLY a JSON array — no explanation:
                 chunks_data = [_make_chunk_entry(i, c) for i, c in enumerate(batch)]
                 try:
                     res = await gemini_client.aio.models.generate_content(
-                        model="gemini-3-flash-preview",
+                        model=MODEL_CONFIG["gemini-flash"]["model_id"],
                         contents=_build_prompt(chunks_data),
                         config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
                     )
@@ -595,7 +772,7 @@ Return ONLY a JSON array — no explanation:
                         }
                         update_tasks.append(update_chunk_metadata(target["id"], meta))
                         matched += 1
-                        if len(samples_collected) < 5:
+                        if len(samples_collected) < 5 and h.get("h1") != "__admin__":
                             samples_collected.append({
                                 "id": target["id"],
                                 "content_preview": target["content"][:150] + "...",
@@ -606,12 +783,12 @@ Return ONLY a JSON array — no explanation:
                         await asyncio.gather(*update_tasks)
 
                     completed += 1
-                    logger.info(f"✅ Batch {batch_idx + 1}/{len(batches)} tagged ({matched} updated)")
+                    logger.info(f"Batch {batch_idx + 1}/{len(batches)} tagged ({matched} updated)")
                 except Exception as e:
-                    logger.error(f"❌ Batch {batch_idx + 1} error: {e}")
+                    logger.error(f"Batch {batch_idx + 1} error: {e}")
 
         await asyncio.gather(*[process_batch(i, b) for i, b in enumerate(batches)])
-        logger.info(f"🏁 Tagging done: {request.filename} ({completed}/{len(batches)} batches)")
+        logger.info(f"Tagging done: {request.filename} ({completed}/{len(batches)} batches)")
         return samples_collected
 
     samples = await run_tagging()

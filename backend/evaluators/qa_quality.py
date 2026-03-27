@@ -46,7 +46,7 @@ class QAQualityEvaluator:
                 api_key = os.getenv("OPENAI_API_KEY")
                 if api_key:
                     self.client = OpenAI(api_key=api_key)
-                    logger.info(f"✓ QAQualityEvaluator initialized (OpenAI): {self.model_id}")
+                    logger.info(f"QAQualityEvaluator initialized (OpenAI): {self.model_id}")
                 else:
                     logger.warning("OPENAI_API_KEY not set for QAQualityEvaluator")
 
@@ -58,7 +58,7 @@ class QAQualityEvaluator:
                         model=self.model_id, google_api_key=api_key, temperature=0,
                         timeout=90,
                     )
-                    logger.info(f"✓ QAQualityEvaluator initialized (Google): {self.model_id}")
+                    logger.info(f"QAQualityEvaluator initialized (Google): {self.model_id}")
                 else:
                     logger.warning("GOOGLE_API_KEY not set for QAQualityEvaluator")
 
@@ -69,7 +69,7 @@ class QAQualityEvaluator:
                     self.judge_model = ChatAnthropic(
                         model=self.model_id, api_key=api_key, temperature=0
                     )
-                    logger.info(f"✓ QAQualityEvaluator initialized (Anthropic): {self.model_id}")
+                    logger.info(f"QAQualityEvaluator initialized (Anthropic): {self.model_id}")
                 else:
                     logger.warning("ANTHROPIC_API_KEY not set for QAQualityEvaluator")
 

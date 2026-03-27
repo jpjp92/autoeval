@@ -238,7 +238,6 @@ def run_qa_generation(
         
         if main_generate_qa is not None:
             # ===== REAL: Use main.py functions =====
-            logger.info(f"[{job_id}] Using real main.py logic")
             asyncio.run(run_qa_generation_real(job_id, model, lang, samples, qa_per_doc, prompt_version, main_generate_qa))
         else:
             # ===== FALLBACK: Simulation =====
@@ -269,7 +268,6 @@ async def run_qa_generation_real(
     """Real QA generation using main.py functions"""
     import time
     
-    logger.info(f"[{job_id}] Loading data...")
     job_manager.update_job(job_id, progress=5, message="Loading document data...")
     
     # 1. 결정: Vector DB에서 가져올지, 로컬 JSON에서 가져올지
@@ -331,7 +329,7 @@ async def run_qa_generation_real(
             # r_query 없음 → anchor_ids 우선, 없으면 metadata 필터 조회
             if anchor_ids:
                 chunks = await get_doc_chunks_by_ids(anchor_ids)
-                logger.info(f"[{job_id}] anchor_ids 기반 조회: {len(chunks)}개")
+                logger.info(f"[{job_id}] Chunks fetched via anchor_ids: {len(chunks)}")
                 # coverage gap: anchor_ids < samples 이면 같은 h1/h2 범위에서 보충
                 if len(chunks) < samples:
                     extra = await get_doc_chunks_by_filter(
@@ -344,7 +342,7 @@ async def run_qa_generation_real(
                         exclude_ids=[c["id"] for c in chunks],
                     )
                     chunks.extend(extra)
-                    logger.info(f"[{job_id}] coverage gap 보충: +{len(extra)}개 → 총 {len(chunks)}개")
+                    logger.info(f"[{job_id}] Coverage gap filled: +{len(extra)}, total {len(chunks)}")
             else:
                 chunks = await get_doc_chunks_by_filter(
                     hierarchy_h1=h1,
@@ -434,24 +432,49 @@ async def run_qa_generation_real(
     logger.info(f"[{job_id}] Loaded {len(items)} items for generation")
     job_manager.update_job(job_id, progress=10, message=f"Loaded {len(items)} items")
 
-    # [1단계] 도메인 분석 (job당 1회, 결과 캐시)
-    from generators.domain_profiler import analyze_domain
+    # [1단계] 도메인 프로파일 조회 (doc_metadata 우선, 없으면 analyze_domain 폴백)
+    from generators.domain_profiler import analyze_domain, GENERIC_DOMAIN_PROFILE
     from config.prompts import build_system_prompt, build_user_template
 
-    job_manager.update_job(job_id, progress=12, message="Analyzing document domain...")
-    domain_profile = await analyze_domain(
-        hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3,
-        model=model,
-        anchor_ids=anchor_ids or None,
-    )
-    logger.info(
-        f"[{job_id}] Domain profile: '{domain_profile.get('domain', '?')}' | "
-        f"key_terms={domain_profile.get('key_terms', [])[:3]}"
-    )
+    job_manager.update_job(job_id, progress=12, message="Loading domain profile...")
+    domain_profile = None
+
+    # doc_metadata에서 캐시된 domain_profile 조회
+    if document_id or doc_filename:
+        try:
+            from db.doc_metadata_repo import get_doc_metadata, get_doc_metadata_by_filename
+            meta_row = None
+            if document_id:
+                meta_row = await get_doc_metadata(document_id)
+            if not meta_row and doc_filename:
+                meta_row = await get_doc_metadata_by_filename(doc_filename)
+                if meta_row and not document_id:
+                    # filename 조회로 document_id 보완
+                    document_id = meta_row.get("document_id")
+            if meta_row and meta_row.get("domain_profile"):
+                domain_profile = meta_row["domain_profile"]
+                logger.info(
+                    f"[{job_id}] Domain profile from doc_metadata: '{domain_profile.get('domain', '?')}'"
+                )
+        except Exception as _e:
+            logger.warning(f"[{job_id}] doc_metadata fetch failed, fallback to analyze_domain: {_e}")
+
+    # doc_metadata에 없으면 LLM 분석 폴백
+    if not domain_profile:
+        job_manager.update_job(job_id, progress=13, message="Analyzing document domain (LLM)...")
+        domain_profile = await analyze_domain(
+            hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3,
+            model=model,
+            anchor_ids=anchor_ids or None,
+        )
+        logger.info(
+            f"[{job_id}] Domain profile (LLM): '{domain_profile.get('domain', '?')}' | "
+            f"key_terms={domain_profile.get('key_terms', [])[:3]}"
+        )
 
     # [2단계] 청크별 QA 생성 (domain_profile 기반 프롬프트 적용)
     max_workers = _get_generation_workers(model)
-    logger.info(f"[{job_id}] 병렬 생성 시작: {len(items)} 청크 × workers={max_workers} ({model})")
+    logger.info(f"[{job_id}] Parallel generation: {len(items)} chunks x workers={max_workers} ({model})")
 
     results_map: Dict[int, Any] = {}
     total_input_tokens  = 0
@@ -468,7 +491,6 @@ async def run_qa_generation_real(
         if fatal_error:  # 이미 fatal 에러 발생 시 스킵
             return idx, None, "aborted"
         try:
-            logger.info(f"[{job_id}] Generating QA for document {idx+1}/{len(items)}: {item.get('docId', 'unknown')}")
             chunk_type = item.get("metadata", {}).get("chunk_type", "body")
             sys_prompt = build_system_prompt(domain_profile, lang)
             usr_template = build_user_template(domain_profile, chunk_type)
@@ -482,12 +504,12 @@ async def run_qa_generation_real(
             return idx, result, None
         except Exception as e:
             if APIQuotaExceededError and isinstance(e, APIQuotaExceededError):
-                logger.error(f"[{job_id}] API 한도 초과 — job 중단: {e}")
+                logger.error(f"[{job_id}] API quota exceeded, aborting job: {e}")
                 if not fatal_error:
                     fatal_error.append(str(e))
                 return idx, None, str(e)
             if APIAuthError and isinstance(e, APIAuthError):
-                logger.error(f"[{job_id}] API 인증 실패 — job 중단: {e}")
+                logger.error(f"[{job_id}] API auth error, aborting job: {e}")
                 if not fatal_error:
                     fatal_error.append(str(e))
                 return idx, None, str(e)
@@ -531,7 +553,6 @@ async def run_qa_generation_real(
     if not results:
         raise Exception("No QA pairs were generated")
     
-    logger.info(f"[{job_id}] Saving results...")
     job_manager.update_job(job_id, progress=92, message="Saving results...")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -589,11 +610,11 @@ async def run_qa_generation_real(
             )
             
             if supabase_id:
-                logger.info(f"[{job_id}] ✅ Supabase saved: {supabase_id}")
+                logger.info(f"[{job_id}] Saved to Supabase: {supabase_id}")
             else:
-                logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+                logger.warning(f"[{job_id}] Supabase save returned None")
         else:
-            logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+            logger.warning(f"[{job_id}] Supabase not available, skipping save")
     except Exception as e:
         logger.error(f"[{job_id}] Error saving to Supabase: {e}")
         # Continue even if Supabase save fails
@@ -689,11 +710,11 @@ async def run_qa_generation_simulation(
             )
             
             if supabase_id:
-                logger.info(f"[{job_id}] ✅ Supabase saved (simulation): {supabase_id}")
+                logger.info(f"[{job_id}] Saved to Supabase (simulation): {supabase_id}")
             else:
-                logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+                logger.warning(f"[{job_id}] Supabase save returned None")
         else:
-            logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+            logger.warning(f"[{job_id}] Supabase not available, skipping save")
     except Exception as e:
         logger.error(f"[{job_id}] Error saving to Supabase: {e}")
         # Continue even if Supabase save fails

@@ -15,16 +15,18 @@ backend/
 │   ├── generation_api.py        # POST /api/generate — 생성 job 관리 + 2단계 흐름
 │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
 ├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
-│   └── parsers.py               # 파싱·정규화·필터·청킹 전 함수 (extract_text_by_page 등)
+│   ├── parsers.py               # 파싱·정규화·필터·청킹 전 함수 (extract_text_by_page 등)
+│   └── llm_chunker.py           # LLM 청킹 모듈 — Gemini 2.5 Flash 기반 의미 단위 청킹
 ├── generators/                  # QA 생성 핵심 로직
 │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
-│   └── domain_profiler.py       # analyze_domain() — doc_chunks 샘플 → LLM 도메인 분석
+│   └── domain_profiler.py       # analyze_domain() — 폴백 전용 (/analyze-hierarchy 미실행 시만 호출)
+│                                #   정상 플로우: /analyze-hierarchy에서 domain_profile 생성 → doc_metadata 저장 → 재사용
 ├── evaluators/                  # 4레이어 평가 로직
-│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 — _classify_failure_types() + reason/failure 필드 qa_preview 빌드
-│   ├── syntax_validator.py      # Layer 1-A: 구문 검증
-│   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
-│   ├── rag_triad.py             # Layer 2: RAG Triad — evaluate_all_with_reasons() 단일 호출 (score + reason 반환)
-│   ├── qa_quality.py            # Layer 3: Quality Score — factuality/completeness/specificity/conciseness + reason 반환
+│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션
+│   ├── syntax_validator.py      # Layer 1-A: 구문 검증 (answerable 필드, Q/A 길이 등)
+│   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계 (SequenceMatcher)
+│   ├── rag_triad.py             # Layer 2: RAG Triad — relevance/groundedness/context_relevance (score + reason)
+│   ├── qa_quality.py            # Layer 3: Quality Score — completeness 단일 지표 (intent-aware, score + reason)
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository 패키지
@@ -34,7 +36,8 @@ backend/
 │   ├── generation_eval_link.py  # 생성-평가 연결 (linked_evaluation_id)
 │   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색 + save_doc_chunks_batch() 배치 INSERT
 │   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
-│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs+eval_id, grade_dist) + get_distinct_doc_count RPC
+│   ├── doc_metadata_repo.py     # 문서 단위 메타 (domain_profile + h2_h3_master) upsert/조회
+│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs+eval_id, grade_dist)
 ├── config/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
 │   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더 (build_system_prompt 등)
@@ -81,8 +84,8 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/analyze-hierarchy` | Pass 1+2 통합 — anchor 30개 → LLM 1회 → H1/H2/H3 master 동시 생성 |
+| `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 (`chunking_method`: `llm`(기본) \| `rule`) |
+| `POST` | `/analyze-hierarchy` | Pass 1+2 통합 — anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
 | `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 (완료 후 샘플 5개 반환) |
 | `GET`  | `/hierarchy-list` | DB H1/H2/H3 고유 목록 반환 (드롭다운용) |
 
@@ -90,7 +93,7 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `POST` | `/api/generate` | QA 생성 job 시작 (domain_profiler → 적응형 프롬프트 → 병렬 생성) |
+| `POST` | `/api/generate` | QA 생성 job 시작 (doc_metadata에서 domain_profile 조회 → 적응형 프롬프트 → 병렬 생성) |
 | `GET`  | `/api/generate/{job_id}/status` | 생성 job 상태 (status / progress / result_id) |
 | `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (기본 5개, context snippet 포함) |
 | `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 (status 필터 + limit 지원) |
@@ -134,8 +137,8 @@ API 문서: `http://localhost:8000/docs`
 }
 ```
 
-> `result_filename` 필수 (job 식별용 레이블, **실제 파일이 아님** — 파일 시스템에 저장되지 않음).  
-> `generation_id` 필수: QA 데이터를 Supabase `qa_gen_results`에서 조회하는 기준. 없으면 평가 불가.  
+> `result_filename` 필수 (job 식별용 레이블, **실제 파일이 아님** — 파일 시스템에 저장되지 않음).
+> `generation_id` 필수: QA 데이터를 Supabase `qa_gen_results`에서 조회하는 기준. 없으면 평가 불가.
 > `evaluator_model` 기본값: `gemini-2.5-flash`.
 
 ### System
@@ -154,39 +157,73 @@ API 문서: `http://localhost:8000/docs`
 | 단계 | 저장 위치 | 비고 |
 |------|----------|------|
 | 문서 청크 | `doc_chunks` | content + embedding + metadata JSONB |
+| 문서 메타 | `doc_metadata` | domain_profile + h2_h3_master (문서 단위, 1행) |
 | QA 생성 결과 | `qa_gen_results` | qa_list JSONB + stats |
 | QA 평가 결과 | `qa_eval_results` | pipeline_results JSONB + final_score + grade |
 
-`result_filename` 필드(예: `qa_gemini_ko_v1_20260323_123456.json`)는 job 식별용 레이블로만 사용되며, 실제 파일로 디스크에 쓰이지 않음.  
-`output/` 디렉토리의 `.json` 파일들은 초기 개발(test/backup) 시절 산물.
+`doc_chunks.metadata`에 `chunking_method` 필드가 포함되어 청킹 방식 추적 가능 (`"llm"` 또는 `"rule"`).
+
+`result_filename` 필드(예: `qa_gemini_ko_v1_20260323_123456.json`)는 job 식별용 레이블로만 사용되며, 실제 파일로 디스크에 쓰이지 않음.
 
 ---
+
+## 인제스션 파이프라인 흐름
+
+```
+PDF/DOCX 업로드
+  └─ extract_text_by_page()          # rawdict + 한글 공백 복원
+      └─ 원시 블록 목록 (page, text)
+          ├─ [llm]  run_llm_chunking()        # Gemini 2.5 Flash 배치 청킹 (기본)
+          │         → merge_short / trim_dangling / dedup 후처리
+          └─ [rule] build_sections → chunk_blocks_aware  (하위 호환)
+              └─ 공통 필터 (toc / colophon / symbol / too_short / dedup)
+                  └─ Gemini Embedding 2 (1536차원)
+                      └─ Supabase doc_chunks 저장
+
+Pass 2: /analyze-hierarchy
+  anchor 30개 → LLM 1회 호출 → H1/H2/H3 master + domain_profile 동시 생성
+  → doc_metadata 저장 (document_id 기준 upsert)
+
+Pass 3: /apply-granular-tagging
+  청크별 hierarchy 태깅 (batch=5, parallel=5)
+```
+
+---
+
+## QA 생성 파이프라인 흐름
 
 ```
 [사전] 청크 조회
     hierarchy_h1/h2/h3 필터 → get_doc_chunks_by_filter()
     결과 0건 + hierarchy 필터 있으면 → ValueError (Pass3 태깅 미완료 안내)
 
-[1단계] 도메인 분석 (job당 1회)
-    doc_chunks 샘플 (최대 10개) → domain_profiler.analyze_domain()
-    → domain_profile { domain, target_audience, key_terms, chunk_type_dist, intent_hints }
+[1단계] 도메인 프로파일 로드
+    doc_metadata에서 domain_profile 조회 (document_id → filename 순)
+    캐시 있으면 즉시 사용 (LLM 호출 없음)
+    캐시 없으면 → domain_profiler.analyze_domain() 폴백 (LLM 호출)
 
 [2단계] 청크별 QA 생성 (ThreadPoolExecutor 병렬)
-    chunk_type 감지 → build_system_prompt() + build_user_template()
+    domain_profile 기반 → build_system_prompt() + build_user_template()
     → generate_qa() (Claude / Gemini / GPT)
     → qa_gen_results Supabase 저장
 ```
+
+---
 
 ## 평가 파이프라인 흐름
 
 ```
 Layer 1-A  Syntax Validation      구문 정확성 (answerable 필드, Q/A 길이 등)
-Layer 1-B  Dataset Statistics     다양성·중복률 (SequenceMatcher 기반)
-Layer 2    RAG Triad               Relevance / Groundedness / Clarity — 단일 LLM 호출로 score + reason 반환
-Layer 3    Quality Score           Factuality / Completeness / Specificity / Conciseness — intent-aware, score + reason 반환
-           failure 분류             _classify_failure_types() — 차원 점수 기반 failure_types[] + primary_failure 자동 결정
+Layer 1-B  Dataset Statistics     다양성·중복률 통계 (SequenceMatcher 기반)
+Layer 2    RAG Triad              Relevance / Groundedness / Context Relevance
+                                  avg_score = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
+                                  단일 LLM 호출 → score + reason 반환
+Layer 3    Quality Score          Completeness 단일 지표 (intent-aware)
+                                  intent 유형(list/boolean/numeric/factoid 등)별 루브릭 적용
+                                  score + completeness_reason 반환
+           failure 분류            _classify_failure_types() — 점수 기반 failure_types[] + primary_failure 자동 결정
 
-final_score = syntax*0.1 + stats*0.1 + rag*0.4 + quality*0.4
+final_score = (syntax_pass_rate/100)×0.05 + (dataset_quality/10)×0.05 + rag_avg×0.65 + completeness×0.25
 등급: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)
 ```
 
@@ -200,12 +237,38 @@ final_score = syntax*0.1 + stats*0.1 + rag*0.4 + quality*0.4
 |-------|----------|----------|---------|
 | `gemini-3.1-flash` | gemini-3-flash-preview | google | 5 |
 | `gpt-5.2` | gpt-5.2-2025-12-11 | openai | 5 |
-| `claude-sonnet` | claude-sonnet-4-6 | anthropic | 2 |
+| `claude-sonnet` | claude-sonnet-4-6 | anthropic | 4 |
 
-### 평가 모델 (기본값: `gemini-2.5-flash`)
+### 평가 모델 (기본값: `gemini-flash`)
 
 | alias | model_id | provider | Workers |
 |-------|----------|----------|---------|
-| `gemini-2.5-flash` | gemini-2.5-flash | google | 10 |
+| `gemini-flash` | gemini-2.5-flash | google | 10 |
 | `gpt-5.1` | gpt-5.1-2025-11-13 | openai | 8 |
 | `claude-haiku` | claude-haiku-4-5 | anthropic | 2 |
+
+### 인제스션 모델
+
+| 용도 | model_id | 비고 |
+|------|----------|------|
+| LLM 청킹 | gemini-2.5-flash | thinking_budget=0, temperature=0.1, 티어별 batch 자동 조정 |
+| 임베딩 | gemini-embedding-2-preview | 1536차원, task_type=RETRIEVAL_DOCUMENT |
+| Hierarchy + domain_profile 분석 (Pass 2) | gemini-3-flash-preview | H1/H2/H3 master + domain_profile 동시 생성, response_mime_type=application/json |
+| Hierarchy 태깅 (Pass 3) | gemini-3-flash-preview | 청크별 분류, batch=5, parallel=5 |
+
+### domain_profile
+
+`/analyze-hierarchy` LLM 1회 호출에서 hierarchy와 동시 추출. `doc_metadata` 테이블에 저장.
+
+```json
+{
+  "domain": "AI 데이터 구축 가이드라인",
+  "domain_short": "AI 데이터",
+  "target_audience": "데이터 구축 작업자",
+  "key_terms": ["어노테이션", "품질관리", "데이터셋", "라벨링", "검수"],
+  "tone": "기술 문서 격식체"
+}
+```
+
+QA 생성 시 `doc_metadata`에서 조회하여 `build_system_prompt()` / `build_user_template()`에 전달.
+`/analyze-hierarchy` 미실행 시 `domain_profiler.analyze_domain()`(폴백)으로 대체 — `GENERIC_DOMAIN_PROFILE` 반환.

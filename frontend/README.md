@@ -12,7 +12,7 @@ frontend/
 │   ├── App.tsx                          # 앱 루트 — 탭 라우팅 + 세션 state 관리
 │   ├── lib/
 │   │   ├── api.ts                       # 백엔드 API 클라이언트 (fetch 래퍼)
-│   │   ├── exportUtils.ts               # XLSX / HTML / JSON 내보내기 (차트 SVG 인라인 포함)
+│   │   ├── exportUtils.ts               # XLSX / HTML / JSON 내보내기 (차트 SVG 인라인, td 행 고정 68px)
 │   │   └── utils.ts                     # cn() 등 유틸리티
 │   └── components/
 │       ├── layout/
@@ -29,6 +29,7 @@ frontend/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (L1/L2 드롭다운 + 진행상황)
 │       ├── evaluation/
 │       │   └── QAEvaluationDashboard.tsx # 4레이어 평가 결과 + 이력 조회 + 리포트 내보내기
+│       │                                 # QA 목록 테이블: 행 높이 고정 h-[68px], line-clamp-2 (질문/답변)
 │       │                                 # QA 목록 테이블: 실패유형 배지 (primary_failure 기반)
 │       │                                 # QADetailView: 차원별 평가 근거(reason) + 주요 실패 유형 섹션
 │       ├── agents/
@@ -88,7 +89,7 @@ frontend/
 | `overview` | `DashboardOverview` | 구현됨 — Supabase 실데이터 |
 | `standardization` | `DataStandardizationPanel` | 구현됨 |
 | `generation` | `QAGenerationPanel` | 구현됨 |
-| `evaluation` | `QAEvaluationDashboard` | 구현됨 — 이력 조회 + 리포트 내보내기 (XLSX/HTML/JSON), 실패유형 배지, 평가 근거 섹션 |
+| `evaluation` | `QAEvaluationDashboard` | 구현됨 — 이력 조회 + 리포트 내보내기 (XLSX/HTML/ZIP), 실패유형 배지, 평가 근거 섹션, 행 고정 높이 |
 | `playground` | `ChatPlayground` | 미구현 |
 | `settings` | `SettingsPanel` | 구현됨 — Profile / API Keys / Pipeline 시각화 |
 
@@ -166,4 +167,4 @@ VITE_API_URL=http://localhost:8000
 
 ---
 
-**Last Updated**: 2026-03-23 | **Branch**: main
+**Last Updated**: 2026-03-27 | **Branch**: main
