@@ -151,10 +151,11 @@ async def process_and_ingest(
             return
 
         embed_batch_size = 64
-        for i in range(0, len(all_chunks_to_embed), embed_batch_size):
-            batch = all_chunks_to_embed[i: i + embed_batch_size]
-            batch_texts = [item["text"] for item in batch]
+        total_chunks = len(all_chunks_to_embed)
+        source_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
 
+        async def _embed_and_save(batch_num: int, batch_start: int, batch: list) -> None:
+            batch_texts = [item["text"] for item in batch]
             res = await gemini_client.aio.models.embed_content(
                 model="gemini-embedding-2-preview",
                 contents=batch_texts,
@@ -163,14 +164,12 @@ async def process_and_ingest(
                     output_dimensionality=1536,
                 ),
             )
-
             batch_rows = []
             for idx, emb_data in enumerate(res.embeddings):
                 c = batch[idx]
                 embedding_np = np.array(emb_data.values)
                 norm = np.linalg.norm(embedding_np)
                 normalized_embedding = (embedding_np / norm).tolist() if norm > 0 else emb_data.values
-
                 chunk_metadata = {
                     **metadata,
                     "document_id": doc_id,
@@ -182,22 +181,26 @@ async def process_and_ingest(
                     "chunk_type": c["chunk_type"],
                     "page": c["page"],
                     "char_length": len(c["raw_text"]),
-                    "chunk_index": i + idx,
-                    "total_chunks": len(all_chunks_to_embed),
+                    "chunk_index": batch_start + idx,
+                    "total_chunks": total_chunks,
                     "chunking_method": chunking_method,
-                    "source": filename.split('.')[-1].lower() if '.' in filename else 'unknown',
+                    "source": source_ext,
                     "ingested_at": ingested_at,
                     "embedding_model": "gemini-embedding-2-preview",
                 }
-
                 batch_rows.append({
                     "content":   c["raw_text"],
                     "embedding": normalized_embedding,
                     "metadata":  chunk_metadata,
                 })
-
             await save_doc_chunks_batch(batch_rows)
-            logger.info(f"[{filename}] Embed batch {i // embed_batch_size + 1} done ({len(batch)} chunks)")
+            logger.info(f"[{filename}] Embed batch {batch_num} done ({len(batch)} chunks)")
+
+        embed_tasks = [
+            _embed_and_save(i // embed_batch_size + 1, i, all_chunks_to_embed[i: i + embed_batch_size])
+            for i in range(0, total_chunks, embed_batch_size)
+        ]
+        await asyncio.gather(*embed_tasks)
 
         logger.info(f"Ingestion complete: {filename} ({len(all_chunks_to_embed)} chunks, method={chunking_method})")
 
@@ -429,7 +432,7 @@ async def upload_document(
 
     try:
         content_bytes = await file.read()
-        pages = extract_text_by_page(content_bytes, file.filename)
+        pages = await asyncio.to_thread(extract_text_by_page, content_bytes, file.filename)
         if not pages:
             raise HTTPException(status_code=400, detail="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
 
@@ -549,7 +552,12 @@ Return a JSON object with this exact structure (all string values in Korean):
         response = await gemini_client.aio.models.generate_content(
             model="gemini-3-flash-preview",
             contents=prompt,
-            config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
+            config=google_genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+                top_p=0.95,
+                thinking_config=google_genai.types.ThinkingConfig(thinking_budget=0),
+            ),
         )
         result = json.loads(response.text)
         if not isinstance(result.get("h2_h3_master"), dict):
@@ -666,7 +674,7 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
 
         batch_size = 5
         batches = [all_chunks[i: i + batch_size] for i in range(0, len(all_chunks), batch_size)]
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(10)
         completed = 0
         samples_collected: list = []
 
@@ -752,7 +760,12 @@ Return ONLY a JSON array — no explanation:
                     res = await gemini_client.aio.models.generate_content(
                         model=MODEL_CONFIG["gemini-flash"]["model_id"],
                         contents=_build_prompt(chunks_data),
-                        config=google_genai.types.GenerateContentConfig(response_mime_type="application/json"),
+                        config=google_genai.types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.0,
+                            top_p=0.95,
+                            thinking_config=google_genai.types.ThinkingConfig(thinking_budget=0),
+                        ),
                     )
                     tagging_results = json.loads(res.text)
 

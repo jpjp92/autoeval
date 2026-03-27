@@ -2,6 +2,7 @@
 문서 청크 저장/검색/조회 (doc_chunks)
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -59,6 +60,8 @@ async def save_doc_chunks_batch(chunks: list) -> list:
     - 동일 content + 동일 document_id 조합만 skip (exact duplicate)
     - 동일 content + 새 document_id → 새 버전 row INSERT (이전 버전 보존)
     chunks: [{"content": str, "embedding": list, "metadata": dict}]
+
+    Note: supabase-py sync 클라이언트는 블로킹 I/O이므로 asyncio.to_thread로 래핑.
     """
     if not supabase or not chunks:
         return []
@@ -71,14 +74,14 @@ async def save_doc_chunks_batch(chunks: list) -> list:
             ) if h
         ]
 
-        # 2. 기존 (content_hash, document_id) 쌍 1회 SELECT
+        # 2. 기존 (content_hash, document_id) 쌍 1회 SELECT — to_thread로 이벤트루프 블로킹 방지
         existing_pairs: set = set()
         if hash_list:
-            existing_res = (
-                supabase.table("doc_chunks")
-                .select("metadata")
-                .in_("metadata->>content_hash", hash_list)
-                .execute()
+            existing_res = await asyncio.to_thread(
+                lambda: supabase.table("doc_chunks")
+                    .select("metadata")
+                    .in_("metadata->>content_hash", hash_list)
+                    .execute()
             )
             for r in (existing_res.data or []):
                 meta = r.get("metadata") or {}
@@ -109,11 +112,13 @@ async def save_doc_chunks_batch(chunks: list) -> list:
         if skipped:
             logger.info(f"Batch duplicate skip: {skipped} chunks")
 
-        # 4. 신규 청크 1회 배치 INSERT
+        # 4. 신규 청크 1회 배치 INSERT — to_thread로 이벤트루프 블로킹 방지
         if not new_rows:
             return []
 
-        response = supabase.table("doc_chunks").insert(new_rows).execute()
+        response = await asyncio.to_thread(
+            lambda: supabase.table("doc_chunks").insert(new_rows).execute()
+        )
         return [r["id"] for r in (response.data or [])]
 
     except Exception as e:
@@ -122,11 +127,13 @@ async def save_doc_chunks_batch(chunks: list) -> list:
 
 
 async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any]) -> bool:
-    """특정 청크의 메타데이터 업데이트"""
+    """특정 청크의 메타데이터 업데이트 — to_thread로 이벤트루프 블로킹 방지"""
     if not supabase:
         return False
     try:
-        supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
+        await asyncio.to_thread(
+            lambda: supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
+        )
         return True
     except Exception as e:
         logger.error(f"Failed to update chunk metadata: {e}")
