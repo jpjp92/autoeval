@@ -36,12 +36,11 @@ async def save_qa_generation_to_supabase(
         response = supabase.table("qa_gen_results").insert(data).execute()
         if response.data:
             generated_id = response.data[0]["id"]
-            logger.info(f"✅ QA generation saved: {generated_id}")
             return generated_id
         logger.error("No data returned from Supabase insert")
         return None
     except Exception as e:
-        logger.error(f"❌ Failed to save QA generation: {e}")
+        logger.error(f"Failed to save QA generation: {e}")
         return None
 
 
@@ -59,7 +58,7 @@ async def get_qa_generation_from_supabase(generation_id: str) -> Optional[Dict[s
         )
         return response.data if response.data else None
     except Exception as e:
-        logger.error(f"❌ Failed to fetch QA generation: {e}")
+        logger.error(f"Failed to fetch QA generation: {e}")
         return None
 
 
@@ -94,7 +93,7 @@ async def get_generations_by_chunk(chunk_id: str) -> list:
         )
         return response.data or []
     except Exception as e:
-        logger.error(f"❌ Failed to get generations by chunk {chunk_id}: {e}")
+        logger.error(f"Failed to get generations by chunk {chunk_id}: {e}")
         return []
 
 
@@ -112,5 +111,5 @@ async def get_generations_by_source_doc(source_doc: str) -> list:
         )
         return response.data or []
     except Exception as e:
-        logger.error(f"❌ Failed to get generations by source_doc {source_doc}: {e}")
+        logger.error(f"Failed to get generations by source_doc {source_doc}: {e}")
         return []

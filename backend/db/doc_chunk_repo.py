@@ -34,7 +34,7 @@ async def save_doc_chunk(
                 .execute()
             )
             if existing.data:
-                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]})")
+                logger.debug(f"Skipped duplicate chunk (hash={content_hash[:8]})")
                 return None
 
         data = {
@@ -48,7 +48,7 @@ async def save_doc_chunk(
             return response.data[0]["id"]
         return None
     except Exception as e:
-        logger.error(f"❌ Failed to save doc chunk: {e}")
+        logger.error(f"Failed to save doc chunk: {e}")
         return None
 
 
@@ -96,7 +96,7 @@ async def save_doc_chunks_batch(chunks: list) -> list:
             content_hash = meta.get("content_hash")
             document_id = meta.get("document_id")
             if content_hash and document_id and (content_hash, document_id) in existing_pairs:
-                logger.debug(f"⏭️ Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
+                logger.debug(f"Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
                 skipped += 1
                 continue
             new_rows.append({
@@ -107,7 +107,7 @@ async def save_doc_chunks_batch(chunks: list) -> list:
             })
 
         if skipped:
-            logger.info(f"⏭️ Batch duplicate skip: {skipped} chunks")
+            logger.info(f"Batch duplicate skip: {skipped} chunks")
 
         # 4. 신규 청크 1회 배치 INSERT
         if not new_rows:
@@ -117,7 +117,7 @@ async def save_doc_chunks_batch(chunks: list) -> list:
         return [r["id"] for r in (response.data or [])]
 
     except Exception as e:
-        logger.error(f"❌ Failed to save doc chunks batch: {e}")
+        logger.error(f"Failed to save doc chunks batch: {e}")
         return []
 
 
@@ -129,7 +129,7 @@ async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any]) -> bool
         supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to update chunk metadata: {e}")
+        logger.error(f"Failed to update chunk metadata: {e}")
         return False
 
 
@@ -154,7 +154,7 @@ async def search_doc_chunks(
         ).execute()
         return response.data if response.data else []
     except Exception as e:
-        logger.error(f"❌ Failed to search doc chunks: {e}")
+        logger.error(f"Failed to search doc chunks: {e}")
         return []
 
 
@@ -190,7 +190,7 @@ async def get_doc_chunks_by_filter(
         response = query.limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
-        logger.error(f"❌ Failed to get doc chunks by filter: {e}")
+        logger.error(f"Failed to get doc chunks by filter: {e}")
         return []
 
 
@@ -212,7 +212,7 @@ async def get_doc_chunks_sampled(
         response = supabase.rpc("sample_doc_chunks", params).execute()
         return response.data if response.data else []
     except Exception as e:
-        logger.error(f"❌ get_doc_chunks_sampled failed: {e}")
+        logger.error(f"get_doc_chunks_sampled failed: {e}")
         return []
 
 
@@ -229,7 +229,7 @@ async def get_doc_chunks_by_ids(chunk_ids: list) -> list:
         )
         return response.data if response.data else []
     except Exception as e:
-        logger.error(f"❌ get_doc_chunks_by_ids failed: {e}")
+        logger.error(f"get_doc_chunks_by_ids failed: {e}")
         return []
 
 
@@ -255,5 +255,5 @@ async def get_document_chunks(
         response = query.order("created_at").limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
-        logger.error(f"❌ Failed to get document chunks: {e}")
+        logger.error(f"Failed to get document chunks: {e}")
         return []

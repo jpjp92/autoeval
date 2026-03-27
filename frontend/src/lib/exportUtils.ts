@@ -360,8 +360,8 @@ function buildHTMLContent(data: EvaluationData): string {
         th .sort-icon { margin-left: 4px; font-size: 10px; color: #94a3b8; }
         th.sort-active { color: #4f46e5; }
         th.sort-active .sort-icon { color: #4f46e5; }
-        td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-        .cell-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        td { padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; vertical-align: middle; height: 68px; max-height: 68px; overflow: hidden; }
+        .cell-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 44px; }
         .cell-center { text-align: center; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background: #f8fafc; }

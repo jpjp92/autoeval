@@ -1,12 +1,17 @@
 """
-Domain Profiler
-doc_chunks 샘플 기반 도메인 자동 분석 (P3 적응형 프롬프트 1단계)
+Domain Profiler — 폴백 전용 (정상 플로우에서는 호출되지 않음)
 
-흐름:
-  doc_chunks에서 H1별 분산 샘플 최대 10개 조회
-    → LLM이 도메인/독자/주요용어/chunk_type 분포 파악
-      → domain_profile JSON 반환 (job 내 캐시, 1회만 실행)
-  실패 시 GENERIC_DOMAIN_PROFILE 반환 (생성 중단 없음)
+정상 플로우:
+  /analyze-hierarchy 실행 시 domain_profile을 함께 생성 → doc_metadata 저장
+  QA 생성 시 doc_metadata에서 조회하여 재사용 (LLM 호출 없음)
+
+폴백 케이스 (이 모듈이 호출되는 경우):
+  /analyze-hierarchy를 건너뛰고 바로 QA 생성한 경우,
+  또는 doc_metadata에 domain_profile이 없는 경우.
+  doc_chunks 샘플 → LLM 분석 → domain_profile 반환.
+  실패 시 GENERIC_DOMAIN_PROFILE 반환 (생성 파이프라인 중단 없음)
+
+domain_profile 구조: {domain, domain_short, target_audience, key_terms, tone}
 """
 
 import json
@@ -22,15 +27,7 @@ GENERIC_DOMAIN_PROFILE = {
     "domain": "문서",
     "domain_short": "문서",
     "target_audience": "독자",
-    "main_topics": [],
     "key_terms": [],
-    "chunk_type_dist": {},
-    "intent_hints": {
-        "table": ["numeric", "list", "boolean"],
-        "list": ["procedure", "how", "list"],
-        "body": ["factoid", "why", "definition"],
-        "heading": "skip",
-    },
     "tone": "격식체",
 }
 
@@ -65,15 +62,7 @@ def _build_analysis_prompt(samples: list) -> str:
         '  "domain": "문서 분야/유형 — Korean (예: AI 데이터 구축 가이드라인)",\n'
         '  "domain_short": "짧은 도메인명 — Korean, 10 chars max",\n'
         '  "target_audience": "주요 독자층 — Korean (예: 데이터 구축 작업자)",\n'
-        '  "main_topics": ["토픽1 (Korean)", "토픽2 (Korean)", "토픽3 (Korean)"],\n'
         '  "key_terms": ["전문용어1 (Korean)", "전문용어2", "전문용어3", "전문용어4", "전문용어5"],\n'
-        '  "chunk_type_dist": {},\n'
-        '  "intent_hints": {\n'
-        '    "table": ["numeric", "list", "boolean"],\n'
-        '    "list": ["procedure", "how", "list"],\n'
-        '    "body": ["factoid", "why", "definition"],\n'
-        '    "heading": "skip"\n'
-        "  },\n"
         '  "tone": "문서 문체 — Korean (예: 기술 문서 격식체)"\n'
         "}\n"
         "Output pure JSON only. No markdown, no explanation."
@@ -157,7 +146,7 @@ async def analyze_domain(
     from config.supabase_client import get_doc_chunks_by_filter, get_doc_chunks_by_ids, is_supabase_available
 
     if not is_supabase_available():
-        logger.warning("[domain_profiler] Supabase unavailable → GENERIC fallback")
+        logger.warning("[domain_profiler] Supabase unavailable , using GENERIC fallback")
         return GENERIC_DOMAIN_PROFILE.copy()
 
     try:
@@ -173,7 +162,7 @@ async def analyze_domain(
             )
 
         if not samples:
-            logger.warning("[domain_profiler] No chunks found → GENERIC fallback")
+            logger.warning("[domain_profiler] No chunks found , using GENERIC fallback")
             return GENERIC_DOMAIN_PROFILE.copy()
 
         # LLM 분석 프롬프트 구성
@@ -187,17 +176,6 @@ async def analyze_domain(
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         profile = json.loads(raw)
 
-        # chunk_type_dist를 실제 샘플 기반으로 덮어쓰기
-        type_dist: dict = {}
-        for s in samples:
-            ct = s.get("metadata", {}).get("chunk_type", "body")
-            type_dist[ct] = type_dist.get(ct, 0) + 1
-        profile["chunk_type_dist"] = type_dist
-
-        # intent_hints가 없으면 GENERIC에서 보완
-        if "intent_hints" not in profile:
-            profile["intent_hints"] = GENERIC_DOMAIN_PROFILE["intent_hints"]
-
         logger.info(
             f"[domain_profiler] Domain: '{profile.get('domain', '?')}' | "
             f"Audience: {profile.get('target_audience', '?')} | "
@@ -206,5 +184,5 @@ async def analyze_domain(
         return profile
 
     except Exception as e:
-        logger.warning(f"[domain_profiler] Analysis failed ({e}) → GENERIC fallback")
+        logger.warning(f"[domain_profiler] Analysis failed ({e}) , using GENERIC fallback")
         return GENERIC_DOMAIN_PROFILE.copy()

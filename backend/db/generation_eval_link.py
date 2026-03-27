@@ -26,10 +26,9 @@ async def link_generation_to_evaluation(
             .execute()
         )
         if response.data:
-            logger.info(f"✅ Linked generation {generation_id} → evaluation {evaluation_id}")
             return True
         logger.error("Failed to link generation to evaluation")
         return False
     except Exception as e:
-        logger.error(f"❌ Failed to link: {e}")
+        logger.error(f"Failed to link generation to evaluation: {e}")
         return False

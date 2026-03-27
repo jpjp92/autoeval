@@ -98,7 +98,7 @@ app.add_middleware(
 try:
     from api.generation_api import setup_generation_routes
     setup_generation_routes(app)
-    logger.info("✓ Generation API registered")
+    logger.info("Generation API registered")
 except ImportError as e:
     logger.warning(f"Generation API import failed: {e}")
 
@@ -106,14 +106,14 @@ try:
     from api.evaluation_api import EvaluationManager, setup_evaluation_routes
     eval_manager = EvaluationManager()
     setup_evaluation_routes(app, eval_manager)
-    logger.info("✓ Evaluation API registered")
+    logger.info("Evaluation API registered")
 except ImportError as e:
     logger.warning(f"Evaluation API import failed: {e}")
 
 try:
     from api.ingestion_api import setup_ingestion_routes
     setup_ingestion_routes(app)
-    logger.info("✓ Ingestion API registered")
+    logger.info("Ingestion API registered")
 except ImportError as e:
     logger.warning(f"Ingestion API import failed: {e}")
 

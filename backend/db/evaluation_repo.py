@@ -41,12 +41,11 @@ async def save_evaluation_to_supabase(
         response = supabase.table("qa_eval_results").insert(data).execute()
         if response.data:
             evaluation_id = response.data[0]["id"]
-            logger.info(f"✅ Evaluation saved: {evaluation_id}")
             return evaluation_id
         logger.error("No data returned from Supabase insert")
         return None
     except Exception as e:
-        logger.error(f"❌ Failed to save evaluation: {e}")
+        logger.error(f"Failed to save evaluation: {e}")
         return None
 
 

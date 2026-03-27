@@ -52,7 +52,7 @@ class RAGTriadEvaluator:
                         model=self.evaluator_model, google_api_key=api_key, temperature=0,
                         timeout=90,
                     )
-                    logger.info(f"✓ Judge model initialized (Google): {self.evaluator_model}")
+                    logger.info(f"Judge model initialized (Google): {self.evaluator_model}")
                 else:
                     logger.warning("GOOGLE_API_KEY not set for evaluator")
 
@@ -63,7 +63,7 @@ class RAGTriadEvaluator:
                     self.judge_model = ChatAnthropic(
                         model=self.evaluator_model, api_key=api_key, temperature=0
                     )
-                    logger.info(f"✓ Judge model initialized (Anthropic): {self.evaluator_model}")
+                    logger.info(f"Judge model initialized (Anthropic): {self.evaluator_model}")
                 else:
                     logger.warning("ANTHROPIC_API_KEY not set for evaluator")
 
@@ -74,7 +74,7 @@ class RAGTriadEvaluator:
                     self.judge_model = ChatOpenAI(
                         model=self.evaluator_model, api_key=api_key, temperature=0
                     )
-                    logger.info(f"✓ Judge model initialized (OpenAI): {self.evaluator_model}")
+                    logger.info(f"Judge model initialized (OpenAI): {self.evaluator_model}")
                 else:
                     logger.warning("OPENAI_API_KEY not set for evaluator")
             else:

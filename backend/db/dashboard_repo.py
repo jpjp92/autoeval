@@ -110,5 +110,5 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"❌ Failed to get dashboard metrics: {e}")
+        logger.error(f"Failed to get dashboard metrics: {e}")
         return {"error": str(e)}

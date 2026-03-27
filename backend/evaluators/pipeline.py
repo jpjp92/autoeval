@@ -228,7 +228,7 @@ def run_full_evaluation_pipeline(
         layers = ["syntax", "stats", "rag", "quality"]
 
     max_api_workers = _get_provider_workers(evaluator_model)
-    logger.info(f"[{job_id}] 병렬 처리 설정: syntax={SYNTAX_MAX_WORKERS}w, api={max_api_workers}w ({evaluator_model})")
+    logger.info(f"[{job_id}] Workers: syntax={SYNTAX_MAX_WORKERS}, api={max_api_workers} ({evaluator_model})")
 
     results = {
         "metadata": {
@@ -246,7 +246,7 @@ def run_full_evaluation_pipeline(
 
     # ===== Layer 1-A: SyntaxValidator (병렬) =====
     if "syntax" in layers:
-        logger.info(f"[{job_id}] 🔍 Layer 1-A: Syntax Validation starting (workers={SYNTAX_MAX_WORKERS})...")
+        logger.info(f"[{job_id}] Layer 1-A: Syntax Validation (workers={SYNTAX_MAX_WORKERS})")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message="Layer 1-A: 구문 검증 중...", progress=5)
             eval_manager.update_layer_status(job_id, "syntax", "running", 50, "필드, 타입, 길이 검증 중...")
@@ -284,11 +284,11 @@ def run_full_evaluation_pipeline(
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message=f"Layer 1-A: 구문 검증 완료 {len(valid_qa)}/{len(qa_list)} 통과", progress=15)
             eval_manager.update_layer_status(job_id, "syntax", "completed", 100, f"✓ {len(valid_qa)}/{len(qa_list)} 통과")
-        logger.info(f"[{job_id}] ✓ Layer 1-A completed: {len(valid_qa)}/{len(qa_list)} passed")
+        logger.info(f"[{job_id}] Layer 1-A: {len(valid_qa)}/{len(qa_list)} passed")
 
     # ===== Layer 1-B: DatasetStats (순차 - 집계 연산) =====
     if "stats" in layers:
-        logger.info(f"[{job_id}] 📊 Layer 1-B: Dataset Statistics starting...")
+        logger.info(f"[{job_id}] Layer 1-B: Dataset Statistics")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message="2️⃣ 데이터셋 통계 분석 중...", progress=30)
 
@@ -302,11 +302,11 @@ def run_full_evaluation_pipeline(
                 progress=40
             )
             eval_manager.update_layer_status(job_id, "stats", "completed", 100, f"✓ 점수: {dataset_stats.get('integrated_score', 0)}/10")
-        logger.info(f"[{job_id}] ✓ Layer 1-B completed: integrated_score={dataset_stats.get('integrated_score', 0)}")
+        logger.info(f"[{job_id}] Layer 1-B: integrated_score={dataset_stats.get('integrated_score', 0)}")
 
     # ===== Layer 2: RAGTriadEvaluator (병렬) =====
     if "rag" in layers and valid_qa:
-        logger.info(f"[{job_id}] 🎯 Layer 2: RAG Triad Evaluation starting (workers={max_api_workers})...")
+        logger.info(f"[{job_id}] Layer 2: RAG Triad (workers={max_api_workers})")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 평가 진행 중... (0/{len(valid_qa)})", progress=45)
             eval_manager.update_layer_status(job_id, "rag", "running", 5, f"관련성, 근거성, 명확성 평가 중... (0/{len(valid_qa)})")
@@ -361,11 +361,11 @@ def run_full_evaluation_pipeline(
             rag_avg = results["layers"]["rag"]["summary"]["avg_score"]
             eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 완료: {rag_avg:.3f}", progress=70)
             eval_manager.update_layer_status(job_id, "rag", "completed", 100, f"✓ 점수: {rag_avg:.3f}")
-        logger.info(f"[{job_id}] ✓ Layer 2 completed: {len(valid_qa)} QA evaluated")
+        logger.info(f"[{job_id}] Layer 2: {len(valid_qa)} QA evaluated")
 
     # ===== Layer 3: QAQualityEvaluator (병렬) =====
     if "quality" in layers and valid_qa:
-        logger.info(f"[{job_id}] ⭐ Layer 3: Quality Evaluation starting (workers={max_api_workers})...")
+        logger.info(f"[{job_id}] Layer 3: Quality Evaluation (workers={max_api_workers})")
         if eval_manager and job_id:
             eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
             eval_manager.update_layer_status(job_id, "quality", "running", 5, f"완전성 CoT 평가 중... (0/{len(valid_qa)})")
@@ -423,7 +423,7 @@ def run_full_evaluation_pipeline(
             quality_avg = results["layers"]["quality"]["summary"]["avg_quality"]
             eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 완료: {quality_avg:.3f} (통과: {pass_rate}%)", progress=85)
             eval_manager.update_layer_status(job_id, "quality", "completed", 100, f"✓ 점수: {quality_avg:.3f}, 통과율: {pass_rate}%")
-        logger.info(f"[{job_id}] ✓ Layer 3 completed: {passed}/{len(valid_qa)} passed ({pass_rate}%)")
+        logger.info(f"[{job_id}] Layer 3: {passed}/{len(valid_qa)} passed ({pass_rate}%)")
 
     # ===== Failure Classification: quality.qa_scores에 failure 필드 추가 =====
     # rag + quality 두 레이어가 모두 완료된 후 한 번 순회하여 계산 → Supabase 저장 시 포함됨
@@ -495,11 +495,6 @@ def run_evaluation(
                 # qa_list 컬럼 = [{docId, text, qa_list: [{q,a,intent}]}, ...]
                 # 로컬 파일 fallback과 동일하게 flatten + context 주입
                 raw_results = gen_data.get("qa_list", [])
-                logger.info(
-                    f"[{job_id}] raw_results 수: {len(raw_results)}, "
-                    f"첫번째 result qa_list 수: {len(raw_results[0].get('qa_list', [])) if raw_results else 'N/A'}, "
-                    f"첫번째 result keys: {list(raw_results[0].keys()) if raw_results else []}"
-                )
                 for result_idx, result in enumerate(raw_results):
                     context = result.get("text", "")
                     for qa_idx, qa in enumerate(result.get("qa_list", [])):
@@ -512,7 +507,7 @@ def run_evaluation(
                             "docId":   result.get("docId", ""),
                         })
 
-                logger.info(f"[{job_id}] Supabase에서 QA 로드: {len(qa_list)}개 (generation_id={generation_id})")
+                logger.info(f"[{job_id}] QA loaded from Supabase: {len(qa_list)} (generation_id={generation_id})")
             else:
                 raise ValueError(f"generation_id {generation_id} 를 Supabase에서 찾을 수 없습니다.")
         else:
@@ -521,7 +516,7 @@ def run_evaluation(
         if limit:
             qa_list = qa_list[:limit]
 
-        logger.info(f"[{job_id}] 평가 시작: {len(qa_list)} QA items")
+        logger.info(f"[{job_id}] Evaluation start: {len(qa_list)} QA items")
         eval_manager.update_job(job_id, message=f"평가 시작: {len(qa_list)} QA 분석 중...", progress=5)
 
         pipeline_results = run_full_evaluation_pipeline(
@@ -532,7 +527,7 @@ def run_evaluation(
             job_id=job_id,
         )
 
-        logger.info(f"[{job_id}] 파이프라인 완료")
+        logger.info(f"[{job_id}] Pipeline complete")
 
         syntax_data   = pipeline_results["layers"]["syntax"]
         stats_data    = pipeline_results["layers"]["stats"]
@@ -578,7 +573,7 @@ def run_evaluation(
             quality_by_idx[orig] = s
         syntax_failed_set = set(syntax_errors.keys())
         qa_preview = []
-        for i, qa in enumerate(qa_list[:100]):
+        for i, qa in enumerate(qa_list):
             r = rag_by_idx.get(i, {})
             q = quality_by_idx.get(i, {})
 
@@ -702,17 +697,17 @@ def run_evaluation(
                     pipeline_results=pipeline_results,
                 ))
                 if supabase_eval_id:
-                    logger.info(f"[{job_id}] ✅ Evaluation Supabase saved: {supabase_eval_id}")
+                    logger.info(f"[{job_id}] Saved to Supabase: {supabase_eval_id}")
                     if generation_id and link_generation_to_evaluation:
                         linked = asyncio.run(link_generation_to_evaluation(generation_id, supabase_eval_id))
                         if linked:
-                            logger.info(f"[{job_id}] ✅ Linked to generation: {generation_id}")
+                            logger.info(f"[{job_id}] Linked to generation: {generation_id}")
                         else:
-                            logger.warning(f"[{job_id}] ⚠️ Failed to link generation {generation_id}")
+                            logger.warning(f"[{job_id}] Failed to link generation {generation_id}")
                 else:
-                    logger.warning(f"[{job_id}] ⚠️ Supabase save returned None")
+                    logger.warning(f"[{job_id}] Supabase save returned None")
             else:
-                logger.warning(f"[{job_id}] ⚠️ Supabase not available, skipping save")
+                logger.warning(f"[{job_id}] Supabase not available, skipping save")
         except Exception as e:
             logger.error(f"[{job_id}] Error saving to Supabase: {e}")
 
@@ -725,7 +720,7 @@ def run_evaluation(
         )
 
     except Exception as e:
-        logger.error(f"[{job_id}] 평가 실패: {e}", exc_info=True)
+        logger.error(f"[{job_id}] Evaluation failed: {e}", exc_info=True)
         eval_manager.update_job(
             job_id,
             status=EvalJobStatus.FAILED,
