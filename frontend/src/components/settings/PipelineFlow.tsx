@@ -96,8 +96,9 @@ function DbNode({ data }: { data: any }) {
       fontWeight: 600,
       boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
     }}>
-      <Handle type="target" position={Position.Top}   style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} id="right" />
+      <Handle type="target" position={Position.Top}    style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right}  style={{ opacity: 0 }} id="right" />
       <div style={{ wordBreak: 'keep-all' }}>🗄 {data.label}</div>
     </div>
   );
