@@ -17,8 +17,8 @@ services:
 
   client:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
       args:
         VITE_API_URL: ""   # 빈값 → /api/... 상대경로 → nginx가 server로 프록시
     container_name: client

@@ -1,0 +1,26 @@
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+# 프론트엔드 (백엔드 빌드 컨텍스트에 불필요)
+frontend/
+
+# 테스트·참조·출력 데이터
+test/
+test_data/
+ref/
+output/
+validated_output/
+dashboard_sample/
+data_check/
+image/
+
+# 문서
+docs/
+
+# Git
+.git
+.gitignore
+
