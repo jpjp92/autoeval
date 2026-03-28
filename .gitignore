@@ -40,3 +40,5 @@ sample/
 .python-version
 .claude/CLAUDE.md
 .env copy
+.claude/
+image/
