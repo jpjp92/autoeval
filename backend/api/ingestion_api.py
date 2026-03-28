@@ -56,7 +56,7 @@ from ingestion.parsers import (
     _merge_short_chunks,
     _resolve_chunk_page,
 )
-from ingestion.llm_chunker import run_llm_chunking
+from ingestion.llm_chunker import run_llm_chunking, run_llm_chunking_docx
 from db.doc_metadata_repo import upsert_doc_metadata
 
 logger = logging.getLogger("autoeval.ingestion")
@@ -212,28 +212,70 @@ async def process_and_ingest(
 # 청킹 헬퍼 — LLM / Rule-based
 # ============================================================================
 
+_TOC_BLOCK_RE = re.compile(
+    r'[·]{3,}'                       # 가운뎃점 점선 TOC
+    r'|(?:\.{4,})\s*\d+\s*$'         # 마침표 점선 + 숫자
+    r'|[가-힣\?)\]】』]\d{1,3}\s*$'  # 점선 없는 TOC 페이지 참조 ("요약 및 정리66")
+)
+
+
+def _is_docx_noise_block(text: str) -> bool:
+    """DOCX 커버/장식 요소에서 잘못 추출된 노이즈 블록 감지."""
+    if len(text) <= 15:
+        meaningful = len(re.findall(r'[가-힣a-zA-Z0-9]', text))
+        if meaningful / max(len(text), 1) < 0.3:
+            return True
+    # 영문 1-2자 + 기호 + 한글 조합 (로고/워터마크 OCR 잔여물)
+    if len(text) <= 12 and re.match(r'^[A-Za-z]{1,2}[)（\]】]', text):
+        return True
+    return False
+
+
 async def _ingest_with_llm_chunking(
     filename: str,
     pages: List[Dict[str, Any]],
     all_blocks: List[Dict[str, Any]],
     repeated_headers: set,
 ) -> List[Dict[str, Any]]:
-    """LLM 청킹 경로: run_llm_chunking → 공통 필터 적용."""
-    page_count = max((p.get("page", 1) for p in pages), default=1)
+    """LLM 청킹 경로: 파일 확장자에 따라 PDF/DOCX 전용 함수로 분기 후 공통 필터 적용."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    is_docx = ext in ("doc", "docx")
 
-    # blocks에 연속 index 부여 (llm_chunker 요구사항)
-    indexed_blocks = [
-        {"index": i, "page": b.get("page", 1), "text": b.get("text", "").strip()}
-        for i, b in enumerate(all_blocks)
-        if b.get("text", "").strip()
-    ]
-
-    chunks = await run_llm_chunking(
-        blocks=indexed_blocks,
-        client=gemini_client,
-        model=MODEL_CONFIG["gemini-flash"]["model_id"],
-        page_count=page_count,
-    )
+    if is_docx:
+        # DOCX: 노이즈/TOC 블록 사전 필터 후 블록 수 기반 파라미터 사용
+        indexed_blocks = []
+        for b in all_blocks:
+            text = b.get("text", "").strip()
+            if not text:
+                continue
+            if _is_docx_noise_block(text):
+                continue
+            if _TOC_BLOCK_RE.search(text) or is_toc_chunk(text):
+                continue
+            indexed_blocks.append({
+                "index": len(indexed_blocks),
+                "page": b.get("page", 1),
+                "text": text,
+            })
+        chunks = await run_llm_chunking_docx(
+            blocks=indexed_blocks,
+            client=gemini_client,
+            model=MODEL_CONFIG["gemini-flash"]["model_id"],
+        )
+    else:
+        # PDF(기본): 페이지 수 기반 파라미터 사용
+        page_count = max((p.get("page", 1) for p in pages), default=1)
+        indexed_blocks = [
+            {"index": i, "page": b.get("page", 1), "text": b.get("text", "").strip()}
+            for i, b in enumerate(all_blocks)
+            if b.get("text", "").strip()
+        ]
+        chunks = await run_llm_chunking(
+            blocks=indexed_blocks,
+            client=gemini_client,
+            model=MODEL_CONFIG["gemini-flash"]["model_id"],
+            page_count=page_count,
+        )
 
     all_chunks_to_embed = []
     seen_hashes: set = set()
@@ -280,7 +322,8 @@ async def _ingest_with_llm_chunking(
             "chunk_type": chunk_type,
         })
 
-    logger.info(f"[{filename}] LLM chunking: {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
+    method_tag = "docx" if is_docx else "pdf"
+    logger.info(f"[{filename}] LLM chunking ({method_tag}): {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
     return all_chunks_to_embed
 
 
