@@ -101,11 +101,11 @@ export function DashboardOverview({
 
       {/* 2. Recent Pipeline Runs & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 dark:border-white/8 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">파이프라인 로그</h3>
-              <p className="text-sm text-slate-500">DB 생성·평가 기록</p>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">파이프라인 로그</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">DB 생성·평가 기록</p>
             </div>
             <button
               onClick={() => setActiveTab("evaluation")}
@@ -122,7 +122,7 @@ export function DashboardOverview({
               <>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
+                    <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400">
                       <tr>
                         <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">작업 ID</th>
                         <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">문서</th>
@@ -132,13 +132,13 @@ export function DashboardOverview({
                         <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">시간</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                       {loading ? (
                         Array.from({ length: JOBS_PAGE_SIZE }).map((_, i) => (
                           <tr key={i}>
                             {Array.from({ length: 6 }).map((_, j) => (
                               <td key={j} className="px-4 py-2.5">
-                                <div className="h-4 bg-slate-100 rounded animate-pulse w-20" />
+                                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-20" />
                               </td>
                             ))}
                           </tr>
@@ -157,18 +157,18 @@ export function DashboardOverview({
                               key={job.job_id}
                               onClick={hasEval && onEvalSelect ? () => onEvalSelect(job.eval_id!) : undefined}
                               className={cn(
-                                "hover:bg-slate-50/50 transition-colors",
+                                "hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors",
                                 hasEval && onEvalSelect ? "cursor-pointer" : "cursor-default"
                               )}
                             >
-                              <td className="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">
+                              <td className="px-4 py-2.5 font-mono text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap">
                                 {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
                               </td>
-                              <td className="px-4 py-2.5 text-slate-600 text-xs max-w-[160px] truncate" title={job.source_doc}>
+                              <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300 text-xs max-w-[160px] truncate" title={job.source_doc}>
                                 {job.source_doc || "—"}
                               </td>
-                              <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{job.model || "—"}</td>
-                              <td className="px-4 py-2.5 text-right font-medium text-slate-700 text-xs whitespace-nowrap">{job.total_qa}</td>
+                              <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{job.model || "—"}</td>
+                              <td className="px-4 py-2.5 text-right font-medium text-slate-700 dark:text-slate-200 text-xs whitespace-nowrap">{job.total_qa}</td>
                               <td className="px-4 py-2.5 whitespace-nowrap">
                                 {hasEval && job.eval_grade ? (
                                   <span className={cn(
@@ -197,25 +197,25 @@ export function DashboardOverview({
                   </table>
                 </div>
                 {totalPages > 1 && (
-                  <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">
+                  <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/3 flex items-center justify-between">
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
                       {jobPage * JOBS_PAGE_SIZE + 1}–{Math.min((jobPage + 1) * JOBS_PAGE_SIZE, jobs.length)} / {jobs.length}건
                     </span>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setJobPage(p => Math.max(0, p - 1))}
                         disabled={jobPage === 0}
-                        className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                       >
-                        <ChevronLeft className="w-4 h-4 text-slate-600" />
+                        <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                       </button>
-                      <span className="text-xs font-mono text-slate-600 px-1">{jobPage + 1} / {totalPages}</span>
+                      <span className="text-xs font-mono text-slate-600 dark:text-slate-400 px-1">{jobPage + 1} / {totalPages}</span>
                       <button
                         onClick={() => setJobPage(p => Math.min(totalPages - 1, p + 1))}
                         disabled={jobPage === totalPages - 1}
-                        className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                       >
-                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                        <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                       </button>
                     </div>
                   </div>
@@ -226,47 +226,47 @@ export function DashboardOverview({
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 p-6 flex flex-col">
-          <h3 className="text-lg font-semibold text-slate-800 mb-2">빠른 실행</h3>
-          <p className="text-sm text-slate-500 mb-6">새 작업을 시작하세요.</p>
+        <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6 flex flex-col">
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">빠른 실행</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">새 작업을 시작하세요.</p>
 
           <div className="space-y-3 flex-1">
             <button
               onClick={() => setActiveTab("standardization")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all group text-left"
             >
-              <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-semibold text-slate-800 group-hover:text-amber-700">문서 업로드</div>
-                <div className="text-xs text-slate-500">PDF/DOCX 인제스션 및 계층 태깅</div>
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-amber-700 dark:group-hover:text-amber-400">문서 업로드</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">PDF/DOCX 인제스션 및 계층 태깅</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab("generation")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all group text-left"
             >
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors shrink-0">
                 <Play className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-semibold text-slate-800 group-hover:text-indigo-700">QA 생성 및 평가</div>
-                <div className="text-xs text-slate-500">데이터 생성 파이프라인 실행</div>
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-400">QA 생성 및 평가</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">데이터 생성 파이프라인 실행</div>
               </div>
             </button>
 
             <button
               onClick={() => setActiveTab("evaluation")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all group text-left"
             >
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-semibold text-slate-800 group-hover:text-emerald-700">평가 결과 확인</div>
-                <div className="text-xs text-slate-500">품질 점수 및 상세 리포트</div>
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">평가 결과 확인</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">품질 점수 및 상세 리포트</div>
               </div>
             </button>
           </div>
@@ -287,19 +287,19 @@ export function DashboardOverview({
         </div>
 
         {/* Grade Distribution */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 p-6">
+        <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6">
           <div className="flex items-center gap-2 mb-6">
-            <BarChart3 className="w-5 h-5 text-slate-400" />
+            <BarChart3 className="w-5 h-5 text-slate-400 dark:text-slate-500" />
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">평가 등급 분포</h3>
-              <p className="text-sm text-slate-500">전체 평가 결과</p>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">평가 등급 분포</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">전체 평가 결과</p>
             </div>
           </div>
 
           {loading ? (
             <div className="space-y-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-6 bg-slate-100 rounded animate-pulse" />
+                <div key={i} className="h-6 bg-slate-100 dark:bg-white/10 rounded animate-pulse" />
               ))}
             </div>
           ) : (

@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+/* darkMode: class 기반 — document.documentElement에 .dark 토글 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 폰트 */
+  --font-family-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+
+  /* Primary */
+  --color-primary:           #4647d3;
+  --color-primary-end:       #9396ff;
+  --color-primary-dark:      #8083ff;
+
+  /* Secondary / Tertiary */
+  --color-secondary:         #006947;
+  --color-tertiary:          #0057bd;
+
+  /* Surface — Light */
+  --color-surface:                    #f5f7f9;
+  --color-surface-container-low:      #eef1f3;
+  --color-surface-container-lowest:   #ffffff;
+
+  /* Surface — Dark */
+  --color-surface-dark:                   #0f1117;
+  --color-surface-container-low-dark:     #1a1d27;
+  --color-surface-container-lowest-dark:  #12141e;
+
+  /* Text */
+  --color-on-surface:         #2c2f31;
+  --color-on-surface-variant: #595c5e;
+}
+
+/* 기본 body 스타일 */
+body {
+  font-family: var(--font-family-sans);
+  -webkit-font-smoothing: antialiased;
+}

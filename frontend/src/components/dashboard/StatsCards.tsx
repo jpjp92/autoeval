@@ -15,17 +15,17 @@ interface StatCardProps {
 function StatCard({ title, value, subtitle, icon: Icon, accentColor, iconBg, iconColor, loading }: StatCardProps) {
   return (
     <div className={cn(
-      "bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60",
-      "shadow-lg shadow-slate-200/40 p-6 border-l-4",
+      "bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8",
+      "shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6 border-l-4",
       accentColor
     )}>
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{title}</p>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap">{title}</p>
           {loading ? (
-            <div className="h-8 w-24 bg-slate-100 rounded-lg animate-pulse mt-2" />
+            <div className="h-8 w-24 bg-slate-100 dark:bg-white/10 rounded-lg animate-pulse mt-2" />
           ) : (
-            <h3 className="text-2xl font-bold text-slate-900 mt-2 tabular-nums">{value}</h3>
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-2 tabular-nums">{value}</h3>
           )}
         </div>
         <div className={cn("p-3 rounded-xl shrink-0 ml-4", iconBg)}>
@@ -33,7 +33,7 @@ function StatCard({ title, value, subtitle, icon: Icon, accentColor, iconBg, ico
         </div>
       </div>
       {subtitle && !loading && (
-        <p className="mt-3 text-[11px] text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">{subtitle}</p>
+        <p className="mt-3 text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">{subtitle}</p>
       )}
     </div>
   );

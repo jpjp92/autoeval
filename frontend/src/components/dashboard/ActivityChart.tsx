@@ -73,11 +73,11 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
   const isEmpty = chartData.length === 0;
 
   return (
-    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+    <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">평가 점수 추이</h3>
-          <p className="text-sm text-slate-500">최종 점수 비율 (%)</p>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">평가 점수 추이</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">최종 점수 비율 (%)</p>
         </div>
       </div>
 
@@ -115,7 +115,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 domain={[0, 100]}
                 tickFormatter={(v) => `${v}%`}
               />
-              <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="4 4" />
+              <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.2)" strokeDasharray="4 4" />
               <Tooltip content={<CustomTooltip />} />
               <Area
                 type="monotone"

@@ -42,6 +42,7 @@ interface FormValues {
 interface QAGenerationPanelProps {
   currentFilename?: string | null;
   taggingVersion?: number;
+  onGenerationComplete?: () => void;
   onEvalComplete?: (evalJobId: string) => void;
   onGoToEvaluation?: () => void;
 }
@@ -65,8 +66,8 @@ function StepCard({
         <div className={cn(
           "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 transition-all",
           status === "done"   ? "bg-indigo-600 border-indigo-600 text-white" :
-          status === "active" ? "bg-white border-indigo-500 text-indigo-600" :
-                                "bg-white border-slate-200 text-slate-400"
+          status === "active" ? "bg-white dark:bg-slate-800 border-indigo-500 text-indigo-600" :
+                                "bg-white dark:bg-slate-800 border-slate-200 dark:border-white/15 text-slate-400 dark:text-slate-500"
         )}>
           {status === "done" ? <Check className="w-4 h-4" /> : step}
         </div>
@@ -78,26 +79,26 @@ function StepCard({
         )}
       </div>
       <div className={cn(
-        "flex-1 bg-white/80 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 overflow-hidden mb-4 transition-all",
-        status === "pending" ? "border-white/60 opacity-60" : "border-white/60"
+        "flex-1 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden mb-4 transition-all",
+        status === "pending" ? "border-white/60 dark:border-white/5 opacity-60" : "border-white/60 dark:border-white/8"
       )}>
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/5 flex items-center gap-3">
           <div className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
-            status === "done"   ? "bg-indigo-100 text-indigo-600" :
-            status === "active" ? "bg-indigo-100 text-indigo-500" :
-                                  "bg-slate-100 text-slate-400"
+            status === "done"   ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" :
+            status === "active" ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-500" :
+                                  "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
           )}>
             {icon}
           </div>
           <div>
-            <h3 className={cn("text-sm font-semibold", status === "pending" ? "text-slate-400" : "text-slate-800")}>
+            <h3 className={cn("text-sm font-semibold", status === "pending" ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100")}>
               {title}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>
           </div>
           {status === "done" && (
-            <span className="ml-auto px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[11px] font-semibold rounded-full">완료</span>
+            <span className="ml-auto px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold rounded-full">완료</span>
           )}
         </div>
         <div className="p-6">{children}</div>
@@ -108,7 +109,7 @@ function StepCard({
 
 // ── Select 공통 스타일 ────────────────────────────────────────────────────────
 const selectCls = (disabled: boolean) => cn(
-  "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
+  "w-full p-2.5 bg-slate-50 dark:bg-white/8 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
   disabled && "opacity-50 cursor-not-allowed"
 );
 
@@ -155,7 +156,7 @@ const intentColor = (intent: string) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
+export function QAGenerationPanel({ currentFilename, taggingVersion, onGenerationComplete, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
 
   const [formValues, setFormValues] = useState<FormValues>({
     model: "gemini-3.1-flash", lang: "ko", samples: 2,
@@ -245,6 +246,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
           } catch {}
 
           setJobId(null);
+          onGenerationComplete?.();
           if (formValues.autoEvaluate && data.result_file) {
             setPhase('evaluating');
             setProgress(0);
@@ -410,7 +412,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">생성 모델</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">생성 모델</label>
               <select value={formValues.model} onChange={e => setFormValues({ ...formValues, model: e.target.value })} disabled={isGenerating} className={selectCls(isGenerating)}>
                 <option value="gemini-3.1-flash">Gemini 3 Flash</option>
                 <option value="claude-sonnet">Claude Sonnet 4.6</option>
@@ -419,7 +421,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">청크 샘플 수</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">청크 샘플 수</label>
               <input
                 type="number" min="1" max="50" placeholder="1 – 50"
                 value={sampleInputValue}
@@ -435,7 +437,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">평가 모델</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">평가 모델</label>
               <select value={formValues.evaluatorModel} onChange={e => setFormValues({ ...formValues, evaluatorModel: e.target.value })} disabled={isGenerating} className={selectCls(isGenerating)}>
                 <option value="gemini-flash">Gemini 2.5 Flash</option>
                 <option value="claude-haiku">Claude Haiku 4.5</option>
@@ -444,9 +446,9 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">자동 평가</label>
-              <div className={cn("w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg", isGenerating && "opacity-50")}>
-                <p className="text-sm text-slate-600">생성 후 4-Layer 자동 실행</p>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">자동 평가</label>
+              <div className={cn("w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-white/8 border border-slate-200 dark:border-white/10 rounded-lg", isGenerating && "opacity-50")}>
+                <p className="text-sm text-slate-600 dark:text-slate-300">생성 후 4-Layer 자동 실행</p>
                 <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
                   <input type="checkbox" className="sr-only peer"
                     checked={formValues.autoEvaluate}
@@ -462,10 +464,10 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
           {/* Target Hierarchy */}
           <div className="pt-4 border-t border-slate-100 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                 <ListTree className="w-3.5 h-3.5" /> Target Hierarchy
               </p>
-              <button onClick={loadHierarchyList} disabled={isLoadingHierarchy || isGenerating} className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors disabled:opacity-50">
+              <button onClick={loadHierarchyList} disabled={isLoadingHierarchy || isGenerating} className="p-1 text-slate-400 dark:text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-white/10 rounded transition-colors disabled:opacity-50">
                 <RefreshCw className={cn("w-3.5 h-3.5", isLoadingHierarchy && "animate-spin")} />
               </button>
             </div>
@@ -475,8 +477,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                 <Loader2 className="w-4 h-4 animate-spin" /> <span>불러오는 중...</span>
               </div>
             ) : !hierarchyLoaded ? (
-              <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <p className="text-xs text-slate-400 leading-relaxed">
+              <div className="px-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/8 rounded-xl">
+                <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
                   {currentFilename
                     ? "Hierarchy 정보가 없습니다. 태깅이 완료된 문서인지 확인해주세요."
                     : "Standardization 탭에서 문서를 업로드하면 계층이 표시됩니다."}
@@ -558,7 +560,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                   </span>
                   {phase === "generating" && <span className="text-indigo-600 font-semibold">{progress}%</span>}
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">
                   <div className={cn(
                     "h-full rounded-full transition-all duration-300",
                     step2Status === "done" ? "bg-emerald-400" : "bg-indigo-500"
@@ -580,18 +582,18 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
             {phase === "generating" && (
               <div className="space-y-2.5 animate-pulse">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
-                    <div className="h-2.5 bg-slate-200 rounded w-4/5" />
-                    <div className="h-px bg-slate-100" />
+                  <div key={i} className="rounded-xl border border-slate-100 dark:border-white/8 bg-slate-50/60 dark:bg-white/5 p-4 space-y-3">
+                    <div className="h-2.5 bg-slate-200 dark:bg-white/10 rounded w-4/5" />
+                    <div className="h-px bg-slate-100 dark:bg-white/8" />
                     <div className="flex gap-2">
-                      <div className="h-5 w-5 bg-indigo-100 rounded flex-shrink-0" />
-                      <div className="h-2.5 bg-slate-200 rounded w-3/4 mt-1" />
+                      <div className="h-5 w-5 bg-indigo-100 dark:bg-indigo-500/20 rounded flex-shrink-0" />
+                      <div className="h-2.5 bg-slate-200 dark:bg-white/10 rounded w-3/4 mt-1" />
                     </div>
                     <div className="flex gap-2">
-                      <div className="h-5 w-5 bg-emerald-100 rounded flex-shrink-0" />
+                      <div className="h-5 w-5 bg-emerald-100 dark:bg-emerald-500/20 rounded flex-shrink-0" />
                       <div className="space-y-1.5 flex-1 mt-1">
-                        <div className="h-2.5 bg-slate-200 rounded w-full" />
-                        <div className="h-2.5 bg-slate-200 rounded w-2/3" />
+                        <div className="h-2.5 bg-slate-200 dark:bg-white/10 rounded w-full" />
+                        <div className="h-2.5 bg-slate-200 dark:bg-white/10 rounded w-2/3" />
                       </div>
                     </div>
                   </div>
@@ -610,21 +612,21 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                 </div>
                 <div className="space-y-2.5">
                   {qaPreview.map((item, i) => (
-                    <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 space-y-2.5">
+                    <div key={i} className="rounded-xl border border-slate-100 dark:border-white/8 bg-slate-50/60 dark:bg-white/5 p-4 space-y-2.5">
                       {/* context */}
-                      <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2 font-mono">
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed line-clamp-2 font-mono">
                         {item.context}
                       </p>
-                      <div className="h-px bg-slate-100" />
+                      <div className="h-px bg-slate-100 dark:bg-white/8" />
                       {/* Q */}
                       <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded flex-shrink-0">Q</span>
-                        <p className="text-sm text-slate-700 font-medium leading-snug">{item.q}</p>
+                        <span className="mt-0.5 text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-500/20 px-1.5 py-0.5 rounded flex-shrink-0">Q</span>
+                        <p className="text-sm text-slate-700 dark:text-slate-200 font-medium leading-snug">{item.q}</p>
                       </div>
                       {/* A */}
                       <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex-shrink-0">A</span>
-                        <p className="text-sm text-slate-600 leading-snug">{item.a}</p>
+                        <span className="mt-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded flex-shrink-0">A</span>
+                        <p className="text-sm text-slate-600 dark:text-slate-300 leading-snug">{item.a}</p>
                       </div>
                       {/* intent */}
                       {item.intent && (
@@ -695,7 +697,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                   <span>{statusMessage || "평가 중..."}</span>
                   <span className="text-indigo-600 font-semibold">{progress}%</span>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">
                   <div className="h-full rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
                 </div>
               </div>
@@ -717,17 +719,17 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-mono text-slate-600">{label}</span>
                       <span className={cn("font-semibold px-2 py-0.5 rounded-full text-[11px]",
-                        info.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                        info.status === "running"   ? "bg-amber-100 text-amber-700" :
-                                                      "bg-slate-100 text-slate-400"
+                        info.status === "completed" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" :
+                        info.status === "running"   ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
+                                                      "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
                       )}>
                         {info.status === "completed" ? "완료" : info.status === "running" ? "실행 중" : "대기"}
                       </span>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                    <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1 overflow-hidden">
                       <div className={cn("h-full rounded-full transition-all duration-300",
                         info.status === "completed" ? "bg-emerald-400" :
-                        info.status === "running"   ? "bg-amber-400" : "bg-slate-200"
+                        info.status === "running"   ? "bg-amber-400" : "bg-slate-200 dark:bg-white/10"
                       )} style={{ width: `${info.progress || 0}%` }} />
                     </div>
                   </div>
@@ -737,8 +739,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
 
             {/* 완료 지표 */}
             {step3Status === "done" && evalReport?.summary && (
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <div className="pt-4 border-t border-slate-100 dark:border-white/8 space-y-3">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 평가 결과
                 </p>
                 <div className="grid grid-cols-3 gap-2">
@@ -756,16 +758,16 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onEvalCompl
                   })().map(({ label, value, ok }) => (
                     <div key={label} className={cn(
                       "rounded-xl border flex flex-col items-center justify-center py-3 gap-1 cursor-default select-none transition-all",
-                      ok === 'highlight' ? "bg-indigo-50 border-indigo-100 hover:bg-indigo-100" :
-                      ok === true        ? "bg-white border-emerald-100 hover:bg-emerald-50" :
-                      ok === false       ? "bg-white border-amber-100 hover:bg-amber-50" :
-                                          "bg-white border-slate-100 hover:bg-slate-50"
+                      ok === 'highlight' ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-100 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/20" :
+                      ok === true        ? "bg-white dark:bg-white/5 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" :
+                      ok === false       ? "bg-white dark:bg-white/5 border-amber-100 dark:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/10" :
+                                          "bg-white dark:bg-white/5 border-slate-100 dark:border-white/8 hover:bg-slate-50 dark:hover:bg-white/8"
                     )}>
-                      <p className="text-[10px] text-slate-400 font-medium">{label}</p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">{label}</p>
                       <p className={cn("text-sm font-bold",
-                        ok === 'highlight' ? "text-indigo-700" :
-                        ok === true        ? "text-emerald-700" :
-                        ok === false       ? "text-amber-600"  : "text-slate-700"
+                        ok === 'highlight' ? "text-indigo-700 dark:text-indigo-400" :
+                        ok === true        ? "text-emerald-700 dark:text-emerald-400" :
+                        ok === false       ? "text-amber-600 dark:text-amber-400"  : "text-slate-700 dark:text-slate-200"
                       )}>{value}</p>
                     </div>
                   ))}

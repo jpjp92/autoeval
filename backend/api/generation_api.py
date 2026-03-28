@@ -83,6 +83,19 @@ def _get_generation_workers(model: str) -> int:
         return GENERATION_MAX_WORKERS["google"]
     return GENERATION_MAX_WORKERS["openai"]
 
+# 429 한도 초과 시 폴백 모델 (provider별 다른 provider로 전환)
+QUOTA_FALLBACK_MODELS: Dict[str, str] = {
+    "anthropic": "gemini-flash",
+    "google":    "gpt-5.2",
+    "openai":    "gemini-flash",
+}
+
+def _get_fallback_model(model: str) -> Optional[str]:
+    """429 한도 초과 시 폴백 모델 반환. 없으면 None."""
+    provider = MODEL_CONFIG.get(model, {}).get("provider")
+    fallback = QUOTA_FALLBACK_MODELS.get(provider)
+    return fallback if fallback and fallback in MODEL_CONFIG else None
+
 # ============= Job Status Enum =============
 
 class JobStatus(str, Enum):
@@ -485,17 +498,19 @@ async def run_qa_generation_real(
 
     APIQuotaExceededError, APIAuthError = _get_fatal_error_classes()
     fatal_error: list = []  # [error_message] — 첫 fatal 에러 저장
+    active_model = [model]  # mutable — 429 fallback 시 업데이트
 
     def _generate_one(args):
         idx, item = args
         if fatal_error:  # 이미 fatal 에러 발생 시 스킵
             return idx, None, "aborted"
+        current_model = active_model[0]
         try:
             chunk_type = item.get("metadata", {}).get("chunk_type", "body")
             sys_prompt = build_system_prompt(domain_profile, lang)
             usr_template = build_user_template(domain_profile, chunk_type)
             result = main_generate_qa(
-                item, model, lang, prompt_version,
+                item, current_model, lang, prompt_version,
                 system_prompt=sys_prompt,
                 user_template=usr_template,
             )
@@ -504,10 +519,38 @@ async def run_qa_generation_real(
             return idx, result, None
         except Exception as e:
             if APIQuotaExceededError and isinstance(e, APIQuotaExceededError):
-                logger.error(f"[{job_id}] API quota exceeded, aborting job: {e}")
-                if not fatal_error:
-                    fatal_error.append(str(e))
-                return idx, None, str(e)
+                fallback = _get_fallback_model(current_model)
+                if fallback:
+                    with progress_lock:
+                        if active_model[0] == current_model:
+                            active_model[0] = fallback
+                            logger.warning(f"[{job_id}] {current_model} 429 한도 초과 → {fallback}으로 전환")
+                            job_manager.update_job(
+                                job_id,
+                                message=f"모델 전환: {MODEL_CONFIG[fallback]['name']}으로 재시도 중..."
+                            )
+                    try:
+                        chunk_type = item.get("metadata", {}).get("chunk_type", "body")
+                        sys_prompt = build_system_prompt(domain_profile, lang)
+                        usr_template = build_user_template(domain_profile, chunk_type)
+                        result = main_generate_qa(
+                            item, fallback, lang, prompt_version,
+                            system_prompt=sys_prompt,
+                            user_template=usr_template,
+                        )
+                        if qa_per_doc and result.get("qa_list"):
+                            result["qa_list"] = result["qa_list"][:qa_per_doc]
+                        return idx, result, None
+                    except Exception as e2:
+                        logger.error(f"[{job_id}] Fallback {fallback} also failed: {e2}")
+                        if not fatal_error:
+                            fatal_error.append(str(e2))
+                        return idx, None, str(e2)
+                else:
+                    logger.error(f"[{job_id}] API quota exceeded, no fallback available: {e}")
+                    if not fatal_error:
+                        fatal_error.append(str(e))
+                    return idx, None, str(e)
             if APIAuthError and isinstance(e, APIAuthError):
                 logger.error(f"[{job_id}] API auth error, aborting job: {e}")
                 if not fatal_error:
@@ -527,7 +570,7 @@ async def run_qa_generation_real(
             # fatal 에러 발생 시 즉시 job 실패 처리
             if fatal_error:
                 executor.shutdown(wait=False, cancel_futures=True)
-                job_manager.update_job(job_id, status="failed", progress=0, message=fatal_error[0])
+                job_manager.update_job(job_id, status=JobStatus.FAILED, progress=0, error=fatal_error[0], message=fatal_error[0])
                 return
 
             with progress_lock:

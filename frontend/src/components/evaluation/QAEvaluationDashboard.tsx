@@ -253,15 +253,36 @@ function buildChartDataFromHistory(item: HistoryItem) {
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
 }
 
+// ─── 공통 툴팁 wrapper ────────────────────────────────────────────────────────
+const TooltipCard = ({ children }: { children: React.ReactNode }) => (
+  <div className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-md">
+    {children}
+  </div>
+);
+
 // ─── 커스텀 툴팁 (PieChart) ───────────────────────────────────────────────────
 const IntentTooltip = ({ active, payload }: any) => {
   if (active && payload?.length) {
     const d = payload[0].payload;
     return (
-      <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-md">
-        <p className="text-xs font-semibold text-slate-900">{d.krLabel} <span className="text-slate-400 font-normal">({d.label})</span></p>
-        <p className="text-xs text-slate-500 mt-1">수량: <span className="font-bold text-slate-700">{d.value}</span></p>
-      </div>
+      <TooltipCard>
+        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{d.krLabel} <span className="text-slate-400 dark:text-slate-500 font-normal">({d.label})</span></p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">수량: <span className="font-bold text-slate-700 dark:text-slate-200">{d.value}</span></p>
+      </TooltipCard>
+    );
+  }
+  return null;
+};
+
+// ─── 커스텀 툴팁 (RadarChart) ─────────────────────────────────────────────────
+const RadarTooltip = ({ active, payload }: any) => {
+  if (active && payload?.length) {
+    const d = payload[0].payload;
+    return (
+      <TooltipCard>
+        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{d.subject}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">점수: <span className="font-bold text-slate-700 dark:text-slate-200">{(d.A as number)?.toFixed(1)} / 10</span></p>
+      </TooltipCard>
     );
   }
   return null;
@@ -354,7 +375,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
             onMouseLeave={() => setHoveredIdx(null)}
           >
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-semibold text-slate-600 leading-none flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 leading-none flex items-center gap-1.5">
                 {item.group === 'rag' ? (
                   <span className="text-[9px] font-bold text-sky-500 bg-sky-50 border border-sky-200 rounded px-1 py-0.5 leading-none shrink-0">RAG</span>
                 ) : (
@@ -362,7 +383,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
                 )}
                 {item.name}
                 <span className={cn(
-                  'text-[10px] font-normal text-slate-400 transition-all duration-200',
+                  'text-[10px] font-normal text-slate-400 dark:text-slate-500 transition-all duration-200',
                   isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1'
                 )}>
                   ({item.nameEn})
@@ -372,7 +393,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
                 {item.score.toFixed(3)}
               </span>
             </div>
-            <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="relative h-2.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
               <div
                 className={cn('h-full rounded-full', color, isHovered && 'brightness-110')}
                 style={{
@@ -389,7 +410,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
       })}
       {/* 범례 — 우측 정렬 */}
       <div className={cn("flex justify-end", data.length <= 4 ? "pt-16" : "pt-2")}>
-        <div className="flex gap-3 text-[9px] text-slate-400 items-center">
+        <div className="flex gap-3 text-[9px] text-slate-400 dark:text-slate-500 items-center">
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />≥ 0.85</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />≥ 0.70</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-rose-400" />&lt; 0.70</span>
@@ -444,12 +465,12 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition-colors"
+          className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 font-medium transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> 목록으로
         </button>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-mono">#{qa.qa_index + 1}</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">#{qa.qa_index + 1}</span>
           {qa.intent && (
             <span
               className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border"
@@ -472,7 +493,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
       {qa.primary_failure && (
         <div className={cn(
           'rounded-xl p-4 border text-xs space-y-1',
-          FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 border-slate-200'
+          FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'
         )}>
           <p className="font-bold text-[10px] uppercase tracking-widest">주요 실패 유형</p>
           <p className="font-semibold">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
@@ -487,18 +508,18 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
       {/* Q / A / Context */}
       <div className="space-y-3">
-        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">질문</p>
-          <p className="text-sm text-slate-800 leading-relaxed font-medium">{qa.q}</p>
+        <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-4 border border-slate-100 dark:border-white/8">
+          <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">질문</p>
+          <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed font-medium">{qa.q}</p>
         </div>
 
         {qa.a ? (
           <div className="bg-indigo-50/60 rounded-xl p-4 border border-indigo-100">
             <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wide mb-2">답변</p>
-            <p className="text-sm text-slate-700 leading-relaxed">{qa.a}</p>
+            <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{qa.a}</p>
           </div>
         ) : (
-          <div className="rounded-xl p-4 border border-dashed border-slate-200 text-center text-xs text-slate-400">
+          <div className="rounded-xl p-4 border border-dashed border-slate-200 dark:border-white/10 text-center text-xs text-slate-400 dark:text-slate-500">
             답변 데이터 없음
           </div>
         )}
@@ -506,7 +527,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
         {qa.context && (
           <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100">
             <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">컨텍스트</p>
-            <p className="text-xs text-slate-600 leading-relaxed">{qa.context}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{qa.context}</p>
           </div>
         )}
       </div>
@@ -522,7 +543,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
                 <>
                   {qa.rag_avg != null && (
                     <span className="flex items-center gap-1 text-[10px]">
-                      <span className="text-slate-400 font-medium">RAG</span>
+                      <span className="text-slate-400 dark:text-slate-500 font-medium">RAG</span>
                       <span className={cn('font-black font-mono text-sm', scoreColor(qa.rag_avg))}>
                         {qa.rag_avg.toFixed(3)}
                       </span>
@@ -530,7 +551,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
                   )}
                   {qa.quality_avg != null && (
                     <span className="flex items-center gap-1 text-[10px]">
-                      <span className="text-slate-400 font-medium">품질</span>
+                      <span className="text-slate-400 dark:text-slate-500 font-medium">품질</span>
                       <span className={cn('font-black font-mono text-sm', scoreColor(qa.quality_avg))}>
                         {qa.quality_avg.toFixed(3)}
                       </span>
@@ -556,8 +577,8 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
             <div className="divide-y divide-violet-100">
               {allDimensions.map(({ label, reason }) => (
                 <div key={label} className="flex gap-3 px-4 py-3 text-xs">
-                  <span className="shrink-0 font-semibold text-slate-500 w-14">{label}</span>
-                  <span className="text-slate-600 leading-relaxed">{reason}</span>
+                  <span className="shrink-0 font-semibold text-slate-500 dark:text-slate-400 w-14">{label}</span>
+                  <span className="text-slate-600 dark:text-slate-300 leading-relaxed">{reason}</span>
                 </div>
               ))}
             </div>
@@ -791,17 +812,17 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       <div className="space-y-6 animate-in fade-in duration-500">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">QA 평가 결과</h2>
-            <p className="text-sm text-slate-500">평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">QA 평가 결과</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
           </div>
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
         </div>
-        <div className="flex flex-col items-center justify-center h-72 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 text-slate-400 gap-3">
+        <div className="flex flex-col items-center justify-center h-72 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 text-slate-400 dark:text-slate-500 gap-3">
           <Activity className="w-12 h-12 text-slate-200" />
           <p className="text-sm font-medium">평가 결과가 없습니다</p>
-          <p className="text-xs text-slate-400">QA 생성 패널에서 평가를 완료하면 결과가 여기에 표시됩니다.</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">QA 생성 패널에서 평가를 완료하면 결과가 여기에 표시됩니다.</p>
         </div>
       </div>
     );
@@ -810,7 +831,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   // ─── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-72 text-slate-400 gap-3">
+      <div className="flex flex-col items-center justify-center h-72 text-slate-400 dark:text-slate-500 gap-3">
         <Loader2 className="w-10 h-10 animate-spin text-indigo-400" />
         <p className="text-sm">평가 결과 로딩 중...</p>
       </div>
@@ -839,19 +860,19 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-slate-900">QA 평가 결과</h2>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">QA 평가 결과</h2>
             {grade && (
               <span className={cn('px-2.5 py-0.5 rounded-md text-sm font-bold border', GRADE_COLOR[grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
                 {grade}
               </span>
             )}
             {activeReport?.summary?.final_score != null && (
-              <span className="text-sm text-slate-500 font-mono">
+              <span className="text-sm text-slate-500 dark:text-slate-400 font-mono">
                 {(activeReport.summary.final_score * 100).toFixed(1)}점
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{metaStr}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{metaStr}</p>
         </div>
         <div className="flex gap-2">
           {historyList.length > 0 && (
@@ -868,16 +889,16 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                 : <><Download className="w-4 h-4" /> Export</>}
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 overflow-hidden">
                 {(['xlsx', 'html', 'zip'] as const).map((fmt) => (
                   <button key={fmt} onClick={() => handleExport(fmt)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-slate-700 border-b border-slate-100 last:border-b-0">
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
                     {fmt === 'xlsx' && <FileText className="w-4 h-4 text-blue-600" />}
                     {fmt === 'html' && <Code2    className="w-4 h-4 text-green-600" />}
                     {fmt === 'zip'  && <Download className="w-4 h-4 text-indigo-600" />}
                     <div>
                       <div className="font-medium">{fmt.toUpperCase()}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
                         {fmt === 'xlsx' ? 'Spreadsheet' : fmt === 'html' ? 'HTML Report' : 'XLSX + HTML 묶음'}
                       </div>
                     </div>
@@ -902,13 +923,13 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {summaryStats.map((stat, i) => (
-          <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+          <div key={i} className="bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex items-center gap-4">
             <div className={cn('w-12 h-12 rounded-lg flex items-center justify-center', stat.bg, stat.color)}>
               <stat.icon className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</p>
             </div>
           </div>
         ))}
@@ -916,25 +937,25 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Intent Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
           <div className="mb-2 flex items-start justify-between">
             <div>
-              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분류
               </h3>
-              <p className="text-xs text-slate-500">질문 유형 분포</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">질문 유형 분포</p>
             </div>
             <ChartInfoTooltip
               title="의도 분류"
               items={[
-                { text: 'QA 질문을 8가지 유형으로 분류한 분포입니다.' },
-                { label: '유형', text: '사실·수치·절차·이유·방법·정의·목록·확인' },
+                { text: 'QA 질문을 의도별로 분류한 분포입니다.' },
+                { label: '신형 6종', text: '사실·원인·방법·조건·비교·열거' },
                 { label: '기준', text: '분포가 고를수록 다양한 질문 유형을 포괄합니다.' },
               ]}
             />
           </div>
           {intentDistribution.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-xs text-slate-400">데이터 없음</div>
+            <div className="flex-1 flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">데이터 없음</div>
           ) : (
             <>
               <div className="flex-1 min-h-[200px]">
@@ -952,7 +973,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
               </div>
               <div className="grid grid-cols-4 gap-1 mt-2">
                 {intentDistribution.map((e) => (
-                  <div key={e.name} className="flex items-center gap-1 text-[10px] font-medium text-slate-600 px-1 py-0.5 rounded cursor-default">
+                  <div key={e.name} className="flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 px-1 py-0.5 rounded cursor-default">
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: INTENT_COLORS[e.name] ?? '#94a3b8' }} />
                     <span className="truncate">{e.krLabel}</span>
                   </div>
@@ -963,19 +984,19 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
         </div>
 
         {/* Radar: Dataset Stats */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
           <div className="mb-2 flex items-start justify-between">
             <div>
-              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500" /> 데이터 통계
               </h3>
-              <p className="text-xs text-slate-500">구조적·통계적 검증 (0–10)</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">구조적·통계적 검증 (0–10)</p>
             </div>
             <ChartInfoTooltip
               title="데이터 통계"
               items={[
-                { text: 'QA의 구조적·통계적 품질을 0–10으로 검증합니다.' },
-                { label: '항목', text: '문장 길이, 어휘 다양성, 중복률, 완결성 등 6개' },
+                { text: 'QA 데이터셋의 통계적 품질을 0–10으로 검증합니다.' },
+                { label: '항목', text: '다양성·중복성·편향성·충분성 (4개 지표)' },
                 { label: '통합점수', text: '각 지표의 가중 평균값' },
               ]}
             />
@@ -987,7 +1008,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                 <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10 }} />
                 <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 9 }} />
                 <Radar name="Score" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
-                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                <Tooltip content={<RadarTooltip />} isAnimationActive={false} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -995,7 +1016,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
             const intScore = activeReport?.pipeline_results?.stats?.integrated_score
               ?? activeItem?.pipeline_results?.layers?.stats?.integrated_score;
             return intScore != null ? (
-              <p className="text-center text-xs text-slate-500 mt-1">
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-1">
                 통합 점수: <span className="font-semibold text-indigo-600">{(intScore as number).toFixed(1)} / 10</span>
               </p>
             ) : null;
@@ -1003,20 +1024,21 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
         </div>
 
         {/* 품질 점수 — 커스텀 인터랙티브 바 */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
           <div className="mb-3 flex items-start justify-between">
             <div>
-              <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Target className="w-4 h-4 text-indigo-500" /> RAG Triad + 품질 평가 점수
               </h3>
-              <p className="text-xs text-slate-500">RAG Triad + 품질 평가 통합 점수</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">RAG Triad + 품질 평가 통합 점수</p>
             </div>
             <ChartInfoTooltip
               title="RAG Triad + 품질 평가"
               items={[
                 { text: 'LLM 기반 평가 점수입니다 (0–1).' },
-                { label: 'RAG Triad', text: '관련성 · 근거성 · 명확성' },
+                { label: 'RAG Triad', text: '관련성(답변) · 근거성 · 맥락성' },
                 { label: '품질 평가', text: '완전성' },
+                { label: '최종 점수', text: 'RAG ×0.65 + 품질 ×0.25 + 구문·통계 ×0.1' },
                 { label: '등급', text: '0.85↑ 우수 / 0.70↑ 양호 / 미만 미흡' },
               ]}
             />
@@ -1028,13 +1050,13 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       </div>
 
       {/* Detailed QA Table */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-lg shadow-slate-200/40 overflow-hidden">
+      <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
         {/* 테이블 헤더 */}
         {!selectedQA && (
-          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+          <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-white/3">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">상세 평가 결과</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">상세 평가 결과</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {qaPreview.length > 0
                   ? `${statusFilter ? `${filteredQA.length}개 표시 중 /` : '총'} ${qaPreview.length}개 · 페이지당 ${QA_PAGE_SIZE}개 · 행 클릭 시 상세 보기`
                   : '히스토리 데이터는 QA 상세 미리보기를 제공하지 않습니다'}
@@ -1052,7 +1074,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                       'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
                       isActive
                         ? STATUS_CONFIG[s].className
-                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                        : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300 hover:text-slate-700 dark:hover:bg-white/8'
                     )}
                   >
                     <span className={cn('w-1.5 h-1.5 rounded-full', STATUS_CONFIG[s].dotColor)} />
@@ -1066,7 +1088,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
         {/* 내용 영역 */}
         {qaPreview.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-sm">
+          <div className="p-12 text-center text-slate-400 dark:text-slate-500 text-sm">
             {report ? '평가된 QA 데이터가 없습니다.' : '현재 세션에서 실행된 평가 결과에서만 상세 QA를 확인할 수 있습니다.'}
           </div>
         ) : selectedQA ? (
@@ -1077,7 +1099,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-white/10">
                   <tr>
                     {([
                       { col: 'id',      label: 'ID',       cls: 'w-10'  },
@@ -1095,11 +1117,11 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                           if (sortCol === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setQaPage(0); }
                           else { setSortCol(col); setSortDir('asc'); setQaPage(0); }
                         }}
-                        className={cn('px-4 py-3 font-medium text-center cursor-pointer select-none hover:bg-slate-100 transition-colors', cls)}
+                        className={cn('px-4 py-3 font-medium text-center cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-white/8 transition-colors', cls)}
                       >
                         <span className="inline-flex items-center justify-center gap-1">
                           {label}
-                          <span className="text-[10px] text-slate-300">
+                          <span className="text-[10px] text-slate-300 dark:text-slate-600">
                             {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
                           </span>
                         </span>
@@ -1107,13 +1129,13 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {qaListLoading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
                         {Array.from({ length: 8 }).map((_, j) => (
                           <td key={j} className="px-4 py-3.5">
-                            <div className="h-3 bg-slate-100 rounded animate-pulse w-full" />
+                            <div className="h-3 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-full" />
                           </td>
                         ))}
                       </tr>
@@ -1127,7 +1149,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                         onClick={() => setSelectedQA(row)}
                         className="hover:bg-indigo-50/40 transition-colors cursor-pointer group h-[68px]"
                       >
-                        <td className="px-4 py-3 text-slate-400 font-mono text-xs text-center align-middle">{row.qa_index + 1}</td>
+                        <td className="px-4 py-3 text-slate-400 dark:text-slate-500 font-mono text-xs text-center align-middle">{row.qa_index + 1}</td>
                         <td className="px-4 py-3 text-center align-middle">
                           <span
                             className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border inline-block"
@@ -1140,27 +1162,27 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                             {(INTENT_KR[row.intent] ?? row.intent) || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-700 font-medium w-[200px] max-w-[200px] align-middle">
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-200 font-medium w-[200px] max-w-[200px] align-middle">
                           <div className="h-[44px] overflow-hidden">
                             <p className="line-clamp-2 text-xs leading-relaxed">{row.q}</p>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-500 w-[200px] max-w-[200px] align-middle">
+                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 w-[200px] max-w-[200px] align-middle">
                           <div className="h-[44px] overflow-hidden">
                             {row.a
                               ? <p className="line-clamp-2 text-xs leading-relaxed">{row.a}</p>
-                              : <span className="text-slate-300 text-xs">-</span>}
+                              : <span className="text-slate-300 dark:text-slate-600 text-xs">-</span>}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center font-mono text-xs align-middle">
                           {row.quality_avg != null
                             ? <span className={row.quality_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
-                            : <span className="text-slate-300">-</span>}
+                            : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
                         <td className="px-4 py-3 text-center font-mono text-xs align-middle">
                           {row.rag_avg != null
                             ? <span className={row.rag_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
-                            : <span className="text-slate-300">-</span>}
+                            : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
                         <td className="px-4 py-3 text-center align-middle">
                           <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border', cfg.className)}>
@@ -1173,7 +1195,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                               {FAILURE_CONFIG[row.primary_failure].label}
                             </span>
                           ) : (
-                            <span className="text-slate-300 text-xs">-</span>
+                            <span className="text-slate-300 dark:text-slate-600 text-xs">-</span>
                           )}
                         </td>
                       </tr>
@@ -1185,25 +1207,25 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
             {/* 페이지네이션 */}
             {totalPages > 1 && (
-              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <span className="text-xs text-slate-500">
+              <div className="px-5 py-3 border-t border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/3 flex items-center justify-between">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   {qaPage * QA_PAGE_SIZE + 1}–{Math.min((qaPage + 1) * QA_PAGE_SIZE, qaPreview.length)} / {qaPreview.length}개
                 </span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setQaPage(p => Math.max(0, p - 1))}
                     disabled={qaPage === 0}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                   >
-                    <ChevronLeft className="w-4 h-4 text-slate-600" />
+                    <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                   </button>
-                  <span className="text-xs font-mono text-slate-600 px-1.5">{qaPage + 1} / {totalPages}</span>
+                  <span className="text-xs font-mono text-slate-600 dark:text-slate-300 px-1.5">{qaPage + 1} / {totalPages}</span>
                   <button
                     onClick={() => setQaPage(p => Math.min(totalPages - 1, p + 1))}
                     disabled={qaPage === totalPages - 1}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                   >
-                    <ChevronRight className="w-4 h-4 text-slate-600" />
+                    <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                   </button>
                 </div>
               </div>
@@ -1211,7 +1233,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
             {/* 전체 개수 안내 (페이지 없을 때) */}
             {totalPages === 1 && activeReport && activeReport.metadata.total_qa > qaPreview.length && (
-              <div className="p-3 border-t border-slate-100 bg-slate-50 text-center text-xs text-slate-500">
+              <div className="p-3 border-t border-slate-100 dark:border-white/8 bg-slate-50 dark:bg-white/5 text-center text-xs text-slate-500 dark:text-slate-400">
                 총 {activeReport.metadata.total_qa.toLocaleString()}개 중 상위 {qaPreview.length}개 표시
               </div>
             )}
@@ -1248,16 +1270,16 @@ function HistoryDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center justify-center gap-2 w-32 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        className="flex items-center justify-center gap-2 w-32 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
       >
         <History className="w-4 h-4" />
         History
         <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showMenu && 'rotate-180')} />
       </button>
       {showMenu && (
-        <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50">
-            <p className="text-xs font-semibold text-slate-600">평가 히스토리 ({historyList.length})</p>
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-20 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/60">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">평가 히스토리 ({historyList.length})</p>
           </div>
           <div className="max-h-72 overflow-y-auto">
             {historyList.map((item) => (
@@ -1265,23 +1287,23 @@ function HistoryDropdown({
                 key={item.id}
                 onClick={() => onSelect(item)}
                 className={cn(
-                  'w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 text-left border-b border-slate-50 last:border-b-0 transition-colors',
+                  'w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left border-b border-slate-50 dark:border-slate-700 last:border-b-0 transition-colors',
                   selectedHistoryId === item.id && 'bg-indigo-50 border-indigo-100'
                 )}
               >
-                <Clock className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                <Clock className="w-4 h-4 text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded border', GRADE_COLOR[item.final_grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
                       {item.final_grade}
                     </span>
-                    <span className="text-xs font-mono text-slate-600">{item.final_score != null ? (item.final_score * 100).toFixed(1) + '점' : '-'}</span>
-                    <span className="text-xs text-slate-400">{item.total_qa} QA</span>
+                    <span className="text-xs font-mono text-slate-600 dark:text-slate-300">{item.final_score != null ? (item.final_score * 100).toFixed(1) + '점' : '-'}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">{item.total_qa} QA</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                     {item.metadata?.generation_model ?? '-'}
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                     {formatKST(item.created_at)}
                   </p>
                 </div>

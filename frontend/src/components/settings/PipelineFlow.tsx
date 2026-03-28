@@ -1,10 +1,8 @@
 import {
   ReactFlow,
-  Background,
   Controls,
   type Node,
   type Edge,
-  BackgroundVariant,
   Handle,
   Position,
 } from '@xyflow/react';
@@ -235,7 +233,6 @@ export function PipelineFlow() {
         zoomOnScroll={true}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
         <Controls
           style={{ bottom: 4, right: 10, left: 'auto', top: 'auto', transform: 'scale(0.75)', transformOrigin: 'bottom right' }}
           showInteractive={false}
