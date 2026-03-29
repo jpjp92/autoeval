@@ -37,7 +37,7 @@ backend/
 │   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색 + save_doc_chunks_batch() 배치 INSERT
 │   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
 │   ├── doc_metadata_repo.py     # 문서 단위 메타 (domain_profile + h2_h3_master) upsert/조회
-│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs+eval_id, grade_dist)
+│   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs, grade_dist, model_benchmarks)
 ├── config/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
 │   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더 (build_system_prompt 등)
@@ -146,7 +146,7 @@ API 문서: `http://localhost:8000/docs`
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | `GET` | `/health` | 헬스체크 |
-| `GET` | `/api/dashboard/metrics` | 대시보드 집계 데이터 (Supabase) |
+| `GET` | `/api/dashboard/metrics` | 대시보드 집계 데이터 (summary, recent_jobs, grade_dist, model_benchmarks) |
 
 ---
 

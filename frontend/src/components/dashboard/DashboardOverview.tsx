@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { StatsGrid } from "./StatsCards";
-import { ActivityChart } from "./ActivityChart";
+// import { ActivityChart } from "./ActivityChart"; // Phase 8.2: 리더보드로 대체 (필요 시 복구)
 import { getDashboardMetrics } from "@/src/lib/api";
-import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
+import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trophy, Zap, ScrollText, Rocket } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 type SortColumn = 'job_id' | 'source_doc' | 'model' | 'total_qa' | 'eval_grade' | 'created_at';
@@ -33,6 +33,14 @@ interface DashboardData {
     score: number | null;
     grade: string;
     doc: string;
+  }>;
+  model_benchmarks: Array<{
+    model: string;
+    avg_score: number;
+    pass_rate: number;
+    run_count: number;
+    total_qa: number;
+    valid_qa: number;
   }>;
 }
 
@@ -116,9 +124,12 @@ export function DashboardOverview({
       >
         <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
           <div className="p-6 border-b border-slate-100 dark:border-white/8 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">파이프라인 로그</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">DB 생성·평가 기록</p>
+            <div className="flex items-center gap-2">
+              <ScrollText className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">파이프라인 로그</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">DB 생성·평가 기록</p>
+              </div>
             </div>
             <button
               onClick={() => setActiveTab("evaluation")}
@@ -238,8 +249,8 @@ export function DashboardOverview({
                               <td className="px-4 py-3 text-slate-700 dark:text-slate-200 text-[13px] font-medium truncate" title={job.source_doc}>
                                 {job.source_doc || "—"}
                               </td>
-                              <td className="px-4 py-3 truncate" title={job.model || "—"}>
-                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border inline-block whitespace-nowrap", modelColor)}>
+                              <td className="px-4 py-3" title={job.model || "—"}>
+                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border max-w-[160px] truncate block", modelColor)}>
                                   {job.model || "—"}
                                 </span>
                               </td>
@@ -301,7 +312,10 @@ export function DashboardOverview({
 
         {/* Quick Actions */}
         <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6 flex flex-col">
-          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">빠른 실행</h3>
+          <div className="flex items-center gap-2 mb-2">
+            <Rocket className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">빠른 실행</h3>
+          </div>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">새 작업을 시작하세요.</p>
 
           <div className="space-y-3 flex-1">
@@ -357,13 +371,146 @@ export function DashboardOverview({
         </div>
       </div>
 
-      {/* 3. Score Trend Chart & Grade Distribution */}
+      {/* 3. Model Benchmark Leaderboard & Grade Distribution */}
       <div 
         className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
         style={{ animationDelay: '500ms', animationFillMode: 'both' }}
       >
-        <div className="lg:col-span-2">
-          <ActivityChart scoreTrend={data?.score_trend} loading={loading} />
+        {/* Model Benchmark Leaderboard (Phase 8.2 – ActivityChart 대체) */}
+        {/*
+          [복구 가이드] 아래 주석을 해제하고 ModelBenchmarkBoard 블록을 제거하면 점수 추이 차트로 복구됩니다.
+          <div className="lg:col-span-2">
+            <ActivityChart scoreTrend={data?.score_trend} loading={loading} />
+          </div>
+        */}
+        <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6">
+          <div className="flex items-center gap-2 mb-6">
+            <Trophy className="w-5 h-5 text-amber-500" />
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">생성 모델 성능 비교</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">전체 히스토리 기준 누적 평균 점수</p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-20 bg-slate-100 dark:bg-white/5 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : !data?.model_benchmarks?.length ? (
+            <div className="h-48 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 gap-2">
+              <Trophy className="w-10 h-10 opacity-30" />
+              <p className="text-sm">아직 집계할 데이터가 없습니다</p>
+              <p className="text-xs">QA 생성 및 평가를 실행하면 모델별 성능이 표시됩니다</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {data.model_benchmarks.map((bench, idx) => {
+                const isTop = idx === 0;
+                const scorePct = Math.min(bench.avg_score * 100, 100);
+
+                // 모델 브랜드 컬러
+                const m = bench.model.toLowerCase();
+                let modelColor = 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10';
+                let barColor   = 'bg-slate-400';
+                if (m.includes('gpt') || m.includes('openai')) {
+                  modelColor = 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20';
+                  barColor   = 'bg-emerald-500';
+                } else if (m.includes('claude') || m.includes('anthropic')) {
+                  modelColor = 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-500/20';
+                  barColor   = 'bg-orange-500';
+                } else if (m.includes('gemini') || m.includes('google')) {
+                  modelColor = 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20';
+                  barColor   = 'bg-blue-500';
+                }
+
+                return (
+                  <div
+                    key={bench.model}
+                    className={cn(
+                      'relative rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5',
+                      isTop
+                        ? 'bg-gradient-to-r from-amber-50/80 to-indigo-50/80 dark:from-amber-500/5 dark:to-indigo-500/5 border-amber-200 dark:border-amber-500/20 shadow-md shadow-amber-100/50 dark:shadow-amber-900/20'
+                        : 'bg-white/60 dark:bg-white/3 border-white/60 dark:border-white/8 hover:shadow-sm'
+                    )}
+                  >
+                    {/* 1위 글로우 효과 */}
+                    {isTop && (
+                      <div className="absolute -top-px left-0 right-0 h-0.5 bg-gradient-to-r from-amber-400 via-indigo-500 to-purple-500 rounded-t-xl" />
+                    )}
+
+                    <div className="flex items-center gap-3 mb-3">
+                      {/* 순위 */}
+                      <div className={cn(
+                        'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0',
+                        isTop ? 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-amber-900' : 'bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-400'
+                      )}>
+                        {isTop ? <Trophy className="w-3.5 h-3.5" /> : idx + 1}
+                      </div>
+
+                      {/* 모델명 */}
+                      <span className={cn('text-xs font-bold px-2.5 py-1 rounded-lg border', modelColor)}>
+                        {bench.model}
+                      </span>
+
+                      {isTop && (
+                        <span className="ml-auto text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20 flex items-center gap-1">
+                          <Zap className="w-2.5 h-2.5" /> Best
+                        </span>
+                      )}
+
+                      <div className={cn("ml-auto text-right", !isTop && "")}>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500">{bench.run_count}회 테스트</p>
+                      </div>
+                    </div>
+
+                    {/* 지표: 평균 점수 바 + QA 통과 수량 텍스트 */}
+                    <div className="space-y-2">
+                      {/* 평균 점수 바 */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                          <span>평균 점수</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{(bench.avg_score * 100).toFixed(1)}점</span>
+                        </div>
+                        <div className="relative h-1.5 bg-slate-100 dark:bg-white/8 rounded-full overflow-hidden">
+                          <div
+                            className={cn('h-full rounded-full', barColor, isTop && 'shadow-sm')}
+                            style={{
+                              width: `${scorePct}%`,
+                              clipPath: gradeAnimated ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)',
+                              transition: gradeAnimated
+                                ? `clip-path 700ms cubic-bezier(0.4,0,0.2,1) ${idx * 120}ms`
+                                : 'none',
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {/* QA 통과 수량 */}
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400 dark:text-slate-500">통과 QA</span>
+                        <span className="font-mono font-medium text-slate-600 dark:text-slate-300">
+                          {bench.valid_qa.toLocaleString()}
+                          <span className="text-slate-400 dark:text-slate-500 mx-1">/</span>
+                          {bench.total_qa.toLocaleString()}개
+                          <span className={cn(
+                            "ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+                            bench.pass_rate >= 99
+                              ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : bench.pass_rate >= 90
+                              ? "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              : "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400"
+                          )}>
+                            {bench.pass_rate}%
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Grade Distribution */}

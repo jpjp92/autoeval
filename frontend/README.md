@@ -19,9 +19,9 @@ frontend/
 │       │   ├── Sidebar.tsx              # 글래스 사이드바 — Admin User 클릭 시 Settings 이동
 │       │   └── Header.tsx               # 글래스 헤더 — 탭별 타이틀 (인디고 틴트)
 │       ├── dashboard/
-│       │   ├── DashboardOverview.tsx    # 메인 대시보드 — Supabase 집계 실데이터 연동
+│       │   ├── DashboardOverview.tsx    # 메인 대시보드 — 모델별 성능 리더보드 + 파이프라인 로그 통합
 │       │   ├── StatsCards.tsx           # 지표 카드 (accent border + glass)
-│       │   └── ActivityChart.tsx        # 평가 점수 추이 차트 (recharts)
+│       │   └── ActivityChart.tsx        # (Phase 8.2 이후 주석 처리) 평가 점수 추이 차트
 │       ├── standardization/
 │       │   ├── DataStandardizationPanel.tsx  # 문서 업로드 + 3단계 계층 태깅 UI
 │       │   └── HierarchyConstructionPanel.tsx # 계층 구성 전용 패널
@@ -29,6 +29,7 @@ frontend/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (L1/L2 드롭다운 + 진행상황)
 │       ├── evaluation/
 │       │   └── QAEvaluationDashboard.tsx # 4레이어 평가 결과 + 이력 조회 + 리포트 내보내기
+│       │                                 # UI: History/Export 버튼 크기 통일 (w-36), 뱃지 스타일 개선
 │       │                                 # QA 목록 테이블: 행 높이 고정 h-[68px], line-clamp-2 (질문/답변)
 │       │                                 # QA 목록 테이블: 실패유형 배지 (primary_failure 기반)
 │       │                                 # QADetailView: 차원별 평가 근거(reason) + 주요 실패 유형 섹션
@@ -86,10 +87,10 @@ frontend/
 
 | 탭 ID | 컴포넌트 | 상태 |
 |-------|----------|------|
-| `overview` | `DashboardOverview` | 구현됨 — Supabase 실데이터 |
-| `standardization` | `DataStandardizationPanel` | 구현됨 |
-| `generation` | `QAGenerationPanel` | 구현됨 |
-| `evaluation` | `QAEvaluationDashboard` | 구현됨 — 이력 조회 + 리포트 내보내기 (XLSX/HTML/ZIP), 실패유형 배지, 평가 근거 섹션, 행 고정 높이 |
+| `overview` | `DashboardOverview` | 구현됨 — Dashboard (모델별 성능 리더보드 도입) |
+| `standardization` | `DataStandardizationPanel` | 구현됨 — Documents |
+| `generation` | `QAGenerationPanel` | 구현됨 — QA Pipeline |
+| `evaluation` | `QAEvaluationDashboard` | 구현됨 — Evaluation (이력 조회 + Export w-36 통일) |
 | `playground` | `ChatPlayground` | 미구현 |
 | `settings` | `SettingsPanel` | 구현됨 — Profile / API Keys / Pipeline 시각화 |
 
@@ -167,4 +168,4 @@ VITE_API_URL=http://localhost:8000
 
 ---
 
-**Last Updated**: 2026-03-27 | **Branch**: main
+**Last Updated**: 2026-03-30 | **Branch**: main

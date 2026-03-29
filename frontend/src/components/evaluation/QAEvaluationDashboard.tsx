@@ -955,11 +955,11 @@ export function QAEvaluationDashboard({
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData || exportLoading}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-lg shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
+              className="flex items-center justify-center gap-2 w-36 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-lg shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
             >
               {exportLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중</>
-                : <><Download className="w-4 h-4" /> Export 리포트</>}
+                : <><Download className="w-4 h-4" /> Export</>}
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -1352,7 +1352,7 @@ function HistoryDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center justify-center gap-2 w-32 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+        className="flex items-center justify-center gap-2 w-36 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-95"
       >
         <History className="w-4 h-4" />
         History
@@ -1369,8 +1369,8 @@ function HistoryDropdown({
                 key={item.id}
                 onClick={() => onSelect(item)}
                 className={cn(
-                  'w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left border-b border-slate-50 dark:border-slate-700 last:border-b-0 transition-colors',
-                  selectedHistoryId === item.id && 'bg-indigo-50 border-indigo-100'
+                  'w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-left border-b border-slate-50 dark:border-slate-700 last:border-b-0 transition-colors',
+                  selectedHistoryId === item.id && 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20'
                 )}
               >
                 <Clock className="w-4 h-4 text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
