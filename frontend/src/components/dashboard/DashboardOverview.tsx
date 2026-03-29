@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { StatsGrid } from "./StatsCards";
 import { ActivityChart } from "./ActivityChart";
 import { getDashboardMetrics } from "@/src/lib/api";
-import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
+import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+
+type SortColumn = 'job_id' | 'source_doc' | 'model' | 'total_qa' | 'eval_grade' | 'created_at';
 
 const JOBS_PAGE_SIZE = 5;
 
@@ -73,6 +75,14 @@ export function DashboardOverview({
   const [loading, setLoading] = useState(true);
   const [jobPage, setJobPage] = useState(0);
   const [gradeAnimated, setGradeAnimated] = useState(false);
+  
+  const [sortField, setSortField] = useState<SortColumn>('created_at');
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const handleSort = (field: SortColumn) => {
+    if (sortField === field) setSortDesc(!sortDesc);
+    else { setSortField(field); setSortDesc(field === 'created_at' || field === 'total_qa' ? true : false); }
+  };
 
   useEffect(() => {
     if (!isActive) return;
@@ -115,21 +125,64 @@ export function DashboardOverview({
             </button>
           </div>
           {(() => {
-            const jobs = data?.recent_jobs ?? [];
-            const totalPages = Math.max(1, Math.ceil(jobs.length / JOBS_PAGE_SIZE));
-            const pagedJobs = jobs.slice(jobPage * JOBS_PAGE_SIZE, (jobPage + 1) * JOBS_PAGE_SIZE);
+            const rawJobs = data?.recent_jobs ?? [];
+            const sortedJobs = [...rawJobs].sort((a, b) => {
+              let valA: any = a[sortField as keyof typeof a];
+              let valB: any = b[sortField as keyof typeof b];
+              
+              if (sortField === 'eval_grade') {
+                const gradeMap: Record<string, number> = { "A+": 6, "A": 5, "B+": 4, "B": 3, "C": 2, "F": 1 };
+                valA = gradeMap[a.eval_grade || ""] || 0;
+                valB = gradeMap[b.eval_grade || ""] || 0;
+              } else if (sortField === 'created_at') {
+                valA = new Date(a.created_at).getTime();
+                valB = new Date(b.created_at).getTime();
+              } else if (sortField === 'total_qa') {
+                valA = Number(valA || 0);
+                valB = Number(valB || 0);
+              } else {
+                valA = String(valA || "").toLowerCase();
+                valB = String(valB || "").toLowerCase();
+              }
+              
+              if (valA < valB) return sortDesc ? 1 : -1;
+              if (valA > valB) return sortDesc ? -1 : 1;
+              return 0;
+            });
+
+            const totalPages = Math.max(1, Math.ceil(sortedJobs.length / JOBS_PAGE_SIZE));
+            const pagedJobs = sortedJobs.slice(jobPage * JOBS_PAGE_SIZE, (jobPage + 1) * JOBS_PAGE_SIZE);
+            
+            const SortIcon = ({ field }: { field: SortColumn }) => (
+              sortField === field 
+                ? (sortDesc ? <ChevronDown className="w-3 h-3 text-indigo-500" /> : <ChevronUp className="w-3 h-3 text-indigo-500" />)
+                : <ChevronDown className="w-3 h-3 opacity-0 group-hover:opacity-30 transition-opacity" />
+            );
+
             return (
               <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                <div className="overflow-x-auto min-h-[300px]">
+                  <table className="w-full text-left text-sm table-fixed">
+                    <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 select-none">
                       <tr>
-                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">작업 ID</th>
-                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">문서</th>
-                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">모델</th>
-                        <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">QA 수</th>
-                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap">평가</th>
-                        <th className="px-4 py-2.5 font-medium text-xs text-right whitespace-nowrap">시간</th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[15%] text-center" onClick={() => handleSort('job_id')}>
+                          <div className="flex items-center gap-1 justify-center">작업 ID <SortIcon field="job_id" /></div>
+                        </th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[28%] text-center" onClick={() => handleSort('source_doc')}>
+                          <div className="flex items-center gap-1 justify-center">문서 <SortIcon field="source_doc" /></div>
+                        </th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[23%] text-center" onClick={() => handleSort('model')}>
+                          <div className="flex items-center gap-1 justify-center">모델 <SortIcon field="model" /></div>
+                        </th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[10%] text-center" onClick={() => handleSort('total_qa')}>
+                          <div className="flex items-center gap-1 justify-center">QA 수 <SortIcon field="total_qa" /></div>
+                        </th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[10%] text-center" onClick={() => handleSort('eval_grade')}>
+                          <div className="flex items-center gap-1 justify-center">평가 <SortIcon field="eval_grade" /></div>
+                        </th>
+                        <th className="px-4 py-2.5 font-medium text-xs whitespace-nowrap cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 group w-[12%] text-center" onClick={() => handleSort('created_at')}>
+                          <div className="flex items-center gap-1 justify-center">시간 <SortIcon field="created_at" /></div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -138,12 +191,12 @@ export function DashboardOverview({
                           <tr key={i}>
                             {Array.from({ length: 6 }).map((_, j) => (
                               <td key={j} className="px-4 py-2.5">
-                                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-20" />
+                                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-full max-w-[80px]" />
                               </td>
                             ))}
                           </tr>
                         ))
-                      ) : !jobs.length ? (
+                      ) : !rawJobs.length ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-sm">
                             아직 실행 기록이 없습니다
@@ -152,41 +205,58 @@ export function DashboardOverview({
                       ) : (
                         pagedJobs.map((job) => {
                           const hasEval = !!job.eval_id;
+                          
+                          // 칩 테마 다이나믹 할당
+                          const m = (job.model || "").toLowerCase();
+                          let modelColor = 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/20';
+                          if (m.includes('gpt') || m.includes('openai')) {
+                            modelColor = 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
+                          } else if (m.includes('claude') || m.includes('anthropic')) {
+                            modelColor = 'bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20';
+                          } else if (m.includes('gemini') || m.includes('google')) {
+                            modelColor = 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20';
+                          }
+
                           return (
                             <tr
                               key={job.job_id}
                               onClick={hasEval && onEvalSelect ? () => onEvalSelect(job.eval_id!) : undefined}
                               className={cn(
-                                "hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors",
-                                hasEval && onEvalSelect ? "cursor-pointer" : "cursor-default"
+                                "group transition-colors",
+                                hasEval && onEvalSelect 
+                                  ? "hover:bg-indigo-50 dark:hover:bg-white/10 cursor-pointer" 
+                                  : "hover:bg-slate-50 dark:hover:bg-white/5 cursor-default"
                               )}
                             >
-                              <td className="px-4 py-2.5 font-mono text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                                {job.job_id.length > 22 ? job.job_id.slice(0, 22) + "…" : job.job_id}
+                              <td className="px-4 py-3 font-mono text-[11px] text-slate-400 dark:text-slate-500 truncate" title={job.job_id}>
+                                {job.job_id}
                               </td>
-                              <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300 text-xs max-w-[160px] truncate" title={job.source_doc}>
+                              <td className="px-4 py-3 text-slate-700 dark:text-slate-200 text-[13px] font-medium truncate" title={job.source_doc}>
                                 {job.source_doc || "—"}
                               </td>
-                              <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">{job.model || "—"}</td>
-                              <td className="px-4 py-2.5 text-right font-medium text-slate-700 dark:text-slate-200 text-xs whitespace-nowrap">{job.total_qa}</td>
-                              <td className="px-4 py-2.5 whitespace-nowrap">
+                              <td className="px-4 py-3 truncate" title={job.model || "—"}>
+                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border inline-block whitespace-nowrap", modelColor)}>
+                                  {job.model || "—"}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center font-medium text-slate-600 dark:text-slate-300 text-[13px] truncate">
+                                {job.total_qa}
+                              </td>
+                              <td className="px-4 py-3 text-center truncate">
                                 {hasEval && job.eval_grade ? (
                                   <span className={cn(
-                                    "inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border",
+                                    "inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border shadow-sm",
                                     GRADE_COLORS[job.eval_grade] || "bg-slate-100 text-slate-600 border-slate-200"
                                   )}>
-                                    <span className={cn(
-                                      "text-xs leading-none tracking-tight",
-                                      job.eval_grade.includes('+') && "translate-x-px"
-                                    )}>
+                                    <span className={cn("text-[12px] leading-none tracking-tight", job.eval_grade.includes('+') && "translate-x-px")}>
                                       {job.eval_grade}
                                     </span>
                                   </span>
                                 ) : (
-                                  <span className="text-xs text-slate-400">미평가</span>
+                                  <span className="text-[12px] text-slate-400">대기</span>
                                 )}
                               </td>
-                              <td className="px-4 py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">
+                              <td className="px-4 py-3 text-center text-slate-400 text-[12px] truncate">
                                 {formatRelativeTime(job.created_at)}
                               </td>
                             </tr>
@@ -199,7 +269,7 @@ export function DashboardOverview({
                 {totalPages > 1 && (
                   <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/3 flex items-center justify-between">
                     <span className="text-xs text-slate-400 dark:text-slate-500">
-                      {jobPage * JOBS_PAGE_SIZE + 1}–{Math.min((jobPage + 1) * JOBS_PAGE_SIZE, jobs.length)} / {jobs.length}건
+                      {jobPage * JOBS_PAGE_SIZE + 1}–{Math.min((jobPage + 1) * JOBS_PAGE_SIZE, rawJobs.length)} / {rawJobs.length}건
                     </span>
                     <div className="flex items-center gap-1">
                       <button

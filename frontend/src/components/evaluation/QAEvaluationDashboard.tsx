@@ -1028,12 +1028,12 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
           <div className="mb-3 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <Target className="w-4 h-4 text-indigo-500" /> RAG Triad + 품질 평가 점수
+                <Target className="w-4 h-4 text-indigo-500" /> 통합 품질 평가 점수
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">RAG Triad + 품질 평가 통합 점수</p>
             </div>
             <ChartInfoTooltip
-              title="RAG Triad + 품질 평가"
+              title="통합 품질 평가 점수"
               items={[
                 { text: 'LLM 기반 평가 점수입니다 (0–1).' },
                 { label: 'RAG Triad', text: '관련성(답변) · 근거성 · 맥락성' },
