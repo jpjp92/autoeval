@@ -1098,18 +1098,18 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
           /* ── 테이블 뷰 ── */
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-white/10">
                   <tr>
                     {([
                       { col: 'id',      label: 'ID',       cls: 'w-10'  },
-                      { col: 'intent',  label: '의도',      cls: 'w-24'  },
+                      { col: 'intent',  label: '의도',      cls: 'w-20'  },
                       { col: 'q',       label: '질문',      cls: ''      },
                       { col: 'a',       label: '답변',      cls: ''      },
-                      { col: 'quality', label: '품질 점수',  cls: 'w-24'  },
-                      { col: 'triad',   label: 'Triad 점수', cls: 'w-24' },
-                      { col: 'status',  label: '상태',      cls: 'w-20'  },
-                      { col: 'failure', label: '실패유형',   cls: 'w-24'  },
+                      { col: 'quality', label: '품질 점수',  cls: 'w-20'  },
+                      { col: 'triad',   label: 'Triad 점수', cls: 'w-20' },
+                      { col: 'status',  label: '상태',      cls: 'w-16'  },
+                      { col: 'failure', label: '실패유형',   cls: 'w-20'  },
                     ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
                       <th
                         key={col}
@@ -1117,11 +1117,11 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                           if (sortCol === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setQaPage(0); }
                           else { setSortCol(col); setSortDir('asc'); setQaPage(0); }
                         }}
-                        className={cn('px-4 py-3 font-medium text-center cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-white/8 transition-colors', cls)}
+                        className={cn('px-3 py-2.5 font-medium text-center text-[12px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-white/8 transition-colors', cls)}
                       >
                         <span className="inline-flex items-center justify-center gap-1">
                           {label}
-                          <span className="text-[10px] text-slate-300 dark:text-slate-600">
+                          <span className="text-[9px] text-slate-300 dark:text-slate-600">
                             {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
                           </span>
                         </span>
@@ -1134,7 +1134,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                     Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
                         {Array.from({ length: 8 }).map((_, j) => (
-                          <td key={j} className="px-4 py-3.5">
+                          <td key={j} className="px-3 py-2.5">
                             <div className="h-3 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-full" />
                           </td>
                         ))}
@@ -1147,12 +1147,12 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                       <tr
                         key={row.qa_index}
                         onClick={() => setSelectedQA(row)}
-                        className="hover:bg-indigo-50/40 transition-colors cursor-pointer group h-[68px]"
+                        className="hover:bg-indigo-50/40 transition-colors cursor-pointer group h-[60px]"
                       >
-                        <td className="px-4 py-3 text-slate-400 dark:text-slate-500 font-mono text-xs text-center align-middle">{row.qa_index + 1}</td>
-                        <td className="px-4 py-3 text-center align-middle">
+                        <td className="px-3 py-2 text-slate-400 dark:text-slate-500 font-mono text-[11px] text-center align-middle">{row.qa_index + 1}</td>
+                        <td className="px-3 py-2 text-center align-middle">
                           <span
-                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border inline-block"
+                            className="px-2 py-[2px] rounded text-[10px] font-bold uppercase tracking-wide border inline-block"
                             style={{
                               backgroundColor: `${INTENT_COLORS[row.intent] ?? '#94a3b8'}15`,
                               color:           INTENT_COLORS[row.intent] ?? '#64748b',
@@ -1162,40 +1162,40 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                             {(INTENT_KR[row.intent] ?? row.intent) || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-700 dark:text-slate-200 font-medium w-[200px] max-w-[200px] align-middle">
-                          <div className="h-[44px] overflow-hidden">
-                            <p className="line-clamp-2 text-xs leading-relaxed">{row.q}</p>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-200 font-medium w-[220px] max-w-[220px] align-middle">
+                          <div className="h-[36px] overflow-hidden flex items-center">
+                            <p className="line-clamp-2 text-[11px] leading-relaxed">{row.q}</p>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 w-[200px] max-w-[200px] align-middle">
-                          <div className="h-[44px] overflow-hidden">
+                        <td className="px-3 py-2 text-slate-500 dark:text-slate-400 w-[220px] max-w-[220px] align-middle">
+                          <div className="h-[36px] overflow-hidden flex items-center">
                             {row.a
-                              ? <p className="line-clamp-2 text-xs leading-relaxed">{row.a}</p>
-                              : <span className="text-slate-300 dark:text-slate-600 text-xs">-</span>}
+                              ? <p className="line-clamp-2 text-[11px] leading-relaxed">{row.a}</p>
+                              : <span className="text-slate-300 dark:text-slate-600 text-[11px]">-</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-center font-mono text-xs align-middle">
+                        <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
                           {row.quality_avg != null
                             ? <span className={row.quality_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
-                        <td className="px-4 py-3 text-center font-mono text-xs align-middle">
+                        <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
                           {row.rag_avg != null
                             ? <span className={row.rag_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
-                        <td className="px-4 py-3 text-center align-middle">
-                          <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border', cfg.className)}>
+                        <td className="px-3 py-2 text-center align-middle">
+                          <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border', cfg.className)}>
                             {cfg.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center align-middle">
+                        <td className="px-3 py-2 text-center align-middle">
                           {row.primary_failure && FAILURE_CONFIG[row.primary_failure] ? (
-                            <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border', FAILURE_CONFIG[row.primary_failure].className)}>
+                            <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold border', FAILURE_CONFIG[row.primary_failure].className)}>
                               {FAILURE_CONFIG[row.primary_failure].label}
                             </span>
                           ) : (
-                            <span className="text-slate-300 dark:text-slate-600 text-xs">-</span>
+                            <span className="text-slate-300 dark:text-slate-600 text-[11px]">-</span>
                           )}
                         </td>
                       </tr>
