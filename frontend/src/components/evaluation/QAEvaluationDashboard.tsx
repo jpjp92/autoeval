@@ -256,7 +256,7 @@ function buildChartDataFromHistory(item: HistoryItem) {
 
 // ─── 공통 툴팁 wrapper ────────────────────────────────────────────────────────
 const TooltipCard = ({ children }: { children: React.ReactNode }) => (
-  <div className="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-md">
+  <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-black/50 animate-in zoom-in-95 duration-200">
     {children}
   </div>
 );
@@ -378,14 +378,14 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 leading-none flex items-center gap-1.5">
                 {item.group === 'rag' ? (
-                  <span className="text-[9px] font-bold text-sky-500 bg-sky-50 border border-sky-200 rounded px-1 py-0.5 leading-none shrink-0">RAG</span>
+                  <span className="text-[9px] font-bold text-sky-500 bg-sky-50 border border-sky-200 rounded px-1 py-0.5 leading-none shrink-0 transition-transform duration-300 group-hover:scale-110">RAG</span>
                 ) : (
-                  <span className="text-[9px] font-bold text-violet-500 bg-violet-50 border border-violet-200 rounded px-1 py-0.5 leading-none shrink-0">품질</span>
+                  <span className="text-[9px] font-bold text-violet-500 bg-violet-50 border border-violet-200 rounded px-1 py-0.5 leading-none shrink-0 transition-transform duration-300 group-hover:scale-110">품질</span>
                 )}
                 {item.name}
                 <span className={cn(
-                  'text-[10px] font-normal text-slate-400 dark:text-slate-500 transition-all duration-200',
-                  isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1'
+                  'text-[10px] font-normal text-slate-400 dark:text-slate-500 transition-all duration-300',
+                  isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
                 )}>
                   ({item.nameEn})
                 </span>
@@ -396,7 +396,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
             </div>
             <div className="relative h-2.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
               <div
-                className={cn('h-full rounded-full', color, isHovered && 'brightness-110')}
+                className={cn('h-full rounded-full transition-all duration-300', color, isHovered && 'brightness-110 shadow-[0_0_12px_rgba(99,102,241,0.5)]')}
                 style={{
                   width: `${targetW}%`,
                   clipPath: animated ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)',
@@ -461,12 +461,12 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
     v >= 0.85 ? 'text-emerald-600' : v >= 0.7 ? 'text-amber-500' : 'text-rose-600';
 
   return (
-    <div className="p-5 space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
+    <div className="p-5 space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 font-medium transition-colors"
+          className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-all hover:-translate-x-1 active:scale-[0.98]"
         >
           <ArrowLeft className="w-4 h-4" /> 목록으로
         </button>
@@ -856,9 +856,12 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
 
   // ─── Main Dashboard ────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div 
+        className="flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-500"
+        style={{ animationFillMode: 'both' }}
+      >
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">QA 평가 결과</h2>
@@ -882,15 +885,15 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
           <div ref={exportMenuRef} className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={!evaluationData}
-              className="flex items-center justify-center gap-2 w-32 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-40"
+              disabled={!evaluationData || exportLoading}
+              className="flex items-center justify-center gap-2 w-32 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all duration-300 ease-out shadow-sm hover:shadow-md disabled:opacity-40 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0"
             >
               {exportLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중...</>
                 : <><Download className="w-4 h-4" /> Export</>}
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {(['xlsx', 'html', 'zip'] as const).map((fmt) => (
                   <button key={fmt} onClick={() => handleExport(fmt)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
@@ -922,10 +925,13 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div 
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: '100ms', animationFillMode: 'both' }}
+      >
         {summaryStats.map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex items-center gap-4">
-            <div className={cn('w-12 h-12 rounded-lg flex items-center justify-center', stat.bg, stat.color)}>
+          <div key={i} className="group bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:hover:shadow-black/40 flex items-center gap-4">
+            <div className={cn('w-12 h-12 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:shadow-inner', stat.bg, stat.color)}>
               <stat.icon className="w-6 h-6" />
             </div>
             <div>
@@ -936,9 +942,12 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div 
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: '300ms', animationFillMode: 'both' }}
+      >
         {/* Intent Distribution */}
-        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
+        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col transition-all duration-300 hover:shadow-md dark:hover:shadow-white/5">
           <div className="mb-2 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -985,7 +994,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
         </div>
 
         {/* Radar: Dataset Stats */}
-        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
+        <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col transition-all duration-300 hover:shadow-md dark:hover:shadow-white/5">
           <div className="mb-2 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -1051,7 +1060,10 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
       </div>
 
       {/* Detailed QA Table */}
-      <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
+      <div 
+        className="bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: '500ms', animationFillMode: 'both' }}
+      >
         {/* 테이블 헤더 */}
         {!selectedQA && (
           <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-white/3">
@@ -1072,7 +1084,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                     key={s}
                     onClick={() => { setStatusFilter(isActive ? null : s); setQaPage(0); }}
                     className={cn(
-                      'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98] shadow-sm hover:shadow-md',
                       isActive
                         ? STATUS_CONFIG[s].className
                         : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300 hover:text-slate-700 dark:hover:bg-white/8'
@@ -1148,7 +1160,7 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
                       <tr
                         key={row.qa_index}
                         onClick={() => setSelectedQA(row)}
-                        className="hover:bg-indigo-50/40 transition-colors cursor-pointer group h-[60px]"
+                        className="group transition-all duration-200 ease-out border-l-2 border-transparent relative hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:bg-indigo-50 dark:hover:bg-white/10 hover:border-indigo-500 cursor-pointer h-[60px]"
                       >
                         <td className="px-3 py-2 text-slate-400 dark:text-slate-500 font-mono text-[11px] text-center align-middle">{row.qa_index + 1}</td>
                         <td className="px-3 py-2 text-center align-middle">
