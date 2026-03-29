@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { cn } from "@/src/lib/utils";
 
 interface ScoreTrendProps {
   scoreTrend?: Array<{
@@ -16,21 +17,17 @@ function CustomTooltip({ active, payload }: any) {
   const point = payload[0]?.payload;
   if (!point) return null;
   return (
-    <div style={{
-      backgroundColor: '#fff',
-      borderRadius: '8px',
-      border: '1px solid #e2e8f0',
-      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-      padding: '8px 12px',
-      fontSize: '13px',
-    }}>
-      <p style={{ color: '#64748b', marginBottom: 4, fontWeight: 500 }}>{point.dateLabel}</p>
+    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-black/50 p-3 text-sm animate-in zoom-in-95 duration-200">
+      <p className="text-slate-500 dark:text-slate-400 font-medium mb-1 text-[13px]">{point.dateLabel}</p>
       {point.doc && (
-        <p style={{ color: '#475569', marginBottom: 4, maxWidth: 220, wordBreak: 'break-all' }}>
+        <p className="text-slate-700 dark:text-slate-200 mb-1 max-w-[220px] break-all text-[13px] leading-tight">
           {point.doc}
         </p>
       )}
-      <p style={{ color: '#6366f1', fontWeight: 700 }}>{point.score}%</p>
+      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+        <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
+        <p className="text-indigo-600 dark:text-indigo-400 font-bold">{point.score}%</p>
+      </div>
     </div>
   );
 }
@@ -73,7 +70,7 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
   const isEmpty = chartData.length === 0;
 
   return (
-    <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20">
+    <div className="bg-white/80 dark:bg-white/5 backdrop-blur-sm p-6 rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 transition-all duration-300 hover:shadow-xl dark:hover:shadow-black/40">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">평가 점수 추이</h3>
@@ -96,8 +93,8 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
             <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0.01}/>
                 </linearGradient>
               </defs>
               <XAxis
@@ -115,16 +112,28 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 domain={[0, 100]}
                 tickFormatter={(v) => `${v}%`}
               />
-              <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.2)" strokeDasharray="4 4" />
-              <Tooltip content={<CustomTooltip />} />
+              <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.15)" strokeDasharray="4 4" />
+              <Tooltip 
+                content={<CustomTooltip />} 
+                cursor={{ stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '4 4' }}
+              />
               <Area
                 type="monotone"
                 dataKey="score"
                 name="Final Score"
                 stroke="#6366f1"
-                strokeWidth={2}
+                strokeWidth={3}
                 fillOpacity={1}
                 fill="url(#colorScore)"
+                activeDot={{ 
+                  r: 6, 
+                  fill: "#6366f1", 
+                  stroke: "white", 
+                  strokeWidth: 3, 
+                  style: { filter: 'drop-shadow(0 0 6px rgba(99,102,241,0.6))' } 
+                }}
+                animationDuration={1500}
+                animationEasing="ease-out"
               />
             </AreaChart>
           </ResponsiveContainer>

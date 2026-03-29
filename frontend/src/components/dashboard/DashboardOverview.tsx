@@ -105,12 +105,15 @@ export function DashboardOverview({
   }, [isActive]);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8">
       {/* 1. Key Metrics */}
       <StatsGrid summary={data?.summary} loading={loading} />
 
       {/* 2. Recent Pipeline Runs & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div 
+        className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: '300ms', animationFillMode: 'both' }}
+      >
         <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
           <div className="p-6 border-b border-slate-100 dark:border-white/8 flex items-center justify-between">
             <div>
@@ -222,10 +225,11 @@ export function DashboardOverview({
                               key={job.job_id}
                               onClick={hasEval && onEvalSelect ? () => onEvalSelect(job.eval_id!) : undefined}
                               className={cn(
-                                "group transition-colors",
+                                "group transition-all duration-200 ease-out border-l-2 border-transparent relative",
+                                "hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)]",
                                 hasEval && onEvalSelect 
-                                  ? "hover:bg-indigo-50 dark:hover:bg-white/10 cursor-pointer" 
-                                  : "hover:bg-slate-50 dark:hover:bg-white/5 cursor-default"
+                                  ? "hover:bg-indigo-50 dark:hover:bg-white/10 hover:border-indigo-500 cursor-pointer" 
+                                  : "hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-300 dark:hover:border-slate-600 cursor-default"
                               )}
                             >
                               <td className="px-4 py-3 font-mono text-[11px] text-slate-400 dark:text-slate-500 truncate" title={job.job_id}>
@@ -303,41 +307,44 @@ export function DashboardOverview({
           <div className="space-y-3 flex-1">
             <button
               onClick={() => setActiveTab("standardization")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all duration-300 ease-out group text-left hover:scale-[1.02] active:scale-[0.98] hover:shadow-md"
             >
-              <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors duration-300 shrink-0">
                 <Database className="w-5 h-5" />
               </div>
-              <div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-amber-700 dark:group-hover:text-amber-400">문서 업로드</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">PDF/DOCX 인제스션 및 계층 태깅</div>
+              <div className="flex-1">
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors">문서 업로드</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 transition-colors">PDF/DOCX 인제스션 및 계층 태깅</div>
               </div>
+              <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-amber-600" />
             </button>
 
             <button
               onClick={() => setActiveTab("generation")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-300 ease-out group text-left hover:scale-[1.02] active:scale-[0.98] hover:shadow-md"
             >
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300 shrink-0">
                 <Play className="w-5 h-5" />
               </div>
-              <div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-400">QA 생성 및 평가</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">데이터 생성 파이프라인 실행</div>
+              <div className="flex-1">
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">QA 생성 및 평가</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 transition-colors">데이터 생성 파이프라인 실행</div>
               </div>
+              <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-indigo-600" />
             </button>
 
             <button
               onClick={() => setActiveTab("evaluation")}
-              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all group text-left"
+              className="w-full flex items-center gap-3 p-4 min-h-[72px] rounded-xl border border-slate-200 dark:border-white/8 hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all duration-300 ease-out group text-left hover:scale-[1.02] active:scale-[0.98] hover:shadow-md"
             >
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300 shrink-0">
                 <FileText className="w-5 h-5" />
               </div>
-              <div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">평가 결과 확인</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">품질 점수 및 상세 리포트</div>
+              <div className="flex-1">
+                <div className="font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">평가 결과 확인</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 transition-colors">품질 점수 및 상세 리포트</div>
               </div>
+              <ArrowRight className="w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-emerald-600" />
             </button>
           </div>
 
@@ -351,7 +358,10 @@ export function DashboardOverview({
       </div>
 
       {/* 3. Score Trend Chart & Grade Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div 
+        className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
+        style={{ animationDelay: '500ms', animationFillMode: 'both' }}
+      >
         <div className="lg:col-span-2">
           <ActivityChart scoreTrend={data?.score_trend} loading={loading} />
         </div>
@@ -393,27 +403,31 @@ export function DashboardOverview({
                 return Object.entries(dist).map(([grade, count], idx) => {
                   const pct = total > 0 ? (count / total) * 100 : 0;
                   return (
-                    <div key={grade} className="group cursor-default">
+                    <div key={grade} className="group cursor-default relative">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <span className={cn(
-                            "text-xs font-bold px-2 py-0.5 rounded border",
+                            "text-xs font-bold px-2 py-0.5 rounded border transition-transform duration-300 ease-out group-hover:scale-110",
                             GRADE_COLORS[grade] || "bg-slate-100 text-slate-600 border-slate-200"
                           )}>
                             {grade}
                           </span>
                           <span className={cn(
-                            "text-[10px] text-slate-400 font-mono transition-all duration-200",
-                            "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
+                            "text-[10px] text-slate-400 font-mono transition-all duration-300",
+                            "opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0"
                           )}>
                             {gradeRanges[grade]}
                           </span>
                         </div>
-                        <span className="text-sm font-medium text-slate-700">{count}건</span>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{count}건</span>
                       </div>
-                      <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="relative h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
                         <div
-                          className={cn("h-full rounded-full", barColors[grade] || "bg-slate-400")}
+                          className={cn(
+                            "h-full rounded-full transition-all duration-300",
+                            barColors[grade] || "bg-slate-400",
+                            "group-hover:brightness-110 group-hover:shadow-[0_0_12px_rgba(99,102,241,0.5)]"
+                          )}
                           style={{
                             width: `${pct}%`,
                             minWidth: pct > 0 ? '4px' : '0',
