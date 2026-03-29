@@ -115,7 +115,7 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   });
   statsRows.push([]);
 
-  statsRows.push(['[ RAG Triad + 품질 평가 점수 (0-1) ]', '']);
+  statsRows.push(['[ 통합 품질 평가 점수 (0-1) ]', '']);
   statsRows.push(['지표', '점수']);
   data.llmQualityScores.forEach((s) => {
     const displayName = s.nameEn ? `${s.name}(${s.nameEn})` : s.name;
@@ -476,7 +476,7 @@ function buildHTMLContent(data: EvaluationData): string {
             <div class="chart-card">
                 <div class="chart-title">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-                  RAG Triad + 품질 평가 점수
+                  통합 품질 평가 점수
                 </div>
                 <div class="chart-sub">RAG Triad + 품질 평가 통합 점수</div>
                 <div class="chart-card-inner">${barsSVG}</div>
