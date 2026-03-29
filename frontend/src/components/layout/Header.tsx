@@ -60,18 +60,18 @@ export function Header({ title, theme, setTheme, notifications, onClearAll, onMa
       <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between px-6 py-3">
         <h1 className="text-lg font-bold tracking-tight text-indigo-600 dark:text-indigo-300">{title}</h1>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
 
           {/* Notification Bell */}
           <div className="relative" ref={ref}>
             <button
               onClick={handleBellClick}
-              className="relative p-2 text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+              className="relative p-2.5 text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
               title="Notifications"
             >
-              <Bell className="w-4.5 h-4.5" />
+              <Bell className="w-5 h-5" />
               {unread > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-indigo-500 rounded-full ring-2 ring-white dark:ring-slate-800" />
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-indigo-500 rounded-full ring-2 ring-white dark:ring-slate-800" />
               )}
             </button>
 
@@ -129,10 +129,13 @@ export function Header({ title, theme, setTheme, notifications, onClearAll, onMa
             )}
           </div>
 
+          {/* Divider */}
+          <div className="w-px h-5 bg-slate-200 dark:bg-slate-700/50 mx-1"></div>
+
           {/* Dark / Light toggle */}
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="p-2 text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+            className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all duration-200 opacity-80 hover:opacity-100"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
