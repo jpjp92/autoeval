@@ -45,6 +45,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [uploadedFilename, setUploadedFilename] = useState<string | null>(null);
 
@@ -59,8 +60,34 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [expandedH1, setExpandedH1] = useState<Record<string, boolean>>({});
   const [expandedH2, setExpandedH2] = useState<Record<string, boolean>>({});
 
+  const validateAndSetFile = (selectedFile: File) => {
+    if (selectedFile.size > 100 * 1024 * 1024) {
+      setUploadMessage({ text: "파일 크기는 100MB를 초과할 수 없습니다.", type: "error" });
+      setFile(null);
+      return;
+    }
+    setUploadMessage(null);
+    setFile(selectedFile);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) setFile(e.target.files[0]);
+    if (e.target.files?.[0]) validateAndSetFile(e.target.files[0]);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files?.[0]) validateAndSetFile(e.dataTransfer.files[0]);
   };
 
   const handleUpload = async () => {
@@ -195,11 +222,16 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             <div
               className={cn(
                 "border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all",
-                file
-                  ? "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-500/10"
-                  : "border-slate-200 dark:border-white/10 hover:border-indigo-300 hover:bg-indigo-50/20 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5"
+                isDragging
+                  ? "border-indigo-500 bg-indigo-50/80 dark:bg-indigo-500/20 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)] scale-[1.01]"
+                  : file
+                    ? "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-500/10"
+                    : "border-slate-200 dark:border-white/10 hover:border-indigo-300 hover:bg-indigo-50/20 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5"
               )}
               onClick={() => document.getElementById("file-upload")?.click()}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
             >
               <input
                 type="file" id="file-upload" className="hidden"
@@ -224,7 +256,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                     <Upload className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                   </div>
                   <p className="text-sm font-medium text-slate-600 dark:text-slate-300">클릭하여 파일 선택 또는 드래그 앤 드롭</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">PDF, DOCX · 최대 10MB</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">PDF, DOCX · 최대 100MB</p>
                 </>
               )}
             </div>
