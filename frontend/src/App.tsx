@@ -121,7 +121,11 @@ function App() {
           </div>
 
           <div className={activeTab === "evaluation" ? "max-w-7xl mx-auto" : "hidden"}>
-            <QAEvaluationDashboard evalJobId={lastEvalJobId} initialEvalDbId={lastEvalDbId} />
+            <QAEvaluationDashboard 
+              evalJobId={lastEvalJobId} 
+              initialEvalDbId={lastEvalDbId} 
+              setActiveTab={setActiveTab}
+            />
           </div>
 
           <div className={activeTab === "playground" ? "max-w-7xl mx-auto" : "hidden"}>

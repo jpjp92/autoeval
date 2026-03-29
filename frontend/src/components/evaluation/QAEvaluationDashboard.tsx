@@ -603,7 +603,15 @@ const GRADE_COLOR: Record<string, string> = {
 const QA_PAGE_SIZE = 5;
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
-export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobId?: string | null; initialEvalDbId?: string | null } = {}) {
+export function QAEvaluationDashboard({ 
+  evalJobId, 
+  initialEvalDbId,
+  setActiveTab
+}: { 
+  evalJobId?: string | null; 
+  initialEvalDbId?: string | null;
+  setActiveTab?: (tab: string) => void;
+} = {}) {
   const [showExportMenu, setShowExportMenu]   = useState(false);
   const [exportLoading, setExportLoading]     = useState(false);
   const [showHistoryMenu, setShowHistoryMenu] = useState(false);
@@ -810,20 +818,53 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
   // ─── Empty state ───────────────────────────────────────────────────────────
   if (!evalJobId && !historyReport && !loading) {
     return (
-      <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">QA 평가 결과</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 italic flex items-center gap-2">
+              <span className="w-1.5 h-6 bg-indigo-500 rounded-full" />
+              QA Evaluation
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
           </div>
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
         </div>
-        <div className="flex flex-col items-center justify-center h-72 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 text-slate-400 dark:text-slate-500 gap-3">
-          <Activity className="w-12 h-12 text-slate-200" />
-          <p className="text-sm font-medium">평가 결과가 없습니다</p>
-          <p className="text-xs text-slate-400 dark:text-slate-500">QA 생성 패널에서 평가를 완료하면 결과가 여기에 표시됩니다.</p>
+
+        <div className="relative group overflow-hidden bg-white/40 dark:bg-white/5 backdrop-blur-md rounded-[32px] border border-white/60 dark:border-white/8 shadow-2xl shadow-slate-200/50 dark:shadow-black/40 flex flex-col items-center justify-center py-14 px-6 text-center transition-all duration-500 hover:shadow-indigo-500/10">
+          {/* Decorative Background Blob */}
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/10 transition-colors duration-700" />
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl group-hover:bg-purple-500/10 transition-colors duration-700" />
+
+          <div className="relative flex items-center justify-center w-20 h-20 mb-6">
+            <div className="absolute inset-0 bg-indigo-500/20 rounded-full blur-2xl animate-pulse" />
+            <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-[20px] shadow-xl flex items-center justify-center transform transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110">
+              <Activity className="w-8 h-8 text-white" strokeWidth={2.5} />
+            </div>
+          </div>
+
+          <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">준비된 평가 결과가 없습니다</h3>
+          <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed mb-8 text-[13px]">
+            QA Pipeline에서 질문-답변 세트를 생성하고 평가를 시작해 보세요.<br/>
+            생성된 데이터셋의 품질 지표가 이곳에 화려하게 요약됩니다.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setActiveTab?.('generation')}
+              className="w-52 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2 group/btn"
+            >
+              QA Pipeline 바로가기
+              <Zap className="w-3.5 h-3.5 fill-white group-hover/btn:animate-bounce" />
+            </button>
+            <button
+              onClick={() => setShowHistoryMenu(true)}
+              className="w-52 py-3 bg-white/80 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-sm border border-slate-200 dark:border-white/10 transition-all active:scale-95"
+            >
+              히스토리 살펴보기
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -859,26 +900,54 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
     <div className="space-y-6">
       {/* Header */}
       <div 
-        className="flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-500"
+        className="flex items-end justify-between animate-in fade-in slide-in-from-top-4 duration-700"
         style={{ animationFillMode: 'both' }}
       >
-        <div>
+        <div className="space-y-2.5">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">QA 평가 결과</h2>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-none">
+              QA 분석 결과
+            </h2>
             {grade && (
-              <span className={cn('px-2.5 py-0.5 rounded-md text-sm font-bold border', GRADE_COLOR[grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
-                {grade}
-              </span>
+              <div className={cn(
+                'relative h-8 w-8 flex items-center justify-center rounded-lg text-lg font-black border shadow-lg',
+                grade.startsWith('A') 
+                  ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/20' 
+                  : 'bg-amber-500 text-white border-amber-400 shadow-amber-500/20'
+              )}>
+                <div className="absolute inset-0 bg-white/20 rounded-md scale-90 blur-sm" />
+                <span className="relative z-10">{grade}</span>
+              </div>
             )}
             {activeReport?.summary?.final_score != null && (
-              <span className="text-sm text-slate-500 dark:text-slate-400 font-mono">
-                {(activeReport.summary.final_score * 100).toFixed(1)}점
-              </span>
+              <div className="bg-indigo-50 dark:bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
+                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono text-base">
+                  {(activeReport.summary.final_score * 100).toFixed(1)}
+                  <span className="text-xs ml-0.5 opacity-70">점</span>
+                </span>
+              </div>
             )}
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{metaStr}</p>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-slate-600 dark:text-slate-400 shadow-sm">
+              <Zap className="w-3.5 h-3.5 text-indigo-500" />
+              <span>{activeReport?.metadata.evaluator_model || activeItem?.metadata?.evaluator_model || '-'}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-slate-600 dark:text-slate-400 shadow-sm">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>{formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
+            </div>
+            {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shadow-sm overflow-hidden max-w-[200px]">
+                <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}</span>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex gap-2 pb-1">
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
@@ -886,11 +955,11 @@ export function QAEvaluationDashboard({ evalJobId, initialEvalDbId }: { evalJobI
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData || exportLoading}
-              className="flex items-center justify-center gap-2 w-32 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all duration-300 ease-out shadow-sm hover:shadow-md disabled:opacity-40 hover:-translate-y-0.5 active:scale-[0.98] active:translate-y-0"
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-lg shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
             >
               {exportLoading
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중...</>
-                : <><Download className="w-4 h-4" /> Export</>}
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중</>
+                : <><Download className="w-4 h-4" /> Export 리포트</>}
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">

@@ -109,7 +109,8 @@ function StepCard({
 
 // ── Select 공통 스타일 ────────────────────────────────────────────────────────
 const selectCls = (disabled: boolean) => cn(
-  "w-full p-2.5 bg-slate-50 dark:bg-white/8 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
+  "w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all",
+  "[&>option]:dark:bg-slate-800 [&>option]:text-slate-800 [&>option]:dark:text-slate-200",
   disabled && "opacity-50 cursor-not-allowed"
 );
 
