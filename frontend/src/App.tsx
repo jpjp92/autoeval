@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "lucide-react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Header, type Notification } from "./components/layout/Header";
 import { DashboardOverview } from "./components/dashboard/DashboardOverview";
@@ -33,14 +34,17 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const getHeaderTitle = () => {
-    if (activeTab === "evaluation") return "Evaluation";
-    if (activeTab === "generation") return "Data Generation";
-    if (activeTab === "standardization") return "Data Standardization";
-    if (activeTab === "overview") return "Dashboard";
-    if (activeTab === "settings") return "Settings";
-    return activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
+  const getHeaderInfo = () => {
+    switch (activeTab) {
+      case "overview": return { title: "Dashboard", Icon: LayoutDashboard };
+      case "standardization": return { title: "Documents", Icon: Database };
+      case "generation": return { title: "QA Pipeline", Icon: FilePlus };
+      case "evaluation": return { title: "Evaluation", Icon: Target };
+      case "settings": return { title: "Settings", Icon: Settings };
+      default: return { title: "Auto Eval", Icon: Zap };
+    }
   };
+  const { title: headerTitle, Icon: HeaderIcon } = getHeaderInfo();
 
   const lightBg = "linear-gradient(135deg, #f0f2ff 0%, #eef2ff 40%, #e6fff7 100%)";
   const darkBg  = "linear-gradient(135deg, #0f1117 0%, #13152b 40%, #0e1a2e 70%, #0f1117 100%)";
@@ -66,7 +70,8 @@ function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header
-            title={getHeaderTitle()}
+            title={headerTitle}
+            icon={HeaderIcon}
             theme={theme}
             setTheme={setTheme}
             onProfileClick={() => setActiveTab("settings")}
