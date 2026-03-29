@@ -12,8 +12,8 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
   const menuItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
-    { id: "standardization", label: "Standardization", icon: Database },
-    { id: "generation", label: "Data Generation", icon: FilePlus },
+    { id: "standardization", label: "Documents", icon: Database },
+    { id: "generation", label: "QA Pipeline", icon: FilePlus },
     { id: "evaluation", label: "Evaluation", icon: Target },
   ];
 
@@ -62,28 +62,37 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
         </div>
 
         <nav className="flex-1 flex flex-col gap-1 overflow-y-auto overflow-x-hidden pt-2">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              title={isCollapsed ? item.label : undefined}
-              className={cn(
-                "flex items-center rounded-2xl text-sm font-semibold transition-all duration-300 ease-in-out shrink-0",
-                activeTab === item.id
-                  ? "bg-white/80 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 shadow-sm dark:shadow-indigo-500/10"
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/8",
-                isCollapsed ? "w-9 h-9 justify-center px-0 mx-auto" : "w-full h-11 justify-start px-3"
-              )}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              <div className={cn(
-                "overflow-hidden transition-all duration-300 ease-in-out flex items-center",
-                isCollapsed ? "w-0 opacity-0" : "w-[150px] opacity-100 pl-3"
-              )}>
-                <span className="whitespace-nowrap">{item.label}</span>
-              </div>
-            </button>
-          ))}
+          {menuItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                title={isCollapsed ? item.label : undefined}
+                className={cn(
+                  "relative flex items-center rounded-2xl text-sm font-semibold transition-all duration-300 ease-out shrink-0 group active:scale-[0.97]",
+                  isActive
+                    ? "bg-white/80 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 shadow-sm dark:shadow-indigo-500/10"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/8 hover:translate-x-1",
+                  isCollapsed ? "w-9 h-9 justify-center px-0 mx-auto" : "w-full h-11 justify-start px-3"
+                )}
+              >
+                {/* Active 좌측 인디케이터 (Collapsed 아닐 때만 약간 보이거나 내부 바) */}
+                {isActive && !isCollapsed && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-5 bg-indigo-500 rounded-r-md opacity-100 transition-all duration-300" />
+                )}
+                
+                <item.icon className={cn("w-5 h-5 shrink-0 transition-transform duration-300", isActive && "scale-110")} />
+                
+                <div className={cn(
+                  "overflow-hidden transition-all duration-300 ease-in-out flex items-center",
+                  isCollapsed ? "w-0 opacity-0" : "w-[150px] opacity-100 pl-3"
+                )}>
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </div>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="pt-3 pb-1 border-t border-slate-200/50 dark:border-white/10">
@@ -91,14 +100,18 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             onClick={() => setActiveTab("settings")}
             title={isCollapsed ? "Settings" : undefined}
             className={cn(
-              "flex items-center rounded-2xl text-sm font-semibold transition-all duration-300 ease-in-out shrink-0",
+              "relative flex items-center rounded-2xl text-sm font-semibold transition-all duration-300 ease-out shrink-0 group active:scale-[0.97]",
               activeTab === "settings"
                 ? "bg-white/80 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 shadow-sm dark:shadow-indigo-500/10"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/8",
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/8 hover:translate-x-1",
               isCollapsed ? "w-9 h-9 justify-center px-0 mx-auto" : "w-full h-11 justify-start px-3"
             )}
           >
-            <Settings className="w-5 h-5 shrink-0" />
+            {activeTab === "settings" && !isCollapsed && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-5 bg-indigo-500 rounded-r-md opacity-100 transition-all duration-300" />
+            )}
+            
+            <Settings className={cn("w-5 h-5 shrink-0 transition-transform duration-300", activeTab === "settings" && "scale-110")} />
             <div className={cn(
               "overflow-hidden transition-all duration-300 ease-in-out flex items-center",
               isCollapsed ? "w-0 opacity-0" : "w-[150px] opacity-100 pl-3"
