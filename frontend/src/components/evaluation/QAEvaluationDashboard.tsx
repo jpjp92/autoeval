@@ -50,12 +50,27 @@ const INTENT_COLORS: Record<string, string> = {
 // ─── 상태 로직 ────────────────────────────────────────────────────────────────
 type QAStatus = 'success' | 'hold' | 'fail';
 
-function getQAStatus(quality_avg?: number | null, rag_avg?: number | null): QAStatus {
-  // null/undefined = 미평가 → 임계값 미달로 처리 (export와 동일 기준)
+function getQAStatus(qa: Partial<QAPreviewItem>): QAStatus {
+  if (!qa) return 'fail';
+  const { quality_avg, rag_avg, pass, failure_types } = qa;
+
+  // 1. 기본 점수 기반 판정 (임계값 0.7 미만 시 실패/보류)
   const qFail = quality_avg == null || quality_avg < 0.7;
   const rFail = rag_avg    == null || rag_avg    < 0.7;
-  if (qFail && rFail)    return 'fail';
-  if (qFail || rFail)    return 'hold';
+
+  if (qFail && rFail) return 'fail';
+
+  // 2. 예외 처리: 고득점(0.7 이상)이지만 결함이 발견된 경우 -> '보류(Hold)'
+  // - 백엔드에서 pass: false를 줬거나 실질적인 failure_types가 존재하는 경우
+  const hasError = (pass === false) || (failure_types && failure_types.length > 0);
+  if (!qFail && !rFail && hasError) {
+    return 'hold';
+  }
+
+  // 3. 점수가 하나라도 낮으면 원래대로 '보류'
+  if (qFail || rFail) return 'hold';
+
+  // 4. 모든 조건 충족 시 성공
   return 'success';
 }
 
@@ -162,7 +177,7 @@ function buildChartData(report: EvalReport) {
   const sum = report.summary;
 
   const successCount = (report.qa_preview ?? [])
-    .filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === 'success').length;
+    .filter(qa => getQAStatus(qa) === 'success').length;
   const summaryStats = [
     { label: '총 생성된 QA',   value: report.metadata.total_qa.toLocaleString(), icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
     { label: '성공 QA 수',     value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
@@ -425,7 +440,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
 
 // ─── QA 상세 뷰 ──────────────────────────────────────────────────────────────
 function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void }) {
-  const status = getQAStatus(qa.quality_avg, qa.rag_avg);
+  const status = getQAStatus(qa);
   const cfg    = STATUS_CONFIG[status];
 
   // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
@@ -747,7 +762,7 @@ export function QAEvaluationDashboard({
   const qaPreview    = report?.qa_preview ?? historyQaPreview;
   const qaListLoading = historyQaLoading;
   const filteredQA   = statusFilter
-    ? qaPreview.filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === statusFilter)
+    ? qaPreview.filter(qa => getQAStatus(qa) === statusFilter)
     : qaPreview;
   const sortedQA = sortCol ? [...filteredQA].sort((a, b) => {
     let av: any, bv: any;
@@ -757,7 +772,7 @@ export function QAEvaluationDashboard({
     else if (sortCol === 'a')       { av = a.a ?? ''; bv = b.a ?? ''; }
     else if (sortCol === 'quality') { av = a.quality_avg ?? -1; bv = b.quality_avg ?? -1; }
     else if (sortCol === 'triad')   { av = a.rag_avg ?? -1; bv = b.rag_avg ?? -1; }
-    else if (sortCol === 'status')  { av = getQAStatus(a.quality_avg, a.rag_avg); bv = getQAStatus(b.quality_avg, b.rag_avg); }
+    else if (sortCol === 'status')  { av = getQAStatus(a); bv = getQAStatus(b); }
     else if (sortCol === 'failure') { av = a.primary_failure ?? ''; bv = b.primary_failure ?? ''; }
     else return 0;
     if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -769,7 +784,7 @@ export function QAEvaluationDashboard({
 
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
-  const successCount = qaPreview.filter(qa => getQAStatus(qa.quality_avg, qa.rag_avg) === 'success').length;
+  const successCount = qaPreview.filter(qa => getQAStatus(qa) === 'success').length;
   const correctedSummaryStats = chartData?.summaryStats.map((stat, i) =>
     i === 1 && qaPreview.length > 0
       ? { ...stat, value: `${successCount} / ${totalQA}` }
@@ -1248,7 +1263,7 @@ export function QAEvaluationDashboard({
                       </tr>
                     ))
                   ) : pagedQA.map((row) => {
-                    const st = getQAStatus(row.quality_avg, row.rag_avg);
+                    const st = getQAStatus(row);
                     const cfg = STATUS_CONFIG[st];
                     return (
                       <tr

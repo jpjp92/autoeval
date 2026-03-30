@@ -129,9 +129,16 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   // ── Detail 시트 ─────────────────────────────────────────────────────────────
   const detailHeader = ['ID', '의도', 'Context', 'Question', 'Answer', '품질 점수', 'Triad 점수', '상태', '실패유형', '평가일시 (KST)'];
   const detailRows = data.detailedQA.map((qa) => {
-    const qFail = qa.l2_avg    < 0.7;
-    const rFail = qa.triad_avg < 0.7;
-    const status = qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공';
+    const qFail = (qa.l2_avg === undefined || qa.l2_avg === null) ? true : qa.l2_avg < 0.7;
+    const rFail = (qa.triad_avg === undefined || qa.triad_avg === null) ? true : qa.triad_avg < 0.7;
+    const hasError = (qa.pass === false) || (qa.failure_types && qa.failure_types.length > 0);
+    
+    let status = '성공';
+    if (qFail && rFail) {
+      status = '실패';
+    } else if (qFail || rFail || hasError) {
+      status = '보류';
+    }
     const failureLabel = qa.primary_failure ? (FAILURE_KR[qa.primary_failure] ?? qa.primary_failure) : '-';
     return [
       qa.id,
@@ -591,7 +598,21 @@ var STATUS_ORDER={성공:0,보류:1,실패:2};
 
 function escHtml(s){if(!s)return'-';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function scoreColor(v){return v>=0.85?'#059669':v>=0.7?'#d97706':'#dc2626';}
-function qaStatus(qa){var qF=qa.l2_avg<0.7,rF=qa.triad_avg<0.7;return qF&&rF?'실패':(qF||rF)?'보류':'성공';}
+function qaStatus(qa){
+  if (!qa) return '실패';
+  var l2 = (qa.l2_avg === undefined || qa.l2_avg === null) ? 0 : qa.l2_avg;
+  var tr = (qa.triad_avg === undefined || qa.triad_avg === null) ? 0 : qa.triad_avg;
+  var qFail = l2 < 0.7;
+  var rFail = tr < 0.7;
+  
+  if (qFail && rFail) return '실패';
+  
+  var hasError = (qa.pass === false) || (qa.failure_types && qa.failure_types.length > 0);
+  if (!qFail && !rFail && hasError) return '보류';
+  
+  if (qFail || rFail) return '보류';
+  return '성공';
+}
 
 function sortTable(col){
   if(qaSortCol===col){qaSortDir=qaSortDir==='asc'?'desc':'asc';}
@@ -602,9 +623,13 @@ function sortTable(col){
     else if(col==='intent'){av=a.intent||'';bv=b.intent||'';}
     else if(col==='q'){av=a.q||'';bv=b.q||'';}
     else if(col==='a'){av=a.a||'';bv=b.a||'';}
-    else if(col==='quality'){av=a.l2_avg??-1;bv=b.l2_avg??-1;}
-    else if(col==='triad'){av=a.triad_avg??-1;bv=b.triad_avg??-1;}
-    else if(col==='status'){av=STATUS_ORDER[qaStatus(a)]??9;bv=STATUS_ORDER[qaStatus(b)]??9;}
+    else if(col==='quality'){av=(a.l2_avg===undefined?-1:a.l2_avg);bv=(b.l2_avg===undefined?-1:b.l2_avg);}
+    else if(col==='triad'){av=(a.triad_avg===undefined?-1:a.triad_avg);bv=(b.triad_avg===undefined?-1:b.triad_avg);}
+    else if(col==='status'){
+      var as=qaStatus(a),bs=qaStatus(b);
+      av=(STATUS_ORDER[as]===undefined?9:STATUS_ORDER[as]);
+      bv=(STATUS_ORDER[bs]===undefined?9:STATUS_ORDER[bs]);
+    }
     else if(col==='failure'){av=a.primary_failure||'';bv=b.primary_failure||'';}
     else return 0;
     if(av<bv)return qaSortDir==='asc'?-1:1;
@@ -633,20 +658,20 @@ function renderQATable(page){
   var rows='';
   for(var i=start;i<end;i++){
     var qa=data[i];
-    var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
-    var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
-    var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
+    var statusLabel=qaStatus(qa);
+    var statusCls=statusLabel==='실패'?'status-fail':statusLabel==='보류'?'status-hold':'status-pass';
     var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
     var failKey=qa.primary_failure||null;
     var failBadge=failKey?'<span class="failure-'+failKey+'">'+(FAILURE_KR_JS[failKey]||failKey)+'</span>':'<span class="failure-none">-</span>';
     var origIdx=QA_DATA.indexOf(qa);
+    var qF = (qa.l2_avg || 0) < 0.7, rF = (qa.triad_avg || 0) < 0.7;
     rows+='<tr class="qa-row" onclick="showQADetail('+origIdx+')">'
       +'<td class="cell-center"><strong>'+qa.id+'</strong></td>'
       +'<td class="cell-center"><div class="intent-badge" style="background:'+color+'18;border-color:'+color+'35;color:'+color+'">'+(INTENT_KR_JS[qa.intent]||qa.intent)+'</div></td>'
       +'<td style="max-width:260px"><div class="cell-clamp">'+escHtml(qa.q)+'</div></td>'
       +'<td style="max-width:240px;color:#475569"><div class="cell-clamp">'+escHtml(qa.a||'-')+'</div></td>'
-      +'<td class="cell-center"><span class="'+(qFail?'score-fail':'score-pass')+'">'+qa.l2_avg.toFixed(3)+'</span></td>'
-      +'<td class="cell-center"><span class="'+(rFail?'score-fail':'score-pass')+'">'+qa.triad_avg.toFixed(3)+'</span></td>'
+      +'<td class="cell-center"><span class="'+(qF?'score-fail':'score-pass')+'"> ' + (qa.l2_avg || 0).toFixed(3) + '</span></td>'
+      +'<td class="cell-center"><span class="'+(rF?'score-fail':'score-pass')+'"> ' + (qa.triad_avg || 0).toFixed(3) + '</span></td>'
       +'<td class="cell-center"><span class="'+statusCls+'">'+statusLabel+'</span></td>'
       +'<td class="cell-center">'+failBadge+'</td>'
       +'</tr>';
@@ -671,9 +696,8 @@ var qaCurrentDetailOrigIdx=0;
 function showQADetail(idx){
   qaCurrentDetailOrigIdx=idx;
   var qa=QA_DATA[idx];
-  var qFail=qa.l2_avg<0.7,rFail=qa.triad_avg<0.7;
-  var statusLabel=qFail&&rFail?'실패':(qFail||rFail)?'보류':'성공';
-  var statusCls=qFail&&rFail?'status-fail':(qFail||rFail)?'status-hold':'status-pass';
+  var statusLabel=qaStatus(qa);
+  var statusCls=statusLabel==='실패'?'status-fail':statusLabel==='보류'?'status-hold':'status-pass';
   var color=INTENT_COLORS_JS[qa.intent]||'#4f46e5';
   var failKey=qa.primary_failure||null;
   // failure 타입별 callout 배경/보더/텍스트 색상
