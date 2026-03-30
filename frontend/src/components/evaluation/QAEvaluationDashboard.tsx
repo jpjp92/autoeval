@@ -103,6 +103,11 @@ interface QAPreviewItem {
   rag_avg?:     number;
   quality_avg?: number;
   pass:         boolean;
+  // individual scores
+  relevance?:         number;
+  groundedness?:      number;
+  context_relevance?: number;
+  completeness?:      number;
   // failure
   failure_types?:   string[];
   primary_failure?: string | null;
@@ -448,13 +453,13 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
   // RAG 차원 (신·구 공통)
   const ragDimensions = [
-    { label: '관련성', reason: qa.relevance_reason },
-    { label: '근거성', reason: qa.groundedness_reason },
+    { label: '관련성', score: qa.relevance, reason: qa.relevance_reason },
+    { label: '근거성', score: qa.groundedness, reason: qa.groundedness_reason },
     // 구형: 명확성(clarity) / 신형: 맥락성(context_relevance)
     ...(qa.clarity_reason
-      ? [{ label: '명확성', reason: qa.clarity_reason }]
+      ? [{ label: '명확성', score: (qa as any).clarity, reason: qa.clarity_reason }]
       : qa.context_relevance_reason
-        ? [{ label: '맥락성', reason: qa.context_relevance_reason }]
+        ? [{ label: '맥락성', score: qa.context_relevance, reason: qa.context_relevance_reason }]
         : []
     ),
   ].filter(r => r.reason);
@@ -462,13 +467,13 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
   const qualityDimensions = isLegacy
     ? [
-        { label: '사실성', reason: qa.factuality_reason },
-        { label: '완전성', reason: qa.completeness_reason },
-        { label: '구체성', reason: qa.specificity_reason },
-        { label: '간결성', reason: qa.conciseness_reason },
+        { label: '사실성', score: (qa as any).factuality, reason: qa.factuality_reason },
+        { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
+        { label: '구체성', score: (qa as any).specificity, reason: qa.specificity_reason },
+        { label: '간결성', score: (qa as any).conciseness, reason: qa.conciseness_reason },
       ].filter(r => r.reason)
     : [
-        { label: '완전성', reason: qa.completeness_reason },
+        { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
       ].filter(r => r.reason);
 
   // 통합 차원 목록
@@ -615,11 +620,17 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
             </div>
           </div>
           {allDimensions.length > 0 && (
-            <div className="divide-y divide-slate-100 dark:divide-white/5">
-              {allDimensions.map(({ label, reason }) => (
-                <div key={label} className="flex gap-3 px-4 py-3 text-xs">
-                  <span className="shrink-0 font-semibold text-slate-400 dark:text-slate-500 w-14">{label}</span>
-                  <span className="text-slate-600 dark:text-slate-300 leading-relaxed">{reason}</span>
+            <div className="divide-y divide-slate-100 dark:divide-white/5 border-t border-slate-200 dark:border-white/5">
+              {/* 테두리 헤더(옵션)가 없으므로 첫 행 패딩 조정 */}
+              {allDimensions.map(({ label, score, reason }) => (
+                <div key={label} className="flex items-start gap-4 px-4 py-3 text-[12px] group hover:bg-white/40 dark:hover:bg-white/5 transition-colors">
+                  <span className="shrink-0 font-bold text-slate-500 dark:text-slate-400 w-16">{label}</span>
+                  <span className={cn('shrink-0 font-mono font-bold w-14 text-center', score != null ? scoreColor(score) : 'text-slate-300 dark:text-slate-600')}>
+                    {score != null ? score.toFixed(3) : '-'}
+                  </span>
+                  <span className="flex-1 text-slate-600 dark:text-slate-300 leading-relaxed pl-2 border-l border-slate-100 dark:border-white/5">
+                    {reason}
+                  </span>
                 </div>
               ))}
             </div>

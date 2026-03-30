@@ -309,6 +309,11 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "rag_avg":             r.get("avg_score"),
                 "quality_avg":         q.get("avg_quality"),
                 "pass":                q.get("pass", False),
+                # Individual scores
+                "relevance":           r.get("relevance"),
+                "groundedness":        r.get("groundedness"),
+                "context_relevance":   r.get("context_relevance"),
+                "completeness":        q.get("completeness"),
                 # RAG reason
                 "relevance_reason":          r.get("relevance_reason", ""),
                 "groundedness_reason":       r.get("groundedness_reason", ""),
