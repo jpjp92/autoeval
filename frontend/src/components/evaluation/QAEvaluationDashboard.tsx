@@ -796,11 +796,18 @@ export function QAEvaluationDashboard({
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
   const successCount = qaPreview.filter(qa => getQAStatus(qa) === 'success').length;
-  const correctedSummaryStats = chartData?.summaryStats.map((stat, i) =>
-    i === 1 && qaPreview.length > 0
-      ? { ...stat, value: `${successCount} / ${totalQA}` }
-      : stat
-  ) ?? [];
+  const correctedSummaryStats = chartData?.summaryStats.map((stat, i) => {
+    // 히스토리 로딩 중이고 상세 데이터가 아직 준비되지 않았다면 모든 지표에 스켈레톤 적용 (일관성)
+    if (historyQaLoading && qaPreview.length === 0) {
+      return { ...stat, value: 'loading' };
+    }
+
+    // 성공 QA 수 보정 (상세 데이터 도착 후)
+    if (i === 1 && qaPreview.length > 0) {
+      return { ...stat, value: `${successCount} / ${totalQA}` };
+    }
+    return stat;
+  }) ?? [];
 
   // export용 데이터
   const evaluationData = chartData ? {
@@ -1081,7 +1088,18 @@ export function QAEvaluationDashboard({
             </div>
             <div>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</p>
+              <div className="relative h-8 flex items-center">
+                {stat.value === 'loading' ? (
+                  <div className="w-24 h-6 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse" />
+                ) : (
+                  <p className={cn(
+                    "text-2xl font-bold text-slate-900 dark:text-slate-100 transition-all duration-500",
+                    "opacity-100 blur-0 translate-y-0"
+                  )}>
+                    {stat.value}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         ))}

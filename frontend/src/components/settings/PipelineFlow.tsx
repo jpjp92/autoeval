@@ -22,11 +22,11 @@ function gh(n: number)   { return 28 + n * NS + 12; }  // 그룹 높이 (n = 노
 
 // ── STEP 별 색상 ─────────────────────────────────────────────
 const PALETTE = [
-  { bg: '#eef2ff55', bd: '#818cf8', tx: '#3730a3' },  // S1 indigo
-  { bg: '#fffbeb55', bd: '#fbbf24', tx: '#92400e' },  // S2 amber
-  { bg: '#ecfdf555', bd: '#34d399', tx: '#065f46' },  // S3 emerald
-  { bg: '#fff1f255', bd: '#fca5a5', tx: '#9f1239' },  // S4 red
-  { bg: '#eef2ff55', bd: '#818cf8', tx: '#3730a3' },  // S5 indigo
+  { bg: 'var(--pipeline-s1-bg)', bd: 'var(--pipeline-s1-bd)', tx: 'var(--pipeline-s1-tx)' },
+  { bg: 'var(--pipeline-s2-bg)', bd: 'var(--pipeline-s2-bd)', tx: 'var(--pipeline-s2-tx)' },
+  { bg: 'var(--pipeline-s3-bg)', bd: 'var(--pipeline-s3-bd)', tx: 'var(--pipeline-s3-tx)' },
+  { bg: 'var(--pipeline-s4-bg)', bd: 'var(--pipeline-s4-bd)', tx: 'var(--pipeline-s4-tx)' },
+  { bg: 'var(--pipeline-s5-bg)', bd: 'var(--pipeline-s5-bd)', tx: 'var(--pipeline-s5-tx)' },
 ];
 
 // ── 커스텀 노드 컴포넌트 ─────────────────────────────────────
@@ -56,14 +56,14 @@ function StepNode({ data }: { data: any }) {
   return (
     <div style={{
       width: NW,
-      background: data.color ?? '#fff',
+      background: data.color ?? 'var(--pipeline-nd-bg)',
       border: `1.5px solid ${data.bd}`,
       borderRadius: 9,
       padding: '7px 10px',
       fontSize: 11,
-      color: data.tx,
+      color: data.tx ?? 'var(--pipeline-nd-tx)',
       textAlign: 'center',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
     }}>
       <Handle type="target" position={Position.Top}   style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Left}  style={{ opacity: 0 }} id="left" />
@@ -84,15 +84,15 @@ function DbNode({ data }: { data: any }) {
   return (
     <div style={{
       width: NW,
-      background: '#ede9fe',
-      border: '1.5px solid #7c3aed',
+      background: 'var(--pipeline-db-bg)',
+      border: '1.5px solid var(--pipeline-db-bd)',
       borderRadius: 9,
       padding: '6px 10px',
       fontSize: 10,
-      color: '#5b21b6',
+      color: 'var(--pipeline-db-tx)',
       textAlign: 'center',
       fontWeight: 600,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
     }}>
       <Handle type="target" position={Position.Top}    style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
@@ -121,7 +121,7 @@ function g(id: string, col: number, n: number, label: string, ci: number): Node 
 const nodes: Node[] = [
   // ── 업로드 ──
   { id: 'upload', type: 'step', position: { x: nx(0), y: GY - 52 }, zIndex: 2,
-    data: { label: '📄 PDF / DOCX 업로드', bd: '#6366f1', tx: '#3730a3', color: '#e0e7ff' } },
+    data: { label: '📄 PDF / DOCX 업로드', bd: 'var(--pipeline-s1-bd)', tx: 'var(--pipeline-s1-tx)', color: 'var(--pipeline-s1-bg)' } },
 
   // ── S1: 데이터 규격화 ── (4 nodes)
   g('g1', 0, 4, 'STEP 1  ·  데이터 규격화', 0),
@@ -148,23 +148,20 @@ const nodes: Node[] = [
   g('g4', 3, 5, 'STEP 4  ·  QA 평가', 3),
   s('s4-syn',   3, 0, 'Syntax 검사',       '필드·reasoning·길이 검사',       3),
   s('s4-stat',  3, 1, 'Statistics 검사',   '다양성 · 중복률',                 3),
-  s('s4-qual',  3, 2, '통합 품질 검사',    '관련성·근거성·맥락성·완전성',      3,
-    { color: '#fff1f2', tx: '#9f1239', bd: '#fca5a5' }),
-  s('s4-score', 3, 3, '최종 점수 집계',   'RAG ×0.65 / 품질 ×0.25 / 구문·통계 ×0.1', 3,
-    { color: '#fef3c7', tx: '#92400e', bd: '#f59e0b' }),
+  s('s4-qual',  3, 2, '통합 품질 검사',    '관련성·근거성·맥락성·완전성',      3),
+  s('s4-score', 3, 3, '최종 점수 집계',   'RAG ×0.65 / 품질 ×0.25 / 구문·통계 ×0.1', 3),
   d('db4', 3, 4, 'DB 저장: qa_evaluation_scores'),
 
   // ── S5: 결과 확인 ── (3 nodes)
   g('g5', 4, 3, 'STEP 5  ·  결과 확인', 4),
   s('s5-eval',   4, 0, '평가 결과 확인',   'QA 상세 · 레이어별 점수',       4),
   s('s5-export', 4, 1, '리포트 내보내기',  'HTML / CSV / JSON / ZIP',        4),
-  s('s5-dash',   4, 2, '대시보드',         '집계 지표 · 점수 추이 · 등급 분포', 4,
-    { color: '#e0e7ff', tx: '#3730a3', bd: '#6366f1' }),
+  s('s5-dash',   4, 2, '대시보드',         '집계 지표 · 점수 추이 · 등급 분포', 4),
 ];
 
 // ── 엣지 ────────────────────────────────────────────────────
-const iv = { stroke: '#94a3b8', strokeWidth: 1.5 };  // within group
-const xv = { stroke: '#6366f1', strokeWidth: 2 };    // cross group (animated)
+const iv = { stroke: 'var(--pipeline-edge)', strokeWidth: 1.5 };  // within group
+const xv = { stroke: 'var(--pipeline-edge-x)', strokeWidth: 2 };    // cross group (animated)
 
 const edges: Edge[] = [
   // Upload → S1

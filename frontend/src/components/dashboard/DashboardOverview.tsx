@@ -236,11 +236,11 @@ export function DashboardOverview({
                               key={job.job_id}
                               onClick={hasEval && onEvalSelect ? () => onEvalSelect(job.eval_id!) : undefined}
                               className={cn(
-                                "group transition-all duration-200 ease-out border-l-2 border-transparent relative",
+                                "group transition-all duration-200 ease-out relative",
                                 "hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)]",
                                 hasEval && onEvalSelect 
-                                  ? "hover:bg-indigo-50 dark:hover:bg-white/10 hover:border-indigo-500 cursor-pointer" 
-                                  : "hover:bg-slate-50 dark:hover:bg-white/5 hover:border-slate-300 dark:hover:border-slate-600 cursor-default"
+                                  ? "hover:bg-indigo-50 dark:hover:bg-white/10 cursor-pointer" 
+                                  : "hover:bg-slate-50 dark:hover:bg-white/5 cursor-default"
                               )}
                             >
                               <td className="px-4 py-3 font-mono text-[11px] text-slate-400 dark:text-slate-500 truncate" title={job.job_id}>

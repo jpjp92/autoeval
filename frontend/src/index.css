@@ -29,6 +29,28 @@
   /* Text */
   --color-on-surface:         #2c2f31;
   --color-on-surface-variant: #595c5e;
+
+  /* Pipeline Diagram Colors — Light */
+  --pipeline-s1-bg: #eef2ff55; --pipeline-s1-bd: #818cf8; --pipeline-s1-tx: #3730a3;
+  --pipeline-s2-bg: #fffbeb55; --pipeline-s2-bd: #fbbf24; --pipeline-s2-tx: #92400e;
+  --pipeline-s3-bg: #ecfdf555; --pipeline-s3-bd: #34d399; --pipeline-s3-tx: #065f46;
+  --pipeline-s4-bg: #fff1f255; --pipeline-s4-bd: #fca5a5; --pipeline-s4-tx: #9f1239;
+  --pipeline-s5-bg: #eef2ff55; --pipeline-s5-bd: #818cf8; --pipeline-s5-tx: #3730a3;
+  --pipeline-nd-bg: #ffffff;   --pipeline-nd-tx: #1e293b;
+  --pipeline-db-bg: #ede9fe;   --pipeline-db-bd: #7c3aed; --pipeline-db-tx: #5b21b6;
+  --pipeline-edge:   #94a3b8;  --pipeline-edge-x: #6366f1;
+}
+
+.dark {
+  /* Pipeline Diagram Colors — Dark Override */
+  --pipeline-s1-bg: rgba(129, 140, 248, 0.15); --pipeline-s1-bd: #818cf8; --pipeline-s1-tx: #e0e7ff;
+  --pipeline-s2-bg: rgba(251, 191, 36, 0.12);   --pipeline-s2-bd: #fbbf24; --pipeline-s2-tx: #fef3c7;
+  --pipeline-s3-bg: rgba(52, 211, 153, 0.12);   --pipeline-s3-bd: #34d399; --pipeline-s3-tx: #d1fae5;
+  --pipeline-s4-bg: rgba(252, 165, 165, 0.12);  --pipeline-s4-bd: #fca5a5; --pipeline-s4-tx: #ffe4e6;
+  --pipeline-s5-bg: rgba(129, 140, 248, 0.15); --pipeline-s5-bd: #818cf8; --pipeline-s5-tx: #e0e7ff;
+  --pipeline-nd-bg: #1a1d27;                  --pipeline-nd-tx: #f1f5f9;
+  --pipeline-db-bg: rgba(124, 58, 237, 0.2);  --pipeline-db-bd: #a78bfa; --pipeline-db-tx: #ddd6fe;
+  --pipeline-edge:   #475569;                 --pipeline-edge-x: #818cf8;
 }
 
 /* 기본 body 스타일 */
