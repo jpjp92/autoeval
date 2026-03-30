@@ -80,7 +80,7 @@ function App() {
             onMarkAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
           />
 
-        <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden px-4" : "overflow-y-scroll px-4 pb-4 pt-2"}`}>
+        <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden px-4" : "overflow-y-scroll px-4 pb-4 pt-6"}`}>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
             <DashboardOverview

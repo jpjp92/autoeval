@@ -1431,10 +1431,10 @@ export function QAEvaluationDashboard({
                       { col: 'intent',  label: '의도',      cls: 'w-20'  },
                       { col: 'q',       label: '질문',      cls: ''      },
                       { col: 'a',       label: '답변',      cls: ''      },
-                      { col: 'quality', label: '품질 점수',  cls: 'w-20'  },
-                      { col: 'triad',   label: 'Triad 점수', cls: 'w-20' },
+                      { col: 'quality', label: '품질 점수',  cls: 'w-24'  },
+                      { col: 'triad',   label: 'Triad 점수', cls: 'w-24' },
                       { col: 'status',  label: '상태',      cls: 'w-16'  },
-                      { col: 'failure', label: '실패유형',   cls: 'w-20'  },
+                      { col: 'failure', label: '실패유형',   cls: 'w-24'  },
                     ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
                       <th
                         key={col}
@@ -1442,7 +1442,7 @@ export function QAEvaluationDashboard({
                           if (sortCol === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setQaPage(0); }
                           else { setSortCol(col); setSortDir('asc'); setQaPage(0); }
                         }}
-                        className={cn('px-3 py-2.5 font-medium text-center text-[12px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-white/8 transition-colors', cls)}
+                        className={cn('px-3 py-2.5 font-medium text-center text-[12px] cursor-pointer select-none whitespace-nowrap hover:bg-slate-100 dark:hover:bg-white/8 transition-colors', cls)}
                       >
                         <span className="inline-flex items-center justify-center gap-1">
                           {label}
