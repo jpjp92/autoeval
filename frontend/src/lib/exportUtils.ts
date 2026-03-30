@@ -116,7 +116,7 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   data.layer1Stats.forEach((s) => statsRows.push([s.subject, +s.A.toFixed(3)]));
   statsRows.push([]);
 
-  statsRows.push(['[ 의도 분류 ]', '']);
+  statsRows.push(['[ 질문 의도 분포 ]', '']);
   statsRows.push(['의도', '개수']);
   data.intentDistribution.forEach((i) => {
     const displayName = i.krLabel ? `${i.krLabel}(${i.name})` : (i.label ?? i.name);
@@ -480,9 +480,9 @@ function buildHTMLContent(data: EvaluationData): string {
             <div class="chart-card">
                 <div class="chart-title">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                  의도 분류
+                  질문 의도 분포
                 </div>
-                <div class="chart-sub">질문 유형 분포</div>
+                <div class="chart-sub">질문 의도 분포</div>
                 <div class="chart-card-inner">${donutSVG}</div>
             </div>
             <div class="chart-card">
@@ -490,7 +490,7 @@ function buildHTMLContent(data: EvaluationData): string {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                   데이터 통계
                 </div>
-                <div class="chart-sub">구조적·통계적 검증 (0–10)</div>
+                <div class="chart-sub">구조적·통계적 검증</div>
                 <div class="chart-card-inner">${radarSVG}</div>
             </div>
             <div class="chart-card">

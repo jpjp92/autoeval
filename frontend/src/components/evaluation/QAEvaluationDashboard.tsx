@@ -5,7 +5,7 @@ import {
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
   Code2, ChevronDown, Clock, History, Loader2, LayoutGrid, Info,
-  ArrowLeft, ChevronLeft, ChevronRight,
+  ArrowLeft, ChevronLeft, ChevronRight, Bot
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect, useRef } from 'react';
@@ -184,10 +184,14 @@ function buildChartData(report: EvalReport) {
   const successCount = (report.qa_preview ?? [])
     .filter(qa => getQAStatus(qa) === 'success').length;
   const summaryStats = [
-    { label: '총 생성된 QA',   value: report.metadata.total_qa.toLocaleString(), icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
-    { label: '성공 QA 수',     value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'RAG Triad 평균', value: (sum.rag_average_score ?? 0).toFixed(3),    icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100' },
-    { label: '품질 평균 점수', value: (sum.quality_average_score ?? 0).toFixed(3), icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100' },
+    { label: '총 생성된 QA',   value: report.metadata.total_qa.toLocaleString(), icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100',
+      tooltip: { title: '총 생성된 QA', items: [{ text: '문서에서 추출된 전체 질의응답 세트의 수입니다.' }, { label: '기준', text: '의미론적 중복을 제거한 최종본 개수' }] } },
+    { label: '성공 QA 수',     value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
+      tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
+    { label: '통합 품질 평균 점수', value: (sum.final_score ?? 0).toFixed(3), icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100',
+      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
+    { label: '종합 평가 등급', value: sum.grade ?? '-',    icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100',
+      tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
   ];
 
   const layer1Stats = [
@@ -236,10 +240,14 @@ function buildChartDataFromHistory(item: HistoryItem) {
 
   const passCount = sc.quality?.pass_count ?? sc.syntax?.valid ?? item.total_qa;
   const summaryStats = [
-    { label: '총 생성된 QA',   value: item.total_qa.toLocaleString(),                                          icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100' },
-    { label: '성공 QA 수',     value: `${passCount} / ${item.total_qa.toLocaleString()}`,                      icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'RAG Triad 평균', value: (rag?.summary?.avg_score   ?? 0).toFixed(3),                            icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100' },
-    { label: '품질 평균 점수', value: (qua?.summary?.avg_quality  ?? 0).toFixed(3),                            icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100' },
+    { label: '총 생성된 QA',   value: item.total_qa.toLocaleString(),                                          icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100',
+      tooltip: { title: '총 생성된 QA', items: [{ text: '문서에서 추출된 전체 질의응답 세트의 수입니다.' }, { label: '기준', text: '의미론적 중복을 제거한 최종본 개수' }] } },
+    { label: '성공 QA 수',     value: `${passCount} / ${item.total_qa.toLocaleString()}`,                      icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
+      tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
+    { label: '통합 품질 평균 점수', value: (item.final_score ?? 0).toFixed(3),                            icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100',
+      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
+    { label: '종합 평가 등급', value: item.final_grade ?? '-',                            icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100',
+      tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
   ];
 
   const layer1Stats = [
@@ -317,21 +325,21 @@ function ChartInfoTooltip({ title, items }: {
   items: Array<{ label?: string; text: string }>;
 }) {
   return (
-    <div className="relative group flex-shrink-0">
-      <Info className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400 cursor-default transition-colors" />
-      <div className="absolute right-0 top-5 w-60 bg-slate-800 rounded-xl p-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl">
-        <p className="text-[11px] font-semibold text-white mb-2">{title}</p>
-        <div className="space-y-1.5">
+    <div className="relative group/info flex-shrink-0">
+      <Info className="w-3.5 h-3.5 text-slate-300 group-hover/info:text-indigo-400 cursor-default transition-colors" />
+      <div className="absolute right-[-8px] top-6 w-64 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl p-3.5 z-50 opacity-0 group-hover/info:opacity-100 transition-all duration-200 pointer-events-none shadow-xl shadow-slate-200/50 dark:shadow-black/50 border border-slate-200/70 dark:border-white/10 scale-95 group-hover/info:scale-100 origin-top-right">
+        <div className="absolute -top-[5px] right-[10px] w-3 h-3 bg-white/95 dark:bg-slate-800/95 border-t border-l border-slate-200/70 dark:border-white/10 rotate-45 rounded-sm" />
+        <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100 mb-2 relative z-10">{title}</p>
+        <div className="space-y-1.5 relative z-10">
           {items.map((item, i) => (
-            <div key={i} className="flex gap-1.5 text-[11px] leading-snug">
+            <div key={i} className="flex gap-2 text-[11px] leading-relaxed">
               {item.label && (
-                <span className="text-slate-300 font-medium shrink-0">{item.label}</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">{item.label}</span>
               )}
-              <span className="text-slate-400">{item.text}</span>
+              <span className="text-slate-600 dark:text-slate-300 font-medium">{item.text}</span>
             </div>
           ))}
         </div>
-        <div className="absolute -top-1.5 right-2 w-3 h-3 bg-slate-800 rotate-45 rounded-sm" />
       </div>
     </div>
   );
@@ -898,6 +906,14 @@ export function QAEvaluationDashboard({
       ? `평가 모델: ${activeItem.metadata?.evaluator_model ?? '-'} | ${formatKST(activeItem.created_at)}`
       : '';
 
+  const getGenerationModel = () => {
+    const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
+    if (fromMeta) return fromMeta;
+    const fn = activeReport?.result_filename || activeItem?.result_filename || '';
+    const m = fn.match(/^qa_(.+?)_[a-z]{2}_/);
+    return m?.[1] || '-';
+  };
+
   // ─── Empty state ───────────────────────────────────────────────────────────
   if (!evalJobId && !historyReport && !loading) {
     return (
@@ -983,54 +999,33 @@ export function QAEvaluationDashboard({
     <div className="space-y-6">
       {/* Header */}
       <div 
-        className="flex items-end justify-between animate-in fade-in slide-in-from-top-4 duration-700"
+        className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-2 animate-in fade-in slide-in-from-top-4 duration-700 relative z-40"
         style={{ animationFillMode: 'both' }}
       >
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-none">
-              QA 분석 결과
-            </h2>
-            {grade && (
-              <div className={cn(
-                'relative h-8 w-8 flex items-center justify-center rounded-lg text-lg font-black border shadow-lg',
-                grade.startsWith('A') 
-                  ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/20' 
-                  : 'bg-amber-500 text-white border-amber-400 shadow-amber-500/20'
-              )}>
-                <div className="absolute inset-0 bg-white/20 rounded-md scale-90 blur-sm" />
-                <span className="relative z-10">{grade}</span>
-              </div>
-            )}
-            {activeReport?.summary?.final_score != null && (
-              <div className="bg-indigo-50 dark:bg-indigo-500/10 px-2.5 py-1 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono text-base">
-                  {(activeReport.summary.final_score * 100).toFixed(1)}
-                  <span className="text-xs ml-0.5 opacity-70">점</span>
-                </span>
-              </div>
-            )}
-          </div>
+        <div className="space-y-4">
+          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-none">
+            QA 성능 평가 리포트
+          </h2>
           
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-slate-600 dark:text-slate-400 shadow-sm">
-              <Zap className="w-3.5 h-3.5 text-indigo-500" />
-              <span>{activeReport?.metadata.evaluator_model || activeItem?.metadata?.evaluator_model || '-'}</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-slate-600 dark:text-slate-400 shadow-sm">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              <span>{formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-600 dark:text-slate-400 shadow-sm">
+              <Bot className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{getGenerationModel()}</span></span>
             </div>
             {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/40 dark:bg-white/5 border border-white/60 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shadow-sm overflow-hidden max-w-[200px]">
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px]">
                 <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="truncate">{activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}</span>
+                <span>Dataset: <span className="font-semibold truncate">{activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}</span></span>
               </div>
             )}
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm">
+              <Clock className="w-3.5 h-3.5" />
+              <span>평가 일시: {formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-2 pb-1">
+        <div className="flex items-center gap-2 shrink-0">
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
           )}
@@ -1038,11 +1033,17 @@ export function QAEvaluationDashboard({
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData || exportLoading}
-              className="flex items-center justify-center gap-2 w-36 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-lg shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
+              className="flex items-center justify-center gap-2 w-36 py-2 bg-indigo-600 text-white rounded-full text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-md shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
             >
               {exportLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중</>
-                : <><Download className="w-4 h-4" /> Export</>}
+                : (
+                  <>
+                    <Download className="w-4 h-4" /> 
+                    Export
+                    <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showExportMenu && 'rotate-180')} />
+                  </>
+                )}
             </button>
             {showExportMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -1078,16 +1079,21 @@ export function QAEvaluationDashboard({
 
       {/* KPI Cards */}
       <div 
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-20"
         style={{ animationDelay: '100ms', animationFillMode: 'both' }}
       >
         {summaryStats.map((stat, i) => (
-          <div key={i} className="group bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:hover:shadow-black/40 flex items-center gap-4">
-            <div className={cn('w-12 h-12 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:shadow-inner', stat.bg, stat.color)}>
+          <div key={i} className="relative group hover:z-30 bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:hover:shadow-black/40 flex items-center gap-4">
+            {(stat as any).tooltip && (
+              <div className="absolute top-4 right-4">
+                <ChartInfoTooltip title={(stat as any).tooltip.title} items={(stat as any).tooltip.items} />
+              </div>
+            )}
+            <div className={cn('w-12 h-12 shrink-0 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:shadow-inner', stat.bg, stat.color)}>
               <stat.icon className="w-6 h-6" />
             </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{stat.label}</p>
+            <div className="flex-1 min-w-0 pr-6">
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 truncate mb-0.5">{stat.label}</p>
               <div className="relative h-8 flex items-center">
                 {stat.value === 'loading' ? (
                   <div className="w-24 h-6 bg-slate-200 dark:bg-white/10 rounded-md animate-pulse" />
@@ -1114,15 +1120,15 @@ export function QAEvaluationDashboard({
           <div className="mb-2 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분류
+                <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분포
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">질문 유형 분포</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">질문 의도 분포</p>
             </div>
             <ChartInfoTooltip
-              title="의도 분류"
+              title="의도 분포"
               items={[
                 { text: 'QA 질문을 의도별로 분류한 분포입니다.' },
-                { label: '신형 6종', text: '사실·원인·방법·조건·비교·열거' },
+                { label: '6종', text: '사실·원인·방법·조건·비교·열거' },
                 { label: '기준', text: '분포가 고를수록 다양한 질문 유형을 포괄합니다.' },
               ]}
             />
@@ -1163,7 +1169,7 @@ export function QAEvaluationDashboard({
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500" /> 데이터 통계
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">구조적·통계적 검증 (0–10)</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">구조적·통계적 검증</p>
             </div>
             <ChartInfoTooltip
               title="데이터 통계"
@@ -1446,7 +1452,7 @@ function HistoryDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center justify-center gap-2 w-36 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-95"
+        className="flex items-center justify-center gap-2 w-36 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-full text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-95"
       >
         <History className="w-4 h-4" />
         History
