@@ -6,7 +6,8 @@ import {
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
   Code2, ChevronDown, Clock, History, Loader2, LayoutGrid, Info,
-  ArrowLeft, ChevronLeft, ChevronRight, Bot
+  ArrowLeft, ChevronLeft, ChevronRight, Bot,
+  Shuffle, Copy, Scale, ShieldCheck
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect, useRef } from 'react';
@@ -353,6 +354,150 @@ const RadarTooltip = ({ active, payload }: any) => {
   return null;
 };
 
+// ─── 데이터 통계용 Radial Gauge 컴포넌트 ─────────────────────────────────────────
+const MetricRadialGauge = ({ stat }: { stat: { subject: string; A: number } }) => {
+  const [val, setVal] = useState(0);
+  const [isReady, setIsReady] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    // 마운트 직후 애니메이션 트리거
+    const t1 = setTimeout(() => setIsReady(true), 100);
+    
+    // 숫자 카운트업 (0 -> stat.A)
+    const duration = 1200;
+    const steps = 30;
+    const increment = stat.A / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current += increment;
+      if (current >= stat.A) {
+        setVal(stat.A);
+        clearInterval(timer);
+      } else {
+        setVal(current);
+      }
+    }, duration / steps);
+
+    return () => {
+      clearTimeout(t1);
+      clearInterval(timer);
+    };
+  }, [stat.A]);
+
+  const config: Record<string, { icon: any; lightColor: string; darkColor: string; bg: string; desc: string }> = {
+    '다양성': { icon: Shuffle,       lightColor: '#0284c7', darkColor: '#38bdf8', bg: 'bg-sky-500/10',     desc: '데이터셋 내 질문 의도와 내용의 고른 분포' },
+    '중복성': { icon: Copy,          lightColor: '#e67e22', darkColor: '#fbbf24', bg: 'bg-amber-500/10',   desc: '동일/유사한 의미를 가진 질문의 포함 정도' },
+    '편향성': { icon: Scale,         lightColor: '#4f46e5', darkColor: '#a5b4fc', bg: 'bg-indigo-500/10',  desc: '특정 주제나 화자에 대한 편향성 여부' },
+    '충족성': { icon: ShieldCheck,   lightColor: '#059669', darkColor: '#34d399', bg: 'bg-emerald-500/10', desc: '답변 도출을 위한 맥락 정보의 충분성'   },
+  };
+  const cfg = config[stat.subject] || { icon: Zap, lightColor: '#64748b', darkColor: '#94a3b8', bg: 'bg-slate-100', desc: '' };
+  
+  const r = 42;
+  const circ = 2 * Math.PI * r;
+  // 초기 로딩 중에는 전체 둘레로 설정하여 비워두고, 준비되면 목표치만큼 차오르게 함
+  const targetOffset = circ * (1 - Math.min(Math.max(stat.A, 0), 10) / 10);
+  const currentOffset = isReady ? targetOffset : circ;
+
+  return (
+    <div 
+      className="flex flex-col items-center justify-center group/gauge relative"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Hover Tooltip */}
+      {isHovered && (
+        <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none w-max">
+          <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-black/50 animate-in fade-in zoom-in-95 duration-200 flex flex-col items-center">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded", cfg.bg, stat.subject === '다양성' && "text-sky-600 dark:text-sky-400", stat.subject === '중복성' && "text-amber-600 dark:text-amber-400", stat.subject === '편향성' && "text-indigo-600 dark:text-indigo-400", stat.subject === '충족성' && "text-emerald-600 dark:text-emerald-400")}>
+                {stat.subject}
+              </span>
+              <span className="text-[10px] font-black text-slate-700 dark:text-slate-200">{stat.A.toFixed(1)} / 10</span>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{cfg.desc}</p>
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white/95 dark:bg-slate-800/95 border-r border-b border-slate-200 dark:border-slate-700 rotate-45 invisible sm:visible" />
+          </div>
+        </div>
+      )}
+
+      <div className="relative w-24 h-24 flex items-center justify-center">
+        <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+          <defs>
+            <linearGradient id={`grad-${stat.subject}`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.85" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="1" />
+            </linearGradient>
+          </defs>
+          <circle
+            cx="50" cy="50" r={r}
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="transparent"
+            className="text-slate-200 dark:text-white/5 opacity-40 dark:opacity-100"
+          />
+          <circle
+            cx="50" cy="50" r={r}
+            stroke={`url(#grad-${stat.subject})`}
+            strokeWidth="6"
+            fill="transparent"
+            strokeDasharray={circ}
+            strokeDashoffset={currentOffset}
+            strokeLinecap="round"
+            className={cn(
+              "transition-all duration-1000 cubic-bezier(0.34, 1.56, 0.64, 1)",
+              stat.subject === '다양성' && "text-sky-500 dark:text-sky-400",
+              stat.subject === '중복성' && "text-amber-500 dark:text-amber-400",
+              stat.subject === '편향성' && "text-indigo-500 dark:text-indigo-400",
+              stat.subject === '충족성' && "text-emerald-500 dark:text-emerald-400"
+            )}
+            style={{ 
+              filter: isReady ? 'drop-shadow(0 0 3px currentColor)' : 'none',
+              opacity: isReady ? 1 : 0
+            }}
+          />
+          {/* Light mode 전용 선명한 보정 선 */}
+          <circle
+            cx="50" cy="50" r={r}
+            stroke="currentColor"
+            strokeWidth="6"
+            fill="transparent"
+            strokeDasharray={circ}
+            strokeDashoffset={currentOffset}
+            strokeLinecap="round"
+            className={cn(
+              "transition-all duration-1000 cubic-bezier(0.34, 1.56, 0.64, 1) dark:hidden",
+              stat.subject === '다양성' && "text-sky-500",
+              stat.subject === '중복성' && "text-amber-500",
+              stat.subject === '편향성' && "text-indigo-500",
+              stat.subject === '충족성' && "text-emerald-500"
+            )}
+            style={{ opacity: isReady ? 0.9 : 0 }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-xl font-black text-slate-800 dark:text-white leading-none tracking-tight">
+            {val.toFixed(1)}
+          </span>
+          <div className={cn(
+            "mt-1.5 p-1 rounded-md transform transition-all duration-300 group-hover/gauge:scale-110 group-hover/gauge:rotate-3 shadow-sm",
+            cfg.bg,
+            stat.subject === '다양성' && "text-sky-600 dark:text-sky-400",
+            stat.subject === '중복성' && "text-amber-600 dark:text-amber-400",
+            stat.subject === '편향성' && "text-indigo-600 dark:text-indigo-400",
+            stat.subject === '충족성' && "text-emerald-600 dark:text-emerald-400"
+          )}>
+            <cfg.icon className="w-3.5 h-3.5" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 text-center">
+        <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{stat.subject}</p>
+      </div>
+    </div>
+  );
+};
+
 // ─── 차트 정보 툴팁 ──────────────────────────────────────────────────────────
 function ChartInfoTooltip({ title, items }: {
   title: string;
@@ -404,16 +549,14 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
     const pct       = total > 0 ? Math.round((value / total) * 100) : 0;
     const area      = width * height;
 
-    // ── 면적 기반 5단계 티어 ──────────────────────────────────────────
-    // tier1: 초소형 (≤1500px²)  tier2: 소형  tier3: 중형  tier4: 대형  tier5: 최대
     const tier = area > 12000 ? 5 : area > 5000 ? 4 : area > 2200 ? 3 : area > 900 ? 2 : 1;
 
-    const showPct   = width > 22 && height > 16;   // 더 좁아도 % 표시
-    const showLabel = tier >= 3;                    // tier3 이상에서만 한글 레이블
+    const showPct   = width > 22 && height > 16;
+    const showLabel = tier >= 3 && height > 32; 
 
-    const pctSize   = [0, 8, 10, 13, 16, 18][tier];   // tier별 % 폰트 크기
-    const lblSize   = [0, 0,  0,  9, 11, 12][tier];   // tier별 레이블 폰트 크기
-    const sw        = tier <= 2 ? 2 : 3;               // strokeWidth - 작은 셀은 얇게
+    const pctSize   = [0, 8, 10, 12, 16, 18][tier]; 
+    const lblSize   = [0, 0,  0, 8.5, 10, 11][tier];
+    const sw        = tier <= 2 ? 1.5 : 3;
 
     const font = "'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     const textShadow = '0 1px 3px rgba(0,0,0,0.45), 0 0 1px rgba(0,0,0,0.3)';
@@ -422,7 +565,7 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
       <g
         onMouseEnter={() => setHoveredName(name)}
         onMouseLeave={() => setHoveredName(null)}
-        className="cursor-pointer"
+        className="cursor-pointer group/cell"
       >
         <rect
           x={x + 1.5} y={y + 1.5}
@@ -430,20 +573,20 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
           height={Math.max(0, height - 3)}
           fill={fill}
           rx={8} ry={8}
+          className="transition-all duration-300"
           style={{ 
-            transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
             filter: isHovered
-              ? 'brightness(1.12) saturate(1.15) drop-shadow(0 6px 12px rgba(0,0,0,0.18))'
+              ? 'brightness(1.12) saturate(1.15) drop-shadow(0 6px 16px rgba(0,0,0,0.22))'
               : 'brightness(1.0)',
-            stroke: isHovered ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)',
-            strokeWidth: isHovered ? 2 : 1
+            stroke: isHovered ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.15)',
+            strokeWidth: isHovered ? 2.5 : 1
           }}
         />
 
         {showPct && (
           <text
             x={x + width / 2}
-            y={y + (showLabel ? height / 2 - (pctSize * 0.7) : height / 2 + (pctSize * 0.4))}
+            y={y + (showLabel ? height / 2 - (pctSize * 0.4) : height / 2 + (pctSize * 0.4))}
             textAnchor="middle"
             dominantBaseline="middle"
             fill="#ffffff"
@@ -454,7 +597,7 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
             stroke="rgba(0,0,0,0.25)"
             strokeWidth={sw}
             strokeLinejoin="round"
-            className="pointer-events-none select-none"
+            className="pointer-events-none select-none transition-opacity duration-500"
             style={{ filter: `drop-shadow(${textShadow})` }}
           >
             {pct}%
@@ -464,7 +607,7 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
         {showLabel && (
           <text
             x={x + width / 2}
-            y={y + height / 2 + (showPct ? pctSize * 0.85 : lblSize * 0.5)}
+            y={y + height / 2 + (showPct ? pctSize * 0.6 : lblSize * 0.5)}
             textAnchor="middle"
             dominantBaseline="middle"
             fill="rgba(255,255,255,0.92)"
@@ -472,10 +615,10 @@ function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; 
             fontWeight={700}
             fontFamily={font}
             paintOrder="stroke"
-            stroke="rgba(0,0,0,0.2)"
-            strokeWidth={sw - 0.5}
-            strokeLinejoin="round"
-            className="pointer-events-none select-none"
+            stroke="rgba(0,0,0,0.15)"
+            strokeWidth="1.5px"
+            className="pointer-events-none select-none transition-opacity duration-500"
+            style={{ filter: `drop-shadow(${textShadow})` }}
           >
             {krLabel ?? name}
           </text>
@@ -1323,26 +1466,13 @@ export function QAEvaluationDashboard({
               ]}
             />
           </div>
-          <div className="flex-1 min-h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="72%" data={layer1Stats}>
-                <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                <Radar name="Score" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
-                <Tooltip content={<RadarTooltip />} isAnimationActive={false} />
-              </RadarChart>
-            </ResponsiveContainer>
+          <div className="flex-1 mt-4">
+            <div className="grid grid-cols-2 gap-4 h-full content-center">
+              {layer1Stats.map((stat) => (
+                <MetricRadialGauge key={stat.subject} stat={stat} />
+              ))}
+            </div>
           </div>
-          {(() => {
-            const intScore = activeReport?.pipeline_results?.stats?.integrated_score
-              ?? activeItem?.pipeline_results?.layers?.stats?.integrated_score;
-            return intScore != null ? (
-              <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-1">
-                통합 점수: <span className="font-semibold text-indigo-600">{(intScore as number).toFixed(1)} / 10</span>
-              </p>
-            ) : null;
-          })()}
         </div>
 
         {/* 품질 점수 — 커스텀 인터랙티브 바 */}

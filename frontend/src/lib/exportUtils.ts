@@ -256,49 +256,63 @@ function svgTreemap(
   return `<svg class="treemap-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${output}</svg>`;
 }
 
-function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>): string {
-  const W = 260; const H = 246; const cx = 130; const cy = 100; const maxR = 74; const n = items.length;
-  const ang = (i: number) => (i / n) * 2 * Math.PI - Math.PI / 2;
-  const pt  = (i: number, rr: number): [number, number] => [cx + rr * Math.cos(ang(i)), cy + rr * Math.sin(ang(i))];
+function svgRadialGrid(items: Array<{ subject: string; A: number; fullMark: number }>): string {
+  const W = 340; const H = 220;
+  const colSize = W / 2;
+  const rowSize = H / 2;
+  
+  let output = '';
 
-  let grid = '';
-  for (let lv = 1; lv <= 4; lv++) {
-    const rr = maxR * lv / 4;
-    const pts = Array.from({ length: n }, (_, i) => pt(i, rr));
-    grid += `<polygon points="${pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" fill="${lv===4?'#f8fafc':'none'}" stroke="#e2e8f0" stroke-width="1"/>`;
-  }
-  let axes = '';
-  for (let i = 0; i < n; i++) {
-    const [ox, oy] = pt(i, maxR);
-    axes += `<line x1="${cx}" y1="${cy}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="#e2e8f0" stroke-width="1"/>`;
-  }
+  const config: Record<string, { color: string; iconPath: string; desc: string }> = {
+    '다양성': { 
+      color: '#06b6d4', 
+      iconPath: '<path d="M16 3h5v5M3 21l18-18M3 3l5 5M13 13l3 3M16 21h5v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      desc: '분포도' 
+    },
+    '중복성': { 
+      color: '#f59e0b', 
+      iconPath: '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      desc: '의미중복' 
+    },
+    '편향성': { 
+      color: '#6366f1', 
+      iconPath: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10M12 3v18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      desc: '치우침' 
+    },
+    '충족성': { 
+      color: '#10b981', 
+      iconPath: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+      desc: '정보량' 
+    }
+  };
 
-  // 데이터 폴리곤: 애니메이션을 위해 center points로 시작, target을 data 속성에 저장
-  const dpts = items.map((item, i) => pt(i, (item.A / item.fullMark) * maxR));
-  const targetPts = JSON.stringify(dpts.map(([x,y]) => [+x.toFixed(2), +y.toFixed(2)]));
-  const centerPts = Array.from({ length: n }, () => `${cx},${cy}`).join(' ');
-  const polygon = `<polygon class="radar-polygon" points="${centerPts}" fill="#6366f1" fill-opacity="0.2" stroke="#6366f1" stroke-width="2" data-target='${targetPts}' data-cx="${cx}" data-cy="${cy}"/>`;
+  items.forEach((item, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = col * colSize + colSize / 2;
+    const y = row * rowSize + rowSize / 2 - 10;
+    const cfg = config[item.subject] || { color: '#6366f1', iconPath: '', desc: '' };
+    const r = 38;
+    const circ = 2 * Math.PI * r;
+    const offset = circ * (1 - item.A / item.fullMark);
 
-  // 점: center에서 시작
-  const dots = items.map((item, i) => {
-    const [tx, ty] = dpts[i];
-    return `<circle class="radar-dot" cx="${cx}" cy="${cy}" r="5" fill="#6366f1" stroke="white" stroke-width="2" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}" style="cursor:pointer;transition:r .15s" onmouseover="this.setAttribute('r','7');showTip(event,'${item.subject}: ${item.A.toFixed(2)} / ${item.fullMark}')" onmouseout="this.setAttribute('r','5');hideTip()"/>`;
-  }).join('');
+    output += `
+    <g class="gauge-group" transform="translate(${x}, ${y})" onmouseover="showTip(event, '${item.subject}: ${item.A.toFixed(1)}/10')" onmouseout="hideTip()">
+      <circle cx="0" cy="0" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="6" />
+      <circle cx="0" cy="0" r="${r}" fill="none" stroke="${cfg.color}" stroke-width="6" stroke-dasharray="${circ}" stroke-dashoffset="${circ}" stroke-linecap="round" transform="rotate(-90)">
+        <animate attributeName="stroke-dashoffset" from="${circ}" to="${offset}" dur="1s" fill="freeze" ease="ease-out" />
+      </circle>
+      <text x="0" y="5" text-anchor="middle" font-size="14" font-weight="800" fill="#1e293b">${item.A.toFixed(1)}</text>
+      <g transform="translate(-8, 12) scale(0.6)" style="color:${cfg.color}">
+        ${cfg.iconPath}
+      </g>
+      <text x="0" y="52" text-anchor="middle" font-size="10" font-weight="700" fill="#64748b">${item.subject}</text>
+    </g>`;
+  });
 
-  const labels = items.map((item, i) => {
-    const [lx, ly] = pt(i, maxR + 20);
-    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="#64748b" font-weight="500">${item.subject}</text>`;
-  }).join('');
-
-  // 통합 점수 (layer1Stats 평균)
-  const intScore = (items.reduce((s, i) => s + i.A, 0) / items.length).toFixed(1);
-
-  return `<svg class="radar-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-${grid}${axes}${polygon}${dots}${labels}
-<text x="${cx}" y="${H-20}" text-anchor="middle" font-size="11" fill="#64748b">통합 점수:
-  <tspan font-weight="700" fill="#6366f1"> ${intScore} / 10</tspan>
-</text>
-</svg>`;
+  return `<svg class="radial-grid-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    ${output}
+  </svg>`;
 }
 
 function svgBars(items: Array<{ name: string; nameEn?: string; score: number; group?: 'rag' | 'quality' }>): string {
@@ -370,7 +384,7 @@ function buildHTMLContent(data: EvaluationData): string {
   };
 
   const treemapSVG = svgTreemap(data.intentDistribution, intentColorsMap);
-  const radarSVG   = svgRadar(data.layer1Stats);
+  const radialSVG  = svgRadialGrid(data.layer1Stats);
   const barsSVG    = svgBars(data.llmQualityScores);
 
   return `<!DOCTYPE html>
@@ -515,7 +529,7 @@ function buildHTMLContent(data: EvaluationData): string {
                   데이터 통계
                 </div>
                 <div class="chart-sub">구조적·통계적 검증</div>
-                <div class="chart-card-inner">${radarSVG}</div>
+                <div class="chart-card-inner">${radialSVG}</div>
             </div>
             <div class="chart-card">
                 <div class="chart-title">
@@ -566,29 +580,7 @@ function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.
 function hideTip(){document.getElementById('tip').style.display='none';}
 document.addEventListener('mousemove',function(e){var el=document.getElementById('tip');if(el.style.display!=='none'){el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}});
 
-function animateRadar(){
-  document.querySelectorAll('.radar-polygon').forEach(function(poly){
-    var cx=+poly.getAttribute('data-cx'),cy=+poly.getAttribute('data-cy');
-    var targets=JSON.parse(poly.getAttribute('data-target'));
-    var dots=poly.closest('svg').querySelectorAll('.radar-dot');
-    var st=null,dur=900;
-    function step(ts){
-      if(!st)st=ts;
-      var t=Math.min((ts-st)/dur,1);
-      var e=t<0.5?2*t*t:-1+(4-2*t)*t;
-      var pts=targets.map(function(p){return (cx+(p[0]-cx)*e).toFixed(2)+','+(cy+(p[1]-cy)*e).toFixed(2);});
-      poly.setAttribute('points',pts.join(' '));
-      dots.forEach(function(dot,i){
-        if(i>=targets.length)return;
-        var tx=+dot.getAttribute('data-tx'),ty=+dot.getAttribute('data-ty');
-        dot.setAttribute('cx',(cx+(tx-cx)*e).toFixed(2));
-        dot.setAttribute('cy',(cy+(ty-cy)*e).toFixed(2));
-      });
-      if(t<1)requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  });
-}
+// Radial Grid 애니메이션은 SVG 내부에 선언됨 (animate tag)
 
 function animateBars(){
   document.querySelectorAll('.bar-fill').forEach(function(bar){
@@ -601,7 +593,7 @@ function animateBars(){
 }
 
 function initAnimations(){
-  animateRadar();
+  // animateRadar(); // 제거됨
   animateBars();
   renderQATable(0);
 }
@@ -610,9 +602,9 @@ window.onload = initAnimations;
 var QA_DATA=${JSON.stringify(data.detailedQA).replace(/<\/script>/gi,'<\\/script>')};
 var QA_PAGE_SIZE=5;
 var qaCurrentPage=0;
-var qaSortCol=null;
+var qaSortCol='id';
 var qaSortDir='asc';
-var qaSortedData=QA_DATA.slice();
+var qaSortedData=QA_DATA.slice().sort(function(a,b){return (a.id||0)-(b.id||0);});
 var INTENT_KR_JS={fact:'사실형',purpose:'원인형',how:'방법형',condition:'조건형',comparison:'비교형',list:'열거형',factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'원인형',definition:'정의형',boolean:'확인형'};
 var INTENT_COLORS_JS={fact:'#3b82f6',purpose:'#d946ef',how:'#22c55e',condition:'#f59e0b',comparison:'#6366f1',list:'#06b6d4',factoid:'#3b82f6',numeric:'#eab308',procedure:'#6366f1',why:'#d946ef',definition:'#0ea5e9',boolean:'#c026d3'};
 var FAILURE_KR_JS={hallucination:'환각오류',faithfulness_error:'근거오류',retrieval_miss:'검색오류',ambiguous_question:'질문모호',bad_chunk:'불량청크',evaluation_error:'평가오류',low_quality:'품질미달',syntax_error:'구문오류'};
