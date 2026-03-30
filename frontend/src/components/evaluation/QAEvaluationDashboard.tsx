@@ -361,14 +361,19 @@ const MetricRadialGauge = ({ stat }: { stat: { subject: string; A: number } }) =
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
-    // 마운트 직후 애니메이션 트리거
-    const t1 = setTimeout(() => setIsReady(true), 100);
+    // 10.0점 등 높은 점수에서도 0에서 차오르는 연출을 위해 매번 상태 초기화
+    // stat 객체 전체를 감시하여 히스토리 전환 시 값이 같더라도 리셋 유도
+    setIsReady(false);
+    setVal(0);
+
+    const t1 = setTimeout(() => setIsReady(true), 200);
     
     // 숫자 카운트업 (0 -> stat.A)
     const duration = 1200;
     const steps = 30;
-    const increment = stat.A / steps;
+    const increment = stat.A / steps || 0;
     let current = 0;
+    
     const timer = setInterval(() => {
       current += increment;
       if (current >= stat.A) {
@@ -383,7 +388,7 @@ const MetricRadialGauge = ({ stat }: { stat: { subject: string; A: number } }) =
       clearTimeout(t1);
       clearInterval(timer);
     };
-  }, [stat.A]);
+  }, [stat]); // stat.A 대신 stat 전체를 감시하여 히스토리 전환 대응
 
   const config: Record<string, { icon: any; lightColor: string; darkColor: string; bg: string; desc: string }> = {
     '다양성': { icon: Shuffle,       lightColor: '#0284c7', darkColor: '#38bdf8', bg: 'bg-sky-500/10',     desc: '데이터셋 내 질문 의도와 내용의 고른 분포' },
@@ -396,6 +401,7 @@ const MetricRadialGauge = ({ stat }: { stat: { subject: string; A: number } }) =
   const r = 42;
   const circ = 2 * Math.PI * r;
   // 초기 로딩 중에는 전체 둘레로 설정하여 비워두고, 준비되면 목표치만큼 차오르게 함
+  // 10.0점일 때도 비어있는 상태(circ)에서 목표치(targetOffset)까지 차오르게 함
   const targetOffset = circ * (1 - Math.min(Math.max(stat.A, 0), 10) / 10);
   const currentOffset = isReady ? targetOffset : circ;
 
@@ -661,14 +667,14 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
   const prevKeyRef    = useRef<string | null>(null);
   const wasHiddenRef  = useRef(true); // hidden 탭에서 시작 가정
 
-  // 애니메이션 트리거 (ref로 저장 → 항상 최신 참조)
+  // 애니메이션 트리거
   const triggerFnRef = useRef(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setAnimated(false);
-    timerRef.current = setTimeout(() => setAnimated(true), 100);
+    timerRef.current = setTimeout(() => setAnimated(true), 150);
   });
 
-  // data 실제 값이 바뀔 때 재애니메이션 (히스토리 전환 등)
+  // data 실제 값이 바뀔 때 재애니메이션
   useEffect(() => {
     const key = data.map((d) => d.score.toFixed(4)).join(',');
     if (key === '' || prevKeyRef.current === key) return;
@@ -676,7 +682,7 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
     triggerFnRef.current();
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 탭 전환으로 컨테이너가 hidden→visible 될 때 재애니메이션 (recharts와 동일 원리)
+  // 탭 전환으로 컨테이너가 hidden→visible 될 때 재애니메이션
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -693,66 +699,57 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
     return () => ro.disconnect();
   }, []);
 
-  // unmount 시 timer 정리
   useEffect(() => {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
   return (
-    <div ref={containerRef} className={cn("py-1", data.length <= 4 ? "space-y-5" : "space-y-2.5")}>
+    <div ref={containerRef} className="space-y-3.5 mt-2">
       {data.map((item, i) => {
-        const color = item.score >= 0.85 ? 'bg-emerald-500' : item.score >= 0.7 ? 'bg-amber-400' : 'bg-rose-400';
-        const textColor = item.score >= 0.85 ? 'text-emerald-600' : item.score >= 0.7 ? 'text-amber-600' : 'text-rose-500';
-        const isHovered = hoveredIdx === i;
+        const isHigh = item.score >= 0.85;
+        const isMid  = item.score >= 0.7;
+        const colorClass = isHigh ? 'from-emerald-400 to-teal-500' : isMid ? 'from-amber-400 to-orange-500' : 'from-rose-400 to-red-500';
+        const glowClass  = isHigh ? 'shadow-[0_0_12px_rgba(16,185,129,0.3)]' : isMid ? 'shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'shadow-[0_0_12px_rgba(244,63,94,0.3)]';
+        const isRag = item.group === 'rag';
         const targetW = Math.min(item.score * 100, 100);
+
         return (
-          <div
-            key={i}
-            className="group cursor-default select-none"
+          <div 
+            key={item.name} 
+            className="group/item relative bg-slate-50/50 dark:bg-white/3 border border-slate-100 dark:border-white/5 p-3.5 rounded-xl transition-all duration-300 hover:bg-white dark:hover:bg-white/8 hover:shadow-md hover:-translate-y-0.5 animate-in fade-in slide-in-from-right-4 fill-mode-both"
+            style={{ animationDelay: `${i * 100}ms` }}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 leading-none flex items-center gap-1.5">
-                {item.group === 'rag' ? (
-                  <span className="text-[9px] font-bold text-sky-500 bg-sky-50 border border-sky-200 rounded px-1 py-0.5 leading-none shrink-0 transition-transform duration-300 group-hover:scale-110">RAG</span>
-                ) : (
-                  <span className="text-[9px] font-bold text-violet-500 bg-violet-50 border border-violet-200 rounded px-1 py-0.5 leading-none shrink-0 transition-transform duration-300 group-hover:scale-110">품질</span>
-                )}
-                {item.name}
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
                 <span className={cn(
-                  'text-[10px] font-normal text-slate-400 dark:text-slate-500 transition-all duration-300',
-                  isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'
+                  "px-2 py-0.5 rounded-md text-[9px] font-black tracking-widest uppercase border backdrop-blur-sm shadow-sm",
+                  isRag ? "bg-blue-500/10 text-blue-500 border-blue-500/20" : "bg-purple-500/10 text-purple-500 border-purple-500/20"
                 )}>
-                  ({item.nameEn})
+                  {isRag ? 'RAG' : '품질'}
                 </span>
-              </span>
-              <span className={cn('text-[11px] font-mono font-bold leading-none', textColor)}>
+                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200">{item.name}</span>
+              </div>
+              <span className={cn("font-mono text-sm font-black transition-colors duration-500", isHigh ? 'text-emerald-500' : isMid ? 'text-amber-500' : 'text-rose-500')}>
                 {item.score.toFixed(3)}
               </span>
             </div>
-            <div className="relative h-2.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-              <div
-                className={cn('h-full rounded-full transition-all duration-300', color, isHovered && 'brightness-110 shadow-[0_0_12px_rgba(99,102,241,0.5)]')}
-                style={{
-                  width: `${targetW}%`,
-                  clipPath: animated ? 'inset(0 0% 0 0)' : 'inset(0 100% 0 0)',
-                  transition: animated
-                    ? `clip-path 700ms ease-out ${i * 100}ms`
-                    : 'none',
-                }}
-              />
+            <div className="relative h-2 w-full bg-slate-200/50 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
+              <div 
+                className={cn("absolute inset-y-0 left-0 bg-gradient-to-r transition-all duration-1000 ease-out rounded-full ring-1 ring-white/10", colorClass, glowClass)}
+                style={{ width: `${(animated ? targetW : 0).toFixed(1)}%` }}
+              >
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-lg opacity-80 group-hover/item:scale-150 transition-transform duration-500" />
+              </div>
             </div>
           </div>
         );
       })}
-      {/* 범례 — 우측 정렬 */}
-      <div className={cn("flex justify-end", data.length <= 4 ? "pt-16" : "pt-2")}>
-        <div className="flex gap-3 text-[9px] text-slate-400 dark:text-slate-500 items-center">
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />≥ 0.85</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" />≥ 0.70</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-rose-400" />&lt; 0.70</span>
-        </div>
+      <div className="flex items-center justify-end gap-5 pt-2 text-[10px] font-bold tracking-tight text-slate-400 dark:text-slate-500 uppercase">
+        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" /> ≥ 0.85</div>
+        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]" /> ≥ 0.70</div>
+        <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)]" /> &lt; 0.70</div>
       </div>
     </div>
   );
@@ -1345,7 +1342,7 @@ export function QAEvaluationDashboard({
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!evaluationData || exportLoading}
-              className="flex items-center justify-center gap-2 w-36 py-2 bg-indigo-600 text-white rounded-full text-sm font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-md shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
+              className="flex items-center justify-center gap-2 w-28 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all duration-300 ease-out shadow-md shadow-indigo-600/20 disabled:opacity-40 hover:-translate-y-0.5 active:scale-95"
             >
               {exportLoading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> 준비 중</>
@@ -1440,7 +1437,7 @@ export function QAEvaluationDashboard({
               title="질문 의도 분포"
               items={[
                 { text: 'QA 질문을 의도별로 분류한 분포입니다.' },
-                { label: '6종', text: '사실·원인·방법·조건·비교·열거' },
+                { label: '분류', text: '사실·원인·방법·조건·비교·열거' },
                 { label: '기준', text: '면적이 클수록 해당 의도의 비중이 높습니다.' },
               ]}
             />
@@ -1725,11 +1722,11 @@ function HistoryDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center justify-center gap-2 w-36 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-full text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-95"
+        className="flex items-center justify-center gap-1.5 w-28 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-200 shadow-sm hover:-translate-y-0.5 active:scale-95"
       >
-        <History className="w-4 h-4" />
+        <History className="w-3.5 h-3.5" />
         History
-        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showMenu && 'rotate-180')} />
+        <ChevronDown className={cn('w-3 h-3 transition-transform', showMenu && 'rotate-180')} />
       </button>
       {showMenu && (
         <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-20 overflow-hidden">

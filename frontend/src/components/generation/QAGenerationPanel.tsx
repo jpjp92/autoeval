@@ -449,7 +449,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onGeneratio
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">자동 평가</label>
               <div className={cn("w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-white/8 border border-slate-200 dark:border-white/10 rounded-lg", isGenerating && "opacity-50")}>
-                <p className="text-sm text-slate-600 dark:text-slate-300">생성 후 4-Layer 자동 실행</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">QA 자동 평가 실행</p>
                 <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
                   <input type="checkbox" className="sr-only peer"
                     checked={formValues.autoEvaluate}
