@@ -115,20 +115,45 @@ flowchart LR
 | 질문 근거 | 컨텍스트에 명시된 사실/정의/절차에만 한정, 유추 금지 |
 | 답변 스타일 | 메타 표현 시작 금지 ("컨텍스트에 따르면" 등) |
 
-#### STEP 4 — QA 평가
+#### STEP 4 — QA 평가 (4-Layer Framework)
 
-| 레이어 | 모듈 | 평가 항목 | 가중치 |
+| 레이어 | 모듈 | 평가 지표 | 가중치 |
 |--------|------|----------|--------|
-| Layer 1-A Syntax | `syntax_validator.py` | 필드 존재·타입·길이 검사 | 5% |
-| Layer 1-B Statistics | `dataset_stats.py` | 다양성·중복률 통계 | 5% |
-| Layer 2 RAG Triad | `rag_triad.py` | 관련성 · 근거성 · 맥락성 | 65% |
-| Layer 3 Quality | `qa_quality.py` | 완전성(completeness) | 25% |
+| **L1-A Syntax** | `syntax_validator.py` | 구조적 무결성 (필드 존재, 타입, 길이) | 5% |
+| **L1-B Statistics** | `dataset_stats.py` | 데이터셋 건전성 (다양성, 중복률, 편향도) | 5% |
+| **L2 RAG Triad** | `rag_triad.py` | RAG 품질 (관련성, 근거성, 맥락성) | 65% |
+| **L3 Quality** | `qa_quality.py` | 답변 완전성 (Completeness - 질문 분해 기반) | 25% |
 
 ```
-final_score = syntax×0.05 + stats×0.05 + rag×0.65 + quality×0.25
-
-A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
+final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness×0.25)
+등급: A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 ```
+
+---
+
+## QA 평가 프레임워크 상세
+
+### 1. 구문 검증 (Syntax Validation)
+- **목적**: QA 데이터셋이 API 규격 및 시스템 구조에 부합하는지 기술적으로 검증.
+- **핵심 지표**: 필수 필드(`q`, `a`, `context`, `intent`) 존재 여부, 답변 가능 여부(`answerable`), 데이터 타입 및 최소/최대 길이 준수.
+
+### 2. 데이터 통계 평가 (Statistics & Diversity)
+- **목적**: 데이터셋의 정량적 건전성과 다양성을 통계적으로 측정.
+- **핵심 지표**:
+    - **다양성(Diversity)**: 인텐트 분포의 엔트로피(Entropy) 및 어휘 다양도(TTR).
+    - **중복률(Duplication)**: 질문 간 텍스트 유사도(SequenceMatcher)가 70% 이상인 Near-duplicate 탐지.
+    - **편향도(Skewness)**: 특정 소스 문서에 대한 질문 집중도 분석.
+
+### 3. RAG Triad 평가 (LLM-as-a-Judge)
+- **목적**: RAG 시스템의 신뢰성과 검색 품질을 3가지 핵심 차원에서 평가.
+- **핵심 지표**:
+    - **Answer Relevance (관련성)**: 답변이 질문의 의도를 정확히 반영하는가.
+    - **Groundedness (근거성)**: 답변의 모든 주장이 컨텍스트 내 사실에 기반하는가 (CoT 기법 적용).
+    - **Context Relevance (맥락성)**: 검색된 컨텍스트가 질문에 답하기에 충분한가.
+
+### 4. 완전성 평가 (Completeness)
+- **목적**: 답변이 질문의 모든 세부 요구사항을 충실히 다루었는지 정밀 측정.
+- **방법론**: **질문 분해(Decomposition)** 기법을 사용하여 복합 질문을 원자 단위 서브 질문으로 나눈 뒤, 각 요소의 답변 커버리지를 계산.
 
 #### STEP 5 — 결과 확인
 

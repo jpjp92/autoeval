@@ -210,25 +210,51 @@ Pass 3: /apply-granular-tagging
 
 ---
 
-## 평가 파이프라인 흐름
+## 평가 파이프라인 흐름 (4-Layer Framework)
 
-```
-Layer 1-A  Syntax Validation      구문 정확성 (answerable 필드, Q/A 길이 등)
-Layer 1-B  Dataset Statistics     데이터셋 충족성·다양성·중복도·편향성 통계
-                                  - 다양성: 인텐트 엔트로피(Shannon) + 어휘 다양도(TTR)
-                                  - 중복도: SequenceMatcher(유사도 0.7 이상) 기반 Near-duplicate
-                                  - 충족성: 필수 필드 채움률 + 물리적 텍스트 볼륨(평균 길이)
-Layer 2    RAG Triad              Relevance / Groundedness / Context Relevance
-                                  avg_score = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
-                                  단일 LLM 호출 → score + reason 반환
-Layer 3    Quality Score          질문 분해(Decomposition) 기반 완전성 (Completeness)
-                                  - 질문을 원자 단위 서브 질문으로 분해 후 커버리지(%) 산출
-                                  - 누락된 요소(missing_aspects) 및 정량적 근거(reason) 반환
-           failure 분류            _classify_failure_types() — 점수 기반 failure_types[] + primary_failure 자동 결정
+시스템은 단계별로 정밀도를 높여가는 4단계 평가 레이어를 통과하며 최종 점수와 등급을 산출합니다.
 
-final_score = (syntax_pass_rate/100)×0.05 + (dataset_quality/10)×0.05 + rag_avg×0.65 + completeness×0.25
-등급: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)
-```
+| 레이어 | 모듈 | 역할 | 가중치 |
+| :--- | :--- | :--- | :--- |
+| **L1-A Syntax** | `syntax_validator.py` | 구문 정확성 (필드 존재, 데이터 타입, Q/A 길이 등) | 5% |
+| **L1-B Stats** | `dataset_stats.py` | 데이터셋 통계 (다양성, 중복도, 편향성, 충족성) | 5% |
+| **L2 RAG Triad** | `rag_triad.py` | RAG 품질 (관련성, 근거성, 맥락성) - LLM Judge | 65% |
+| **L3 Quality** | `qa_quality.py` | 답변 완전성 (Completeness) - 질문 분해 기반 | 25% |
+
+### 최종 점수 및 등급 산출
+- **산식**: `(Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness×0.25)`
+- **등급**: A+(≥0.95), A(≥0.85), B+(≥0.75), B(≥0.65), C(≥0.50), F(<0.50)
+
+### 상태 판정 로직 (Hybrid Status Logic)
+단순 점수뿐만 아니라 백엔드에서 감지된 결함 유형을 결합하여 최종 '상태'를 결정합니다.
+1. **실패 (Fail)**: 품질 점수와 Triad 점수가 모두 **0.7점 미만**인 경우.
+2. **보류 (Hold)**: 
+    - 점수 임계값(0.7) 미달 지표가 하나라도 있는 경우.
+    - **예외 처리**: 점수는 0.7점 이상이나 '근거 오류(Faithfulness Error)' 또는 '환각' 등의 결함이 감지된 경우.
+3. **성공 (Success)**: 모든 점수가 0.7점 이상이며 어떠한 결함도 감지되지 않은 경우.
+
+---
+
+## 상세 평가 방법론
+
+### 1. 데이터셋 통계 (Statistics)
+- **다양성 (Diversity)**: 
+    - **인텐트 엔트로피**: Shannon Entropy($-\sum p_i \log_2 p_i$)를 통해 인텐트 분포의 불확실성(균형도) 측정.
+    - **어휘 다양도 (TTR)**: 전체 토큰 대비 고유 토큰 비율(Type-Token Ratio)로 풍부성 측정.
+- **중복도 (Duplication)**: `SequenceMatcher`를 활용하여 질문 간 텍스트 유사도가 **70% 이상**인 쌍을 감지하고 감점함.
+- **편향도 (Skewness)**: 특정 문서(`docId`)에 질문이 집중되는 현상을 측정하여 데이터 분포의 건강성 판단.
+
+### 2. RAG Triad (LLM-as-a-Judge)
+- **Answer Relevance**: 질문의 핵심 의도와 도메인 맥락이 답변에 정확히 반영되었는지 평가.
+- **Groundedness (Faithfulness)**: 
+    - **CoT(Chain of Thought)** 전략 적용.
+    - 답변에서 원자 단위 주장(Atomic Claims)을 먼저 추출한 뒤, 컨텍스트 내 직접 인용이나 명확한 환언(Paraphrase)이 존재하는지 대조 검증.
+- **Context Relevance**: 검색된 청크들이 질문에 답하기 위한 필요 충분 정보를 포함하고 있는지 측정 (기존의 Clarity 지표 개선).
+
+### 3. 완전성 (Completeness)
+- **질문 분해 (Decomposition)**: 복합적인 질문을 여러 개의 원자 단위 서브 질문(Sub-questions)으로 분해함.
+- **커버리지 산출**: 각 서브 질문이 답변에서 충족되었는지를 개별 확인하여 `(충족된 수 / 전체 서브 질문 수)` 비율로 점수화.
+- **누락 탐지**: 답변에서 누락된 핵심 측면(`missing_aspects`)을 추출하여 구체적인 개선 가이드 제공.
 
 ---
 
