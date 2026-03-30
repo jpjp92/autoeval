@@ -58,6 +58,15 @@ export interface EvaluationData {
     specificity_reason?: string;
     conciseness_reason?: string;
     failure_reason?: string;
+    // Individual scores
+    relevance?:         number;
+    groundedness?:      number;
+    context_relevance?: number;
+    completeness?:      number;
+    factuality?:        number;
+    specificity?:       number;
+    conciseness?:       number;
+    clarity?:           number;
   }>;
   metadata?: {
     qa_model?:  string;  // QA 생성 모델
@@ -424,13 +433,17 @@ function buildHTMLContent(data: EvaluationData): string {
         .detail-section-rag .detail-section-title { color:#0284c7; }
         .detail-section-qual .detail-section-title { color:#7c3aed; }
         .detail-section-body { padding:0 16px; }
-        .detail-metric { padding:10px 0;border-bottom:1px solid; }
+        .detail-metric { display: flex; align-items: flex-start; gap: 15px; padding: 12px 0; border-bottom: 1px solid; transition: background 0.2s; }
         .detail-section-rag .detail-section-body .detail-metric { border-color:#e0f2fe; }
         .detail-section-qual .detail-section-body .detail-metric { border-color:#ede9fe; }
-        .detail-metric { padding:8px 0;border-bottom:1px solid; }
         .detail-metric:last-child { border-bottom:none; }
-        .detail-metric-name { font-size:13px;font-weight:600;color:#334155;margin-bottom:4px; }
-        .detail-metric-reason { font-size:12px;color:#64748b;line-height:1.55; }
+        .detail-metric-name { width: 160px; shrink: 0; font-weight: 700; color: #64748b; font-size: 12px; }
+        .detail-metric-score { width: 60px; shrink: 0; font-family: monospace; font-weight: 800; font-size: 13px; text-align: center; }
+        .detail-metric-reason { flex: 1; color: #334155; line-height: 1.6; font-size: 12px; padding-left: 15px; border-left: 1px solid #f1f5f9; }
+        .score-emerald { color: #059669; }
+        .score-amber   { color: #d97706; }
+        .score-rose    { color: #e11d48; }
+        .score-none    { color: #cbd5e1; }
         .detail-failure-callout { background:#fff1f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:16px; }
         .detail-failure-callout-title { font-size:12px;font-weight:700;color:#991b1b;margin-bottom:4px; }
         .detail-failure-callout-text { font-size:13px;color:#dc2626;line-height:1.55; }
@@ -723,28 +736,33 @@ function showQADetail(idx){
   // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
   var isLegacy=!!(qa.factuality_reason||qa.specificity_reason||qa.conciseness_reason);
   var ragMetrics=[
-    {name:'관련성 (Answer Relevance)',reason:qa.relevance_reason},
-    {name:'근거성 (Groundedness)',reason:qa.groundedness_reason},
+    {name:'관련성 (Answer Relevance)',  score: qa.relevance,         reason:qa.relevance_reason},
+    {name:'근거성 (Groundedness)',      score: qa.groundedness,      reason:qa.groundedness_reason},
     ...(qa.clarity_reason
-      ? [{name:'명확성 (Clarity)',reason:qa.clarity_reason}]
+      ? [{name:'명확성 (Clarity)',      score: qa.clarity,           reason:qa.clarity_reason}]
       : qa.context_relevance_reason
-        ? [{name:'맥락성 (Context Relevance)',reason:qa.context_relevance_reason}]
+        ? [{name:'맥락성 (Context Relevance)', score: qa.context_relevance, reason:qa.context_relevance_reason}]
         : []
     )
   ];
   // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
   var qualMetrics=isLegacy?[
-    {name:'사실성 (Factuality)',reason:qa.factuality_reason},
-    {name:'완전성 (Completeness)',reason:qa.completeness_reason},
-    {name:'구체성 (Specificity)',reason:qa.specificity_reason},
-    {name:'간결성 (Conciseness)',reason:qa.conciseness_reason}
+    {name:'사실성 (Factuality)',   score: qa.factuality,   reason:qa.factuality_reason},
+    {name:'완전성 (Completeness)', score: qa.completeness, reason:qa.completeness_reason},
+    {name:'구체성 (Specificity)',   score: qa.specificity,   reason:qa.specificity_reason},
+    {name:'간결성 (Conciseness)',   score: qa.conciseness,   reason:qa.conciseness_reason}
   ]:[
-    {name:'완전성 (Completeness)',reason:qa.completeness_reason}
+    {name:'완전성 (Completeness)', score: qa.completeness, reason:qa.completeness_reason}
   ];
   var allMetrics=ragMetrics.concat(qualMetrics);
   var allRows=allMetrics.map(function(m){
+    var s = m.score;
+    var sStr = (s !== undefined && s !== null) ? s.toFixed(3) : '-';
+    var sCls = (s !== undefined && s !== null) ? (s >= 0.85 ? 'score-emerald' : s >= 0.7 ? 'score-amber' : 'score-rose') : 'score-none';
+    
     return '<div class="detail-metric">'
       +'<div class="detail-metric-name">'+m.name+'</div>'
+      +'<div class="detail-metric-score '+sCls+'">'+sStr+'</div>'
       +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
       +'</div>';
   }).join('');

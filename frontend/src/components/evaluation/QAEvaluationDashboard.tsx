@@ -808,7 +808,25 @@ export function QAEvaluationDashboard({
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({ id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, primary_failure: q.primary_failure, failure_types: q.failure_types, relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, clarity_reason: q.clarity_reason, context_relevance_reason: q.context_relevance_reason, factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, failure_reason: q.failure_reason })),
+    detailedQA:         qaPreview.map((q, i) => ({ 
+      id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, 
+      l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, 
+      primary_failure: q.primary_failure, failure_types: q.failure_types, 
+      relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, 
+      clarity_reason: q.clarity_reason, context_relevance_reason: q.context_relevance_reason, 
+      factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, 
+      specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, 
+      failure_reason: q.failure_reason,
+      // Individual scores
+      relevance: q.relevance, 
+      groundedness: q.groundedness, 
+      context_relevance: q.context_relevance, 
+      completeness: q.completeness,
+      factuality: (q as any).factuality,
+      specificity: (q as any).specificity,
+      conciseness: (q as any).conciseness,
+      clarity: (q as any).clarity,
+    })),
     metadata: {
       qa_model: (() => {
         const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
@@ -846,6 +864,13 @@ export function QAEvaluationDashboard({
             id: i + 1, q: r.q, a: r.a ?? '', context: r.context ?? '',
             intent: r.intent, l2_avg: r.quality_avg ?? 0, triad_avg: r.rag_avg ?? 0, pass: r.pass,
             primary_failure: r.primary_failure ?? null, failure_types: r.failure_types ?? [],
+            relevance_reason: r.relevance_reason, groundedness_reason: r.groundedness_reason,
+            clarity_reason: r.clarity_reason, context_relevance_reason: r.context_relevance_reason,
+            factuality_reason: r.factuality_reason, completeness_reason: r.completeness_reason,
+            specificity_reason: r.specificity_reason, conciseness_reason: r.conciseness_reason,
+            failure_reason: r.failure_reason,
+            relevance: r.relevance, groundedness: r.groundedness, context_relevance: r.context_relevance, completeness: r.completeness,
+            factuality: r.factuality, specificity: r.specificity, conciseness: r.conciseness, clarity: r.clarity,
           })),
           metadata: { ...evaluationData.metadata, timestamp: res.timestamp ?? evaluationData.metadata?.timestamp },
         });
