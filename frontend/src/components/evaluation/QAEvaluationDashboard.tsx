@@ -67,15 +67,15 @@ const STATUS_CONFIG: Record<QAStatus, { label: string; className: string; dotCol
 
 // ─── Failure Type ─────────────────────────────────────────────────────────────
 const FAILURE_CONFIG: Record<string, { label: string; className: string }> = {
-  hallucination:      { label: '환각오류',   className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  faithfulness_error: { label: '근거오류',   className: 'bg-orange-50 text-orange-700 border-orange-200' },
-  poor_context:       { label: '문맥부족',   className: 'bg-sky-50 text-sky-700 border-sky-200' },
-  retrieval_miss:     { label: '검색오류',   className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  ambiguous_question: { label: '질문모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  bad_chunk:          { label: '불량청크',   className: 'bg-slate-100 text-slate-600 border-slate-200' },
-  evaluation_error:   { label: '평가오류',   className: 'bg-purple-50 text-purple-700 border-purple-200' },
-  low_quality:        { label: '품질미달',   className: 'bg-pink-50 text-pink-700 border-pink-200' },
-  syntax_error:       { label: '구문오류',   className: 'bg-red-50 text-red-700 border-red-200' },
+  hallucination:      { label: '환각오류',   className: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-200 dark:border-rose-500/20' },
+  faithfulness_error: { label: '근거오류',   className: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
+  poor_context:       { label: '문맥부족',   className: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-slate-800/50 dark:text-slate-200 dark:border-slate-700/50' },
+  retrieval_miss:     { label: '검색오류',   className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
+  ambiguous_question: { label: '질문모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50' },
+  bad_chunk:          { label: '불량청크',   className: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-700/30' },
+  evaluation_error:   { label: '평가오류',   className: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-indigo-950/30 dark:text-indigo-200 dark:border-indigo-500/20' },
+  low_quality:        { label: '품질미달',   className: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
+  syntax_error:       { label: '구문오류',   className: 'bg-red-50 text-red-700 border-red-200 dark:bg-rose-950/30 dark:text-rose-200 dark:border-rose-500/20' },
 };
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -100,6 +100,8 @@ interface QAPreviewItem {
   // reason — Quality
   factuality_reason?:   string;
   completeness_reason?: string;
+  coverage?:            number;
+  missing_aspects?:     string[];
   specificity_reason?:  string;
   conciseness_reason?:  string;
 }
@@ -169,10 +171,10 @@ function buildChartData(report: EvalReport) {
   ];
 
   const layer1Stats = [
-    { subject: '다양성', A: s?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복성', A: s?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향성', A: s?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충분성', A: s?.data_sufficiency?.score ?? 0, fullMark: 10 },
+    { subject: '다양성', A: s?.metrics?.diversity_score    ?? s?.diversity?.score        ?? 0, fullMark: 10 },
+    { subject: '중복성', A: s?.metrics?.duplication_score  ?? s?.duplication_rate?.score ?? 0, fullMark: 10 },
+    { subject: '편향성', A: s?.metrics?.skewness_score     ?? s?.skewness?.score         ?? 0, fullMark: 10 },
+    { subject: '충족성', A: s?.metrics?.sufficiency_score   ?? s?.data_sufficiency?.score ?? 0, fullMark: 10 },
   ];
 
   const intentDist = s?.diversity?.intent_distribution ?? {};
@@ -221,10 +223,10 @@ function buildChartDataFromHistory(item: HistoryItem) {
   ];
 
   const layer1Stats = [
-    { subject: '다양성', A: st?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복성', A: st?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향성', A: st?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충분성', A: st?.data_sufficiency?.score ?? 0, fullMark: 10 },
+    { subject: '다양성', A: st?.metrics?.diversity_score    ?? st?.diversity?.score        ?? 0, fullMark: 10 },
+    { subject: '중복성', A: st?.metrics?.duplication_score  ?? st?.duplication_rate?.score ?? 0, fullMark: 10 },
+    { subject: '편향성', A: st?.metrics?.skewness_score     ?? st?.skewness?.score         ?? 0, fullMark: 10 },
+    { subject: '충족성', A: st?.metrics?.sufficiency_score   ?? st?.data_sufficiency?.score ?? 0, fullMark: 10 },
   ];
 
   const intentDist = st?.diversity?.intent_distribution ?? {};
@@ -492,32 +494,46 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
 
       {/* 실패 유형 callout — primary_failure 있을 때만 */}
       {qa.primary_failure && (
-        <div className={cn(
-          'rounded-xl p-4 border text-xs space-y-1',
-          FAILURE_CONFIG[qa.primary_failure]?.className ?? 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'
-        )}>
-          <p className="font-bold text-[10px] uppercase tracking-widest">주요 실패 유형</p>
-          <p className="font-semibold">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
-          {qa.failure_reason && <p className="opacity-80 leading-relaxed">{qa.failure_reason}</p>}
-          {(qa.failure_types?.length ?? 0) > 1 && (
-            <p className="opacity-60 text-[10px]">
-              전체: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
-            </p>
-          )}
+        <div className="rounded-xl border border-rose-200 dark:border-rose-500/20 overflow-hidden relative">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500/50" />
+          <div className="px-4 py-1.5 bg-rose-50/50 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-500/10">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-rose-600/80 dark:text-rose-400">주요 실패 유형</p>
+          </div>
+          <div className="p-4 text-xs space-y-1">
+            <p className="font-semibold text-rose-700 dark:text-rose-300">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
+            {qa.failure_reason && <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{qa.failure_reason}</p>}
+            {(qa.failure_types?.length ?? 0) > 1 && (
+              <p className="text-slate-400 dark:text-slate-500 text-[10px] pt-1">
+                전체 실패 항목: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
+              </p>
+            )}
+          </div>
         </div>
       )}
 
       {/* Q / A / Context */}
       <div className="space-y-3">
-        <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-4 border border-slate-100 dark:border-white/8">
-          <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">질문</p>
-          <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed font-medium">{qa.q}</p>
+        {/* 질문 */}
+        <div className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden relative">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-400/50" />
+          <div className="px-4 py-1.5 bg-slate-100/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">질문</p>
+          </div>
+          <div className="p-4">
+            <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed font-medium">{qa.q}</p>
+          </div>
         </div>
 
+        {/* 답변 */}
         {qa.a ? (
-          <div className="bg-indigo-50/60 rounded-xl p-4 border border-indigo-100">
-            <p className="text-xs font-semibold text-indigo-400 uppercase tracking-wide mb-2">답변</p>
-            <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{qa.a}</p>
+          <div className="bg-indigo-50/60 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-500/20 overflow-hidden relative">
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500/50" />
+            <div className="px-4 py-1.5 bg-indigo-50/50 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-500/10">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">답변</p>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-slate-700 dark:text-indigo-100 leading-relaxed font-medium">{qa.a}</p>
+            </div>
           </div>
         ) : (
           <div className="rounded-xl p-4 border border-dashed border-slate-200 dark:border-white/10 text-center text-xs text-slate-400 dark:text-slate-500">
@@ -525,19 +541,28 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
           </div>
         )}
 
+        {/* 컨텍스트 */}
         {qa.context && (
-          <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100">
-            <p className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">컨텍스트</p>
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{qa.context}</p>
+          <div className="bg-teal-50/50 dark:bg-teal-950/20 rounded-xl border border-teal-100 dark:border-teal-500/20 overflow-hidden relative">
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-teal-500/50" />
+            <div className="px-4 py-1.5 bg-teal-50/50 dark:bg-teal-950/30 border-b border-teal-100 dark:border-teal-500/10">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-teal-500 dark:text-teal-400">컨텍스트</p>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-slate-600 dark:text-teal-100/80 leading-relaxed">{qa.context}</p>
+            </div>
           </div>
         )}
       </div>
 
       {/* 품질 평가 — RAG Triad + Quality 통합 섹션 */}
       {(qa.rag_avg != null || qa.quality_avg != null || allDimensions.length > 0) && (
-        <div className="bg-violet-50/40 rounded-xl border border-violet-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-violet-100">
-            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">품질 평가</p>
+        <div className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden relative">
+          {/* 포인트 악센트 */}
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500/50" />
+          
+          <div className="flex items-center justify-between px-4 py-1.5 bg-slate-100/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">품질 평가 결과</p>
             <div className="flex items-center gap-3">
               {isLegacy ? (
                 // 구형(7개): RAG + 품질 각각 표시
@@ -575,10 +600,10 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
             </div>
           </div>
           {allDimensions.length > 0 && (
-            <div className="divide-y divide-violet-100">
+            <div className="divide-y divide-slate-100 dark:divide-white/5">
               {allDimensions.map(({ label, reason }) => (
                 <div key={label} className="flex gap-3 px-4 py-3 text-xs">
-                  <span className="shrink-0 font-semibold text-slate-500 dark:text-slate-400 w-14">{label}</span>
+                  <span className="shrink-0 font-semibold text-slate-400 dark:text-slate-500 w-14">{label}</span>
                   <span className="text-slate-600 dark:text-slate-300 leading-relaxed">{reason}</span>
                 </div>
               ))}

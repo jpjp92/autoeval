@@ -69,7 +69,7 @@ logger = logging.getLogger("autoeval.generation")
 #   - claude-sonnet-4.6: RPM 50 / TPM 30K   → workers=4 (RPM ~10, TPM ~6.7K) ※구형 8K 기준 아님
 #   - gpt-5.2:           RPM 500 / TPM 500K → workers=5 (RPM ~12, TPM ~8.4K)
 GENERATION_MAX_WORKERS: Dict[str, int] = {
-    "anthropic": 4,   # claude-sonnet-4.6: RPM 50 / TPM 30K → workers=4 (한도 20% 이내)
+    "anthropic": 2,   # claude-sonnet: 429 빈번 발생 방지를 위해 2로 하향 (기존 4)
     "google":    5,   # gemini-3.1-flash Tier 1 Paid
     "openai":    5,   # gpt-5.1 / gpt-5.2
 }

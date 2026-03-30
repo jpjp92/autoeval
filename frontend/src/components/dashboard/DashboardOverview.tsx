@@ -250,7 +250,7 @@ export function DashboardOverview({
                                 {job.source_doc || "—"}
                               </td>
                               <td className="px-4 py-3" title={job.model || "—"}>
-                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border max-w-[160px] truncate block", modelColor)}>
+                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border max-w-[140px] truncate inline-block", modelColor)}>
                                   {job.model || "—"}
                                 </span>
                               </td>

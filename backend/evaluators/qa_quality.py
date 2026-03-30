@@ -93,16 +93,31 @@ class QAQualityEvaluator:
         return "openai"
 
     def _call_llm_combined(self, prompt: str) -> str:
-        """completeness 단일 지표 평가 — JSON 응답 (score + reason)"""
+        """completeness 단일 지표 평가 — JSON 응답 (score + coverage + missing + reason)"""
         sys_msg = """\
 <role>
-You are a strict but fair data quality auditor evaluating QA pairs.
-Evaluate completeness objectively based solely on the provided context.
+You are a strict QA completeness evaluator.
+Your job is to detect missing parts of an answer, not to reward verbosity.
 </role>
+
+<rules>
+- Completeness = how fully the answer covers ALL parts of the question.
+- First decompose the question into atomic sub-questions.
+- Then check whether each sub-question is answered.
+- Do NOT reward longer answers; focus on coverage of requirements.
+- If any key part is missing, the score must be reduced significantly.
+- Evaluate completeness with respect to the QUESTION.
+- Use context only to verify factual support for the claims.
+</rules>
+
 <output_format>
-Respond ONLY with valid JSON. No explanation, no markdown, no code blocks.
-For the reason, write exactly 1 concise sentence in Korean explaining the score.
-{"completeness": <int 0-10>, "completeness_reason": "<1 sentence in Korean>"}
+Return ONLY valid JSON:
+{
+  "completeness": <0-10>,
+  "coverage": <0.0-1.0>,
+  "missing_aspects": ["..."],
+  "completeness_reason": "<1 concise sentence in Korean explaining the score, including missing parts if any>"
+}
 </output_format>"""
         try:
             if self.provider == "openai" and self.client:
@@ -133,23 +148,31 @@ For the reason, write exactly 1 concise sentence in Korean explaining the score.
         return "{}"
 
     def _parse_combined(self, raw: str) -> dict:
-        """JSON 응답에서 completeness 점수 + reason 파싱 — 실패 시 0.5 fallback"""
+        """JSON 응답 파싱 — completeness, coverage, missing_aspects 추출"""
         text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             data = json.loads(text)
-            def _score(key: str) -> float:
-                val = data.get(key, 5)
-                return min(10, max(0, int(val))) / 10.0
+            def _score(key: str, default: int = 5) -> float:
+                val = data.get(key, default)
+                return min(10, max(0, float(val))) / 10.0
+
             return {
                 "completeness":        _score("completeness"),
+                "coverage":            float(data.get("coverage", 0.5)),
+                "missing_aspects":     list(data.get("missing_aspects", [])),
                 "completeness_reason": str(data.get("completeness_reason", "")),
             }
         except Exception:
             logger.warning(f"Combined parse failed, raw: {raw[:200]}")
-            return {"completeness": 0.5, "completeness_reason": ""}
+            return {
+                "completeness": 0.5,
+                "coverage": 0.5,
+                "missing_aspects": [],
+                "completeness_reason": ""
+            }
 
     def evaluate_all(self, question: str, answer: str, context: str, intent: str = "") -> dict:
-        """완전성을 단일 LLM 호출로 평가 (intent 타입 반영)"""
+        """완전성을 단일 LLM 호출로 평가 (질문 분해 및 커버리지 계산)"""
         clean_ctx = clean_markdown(context)
         intent_tag = f"\n<intent_type>{intent}</intent_type>" if intent else ""
         prompt = f"""<context>
@@ -159,22 +182,38 @@ For the reason, write exactly 1 concise sentence in Korean explaining the score.
 <question>{question}</question>
 <answer>{answer}</answer>{intent_tag}
 
-<scoring_dimensions>
-completeness (0-10): Does the answer fully address the question given its intent type?
-   Intent-specific rubrics:
-   - list / procedure: 10 = all items/steps enumerated; 5 = partial list; 0 = single sentence
-   - boolean: 10 = clear yes/no + brief reason from context; 5 = yes/no only; 0 = hedged non-answer
-   - numeric: 10 = exact figure cited with unit; 5 = approximate; 0 = no figure present
-   - factoid / definition / how / why / (other): 10 = comprehensive; 6-7 = main point covered; 0-3 = barely addresses
-</scoring_dimensions>
+<scoring_guidelines>
+- 10: All sub-questions fully answered; no missing parts.
+- 7-9: Most answered, minor omissions that don't affect core intent.
+- 4-6: Major parts missing; core intent only partially addressed.
+- 0-3: Largely incomplete; fails to address the main question.
+
+Note: Completeness score should be heavily influenced by the coverage of sub-questions.
+Recommended logic: Final Score = 0.7 * (Coverage * 10) + 0.3 * (Quality/Clarity Score)
+</scoring_guidelines>
 
 <task>
-Evaluate the QA pair on completeness. Score 0-10.
+1. Break the question into atomic sub-questions.
+2. Check which sub-questions are answered based on the provided answer and context.
+3. Identify any missing aspects or unaddressed requirements.
+4. Calculate coverage (ratio of answered sub-questions).
+5. Determine the final completeness score (0-10).
+
 Return ONLY valid JSON:
-{{"completeness": <0-10>, "completeness_reason": "<1 sentence in Korean>"}}
+{{
+  "completeness": <0-10>,
+  "coverage": <0.0-1.0>,
+  "missing_aspects": ["..."],
+  "completeness_reason": "<1 concise sentence in Korean explaining the score, mentioning what was missing>"
+}}
 </task>"""
         try:
             raw = self._call_llm_combined(prompt)
             return self._parse_combined(raw)
         except Exception:
-            return {"completeness": 0.5, "completeness_reason": ""}
+            return {
+                "completeness": 0.5,
+                "coverage": 0.5,
+                "missing_aspects": [],
+                "completeness_reason": ""
+            }

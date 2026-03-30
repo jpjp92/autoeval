@@ -29,10 +29,11 @@ frontend/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (L1/L2 드롭다운 + 진행상황)
 │       ├── evaluation/
 │       │   └── QAEvaluationDashboard.tsx # 4레이어 평가 결과 + 이력 조회 + 리포트 내보내기
-│       │                                 # UI: History/Export 버튼 크기 통일 (w-36), 뱃지 스타일 개선
+│       │                                 # UI: 컴팩트한 '감사 리포트(Audit Report)' 스타일 일원화
+│       │                                 # UI: 헤더 바 + 액센트 라인 + 본문 구조의 통일된 섹션 레이아웃
+│       │                                 # UI: 폰트 표준화 - 본문(text-sm), 분석/사유(text-xs)
+│       │                                 # 통계 지표: '충족성(Sufficiency)' — 품질의 '완전성'과 구분
 │       │                                 # QA 목록 테이블: 행 높이 고정 h-[68px], line-clamp-2 (질문/답변)
-│       │                                 # QA 목록 테이블: 실패유형 배지 (primary_failure 기반)
-│       │                                 # QADetailView: 차원별 평가 근거(reason) + 주요 실패 유형 섹션
 │       ├── agents/
 │       │   └── AgentTable.tsx           # 에이전트 목록 테이블
 │       ├── analytics/

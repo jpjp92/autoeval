@@ -24,9 +24,9 @@ backend/
 ├── evaluators/                  # 4레이어 평가 로직
 │   ├── pipeline.py              # 평가 파이프라인 오케스트레이션
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증 (answerable 필드, Q/A 길이 등)
-│   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계 (SequenceMatcher)
+│   ├── dataset_stats.py         # Layer 1-B: 통계 분석 (인텐트 엔트로피, TTR, 유사도 기반 중복)
 │   ├── rag_triad.py             # Layer 2: RAG Triad — relevance/groundedness/context_relevance (score + reason)
-│   ├── qa_quality.py            # Layer 3: Quality Score — completeness 단일 지표 (intent-aware, score + reason)
+│   ├── qa_quality.py            # Layer 3: Quality Score — 질문 분해(Decomposition) 기반 완전성 & 커버리지
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository 패키지
@@ -214,13 +214,16 @@ Pass 3: /apply-granular-tagging
 
 ```
 Layer 1-A  Syntax Validation      구문 정확성 (answerable 필드, Q/A 길이 등)
-Layer 1-B  Dataset Statistics     다양성·중복률 통계 (SequenceMatcher 기반)
+Layer 1-B  Dataset Statistics     데이터셋 충족성·다양성·중복도·편향성 통계
+                                  - 다양성: 인텐트 엔트로피(Shannon) + 어휘 다양도(TTR)
+                                  - 중복도: SequenceMatcher(유사도 0.7 이상) 기반 Near-duplicate
+                                  - 충족성: 필수 필드 채움률 + 물리적 텍스트 볼륨(평균 길이)
 Layer 2    RAG Triad              Relevance / Groundedness / Context Relevance
                                   avg_score = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
                                   단일 LLM 호출 → score + reason 반환
-Layer 3    Quality Score          Completeness 단일 지표 (intent-aware)
-                                  intent 유형(list/boolean/numeric/factoid 등)별 루브릭 적용
-                                  score + completeness_reason 반환
+Layer 3    Quality Score          질문 분해(Decomposition) 기반 완전성 (Completeness)
+                                  - 질문을 원자 단위 서브 질문으로 분해 후 커버리지(%) 산출
+                                  - 누락된 요소(missing_aspects) 및 정량적 근거(reason) 반환
            failure 분류            _classify_failure_types() — 점수 기반 failure_types[] + primary_failure 자동 결정
 
 final_score = (syntax_pass_rate/100)×0.05 + (dataset_quality/10)×0.05 + rag_avg×0.65 + completeness×0.25

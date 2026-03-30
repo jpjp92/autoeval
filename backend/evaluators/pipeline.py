@@ -198,6 +198,8 @@ def _quality_worker(args):
         return i, {
             "qa_index":            i,
             "completeness":        round(completeness, 3),
+            "coverage":            round(scores.get("coverage", 0.0), 3),
+            "missing_aspects":     scores.get("missing_aspects", []),
             "completeness_reason": scores.get("completeness_reason", ""),
             "avg_quality":         round(completeness, 3),
             "pass":                completeness >= 0.70,
@@ -295,14 +297,18 @@ def run_full_evaluation_pipeline(
         dataset_stats = DatasetStats(qa_list).analyze_all()
         results["layers"]["stats"] = dataset_stats
 
+        # 통계 요약 점수 계산 (UI 표시용)
+        m = dataset_stats.get("metrics", {})
+        avg_stat_score = round(sum(m.values()) / max(len(m), 1), 2) if m else 0
+
         if eval_manager and job_id:
             eval_manager.update_job(
                 job_id,
-                message=f"2️⃣ 데이터셋 분석 완료: 통합점수 {dataset_stats.get('integrated_score', 0)}/10",
+                message=f"2️⃣ 데이터셋 분석 완료: 통계점수 {avg_stat_score}/10",
                 progress=40
             )
-            eval_manager.update_layer_status(job_id, "stats", "completed", 100, f"✓ 점수: {dataset_stats.get('integrated_score', 0)}/10")
-        logger.info(f"[{job_id}] Layer 1-B: integrated_score={dataset_stats.get('integrated_score', 0)}")
+            eval_manager.update_layer_status(job_id, "stats", "completed", 100, f"✓ 점수: {avg_stat_score}/10")
+        logger.info(f"[{job_id}] Layer 1-B: avg_stat_score={avg_stat_score}")
 
     # ===== Layer 2: RAGTriadEvaluator (병렬) =====
     if "rag" in layers and valid_qa:
@@ -606,6 +612,8 @@ def run_evaluation(
                 "context_relevance_reason": r.get("context_relevance_reason", ""),
                 # Quality reason
                 "completeness_reason": q.get("completeness_reason", ""),
+                "coverage":            q.get("coverage", 0.0),
+                "missing_aspects":     q.get("missing_aspects", []),
                 # Failure classification
                 **failure_info,
             })
