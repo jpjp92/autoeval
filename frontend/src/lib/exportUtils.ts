@@ -14,12 +14,14 @@ const INTENT_KR: Record<string, string> = {
   comparison: '비교형',
   list:       '열거형',
   // 구형 8종 (하위 호환)
-  factoid:    '사실형',
-  numeric:    '수치형',
-  procedure:  '절차형',
-  why:        '원인형',
-  definition: '정의형',
-  boolean:    '확인형',
+  factoid:      '사실형',
+  numeric:      '수치형',
+  procedure:    '절차형',
+  why:          '원인형',
+  definition:   '정의형',
+  boolean:      '확인형',
+  summary:      '요약형',
+  confirmation: '확인형',
 };
 
 const FAILURE_KR: Record<string, string> = {
@@ -192,52 +194,66 @@ export function exportToCSV(data: EvaluationData): void {
  */
 // ── SVG 차트 생성 헬퍼 ────────────────────────────────────────────────────────
 
-function svgDonut(
+function svgTreemap(
   items: Array<{ name: string; krLabel?: string; label?: string; value: number }>,
   colorMap: Record<string, string>,
 ): string {
-  const W = 260; const cx = 130; const cy = 90; const R = 70; const r = 44;
+  const W = 340; const H = 220;
   const total = items.reduce((s, i) => s + i.value, 0);
-  if (total === 0) return `<svg width="${W}" height="200"></svg>`;
+  if (total === 0) return `<svg width="${W}" height="${H}"></svg>`;
 
-  // 슬라이스 paths (full angle — 애니메이션은 clipPath가 담당)
-  let paths = ''; let angle = -Math.PI / 2;
-  for (const item of items) {
-    const sweep = (item.value / total) * 2 * Math.PI;
-    if (sweep === 0) { angle += sweep; continue; }
-    const end = angle + sweep;
-    const lg = sweep > Math.PI ? 1 : 0;
-    const c0 = Math.cos(angle), s0 = Math.sin(angle), c1 = Math.cos(end), s1 = Math.sin(end);
-    const d = `M ${(cx+R*c0).toFixed(1)} ${(cy+R*s0).toFixed(1)} A ${R} ${R} 0 ${lg} 1 ${(cx+R*c1).toFixed(1)} ${(cy+R*s1).toFixed(1)} L ${(cx+r*c1).toFixed(1)} ${(cy+r*s1).toFixed(1)} A ${r} ${r} 0 ${lg} 0 ${(cx+r*c0).toFixed(1)} ${(cy+r*s0).toFixed(1)} Z`;
-    const pct = ((item.value / total) * 100).toFixed(1);
-    const lbl = item.krLabel ?? item.label ?? item.name;
-    paths += `<path d="${d}" fill="${colorMap[item.name] ?? '#94a3b8'}" opacity="0.85" style="cursor:pointer;transition:opacity .15s" onmouseover="this.style.opacity=1;showTip(event,'${lbl}: ${item.value}개 (${pct}%)')" onmouseout="this.style.opacity=.85;hideTip()"/>`;
-    angle = end;
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  let output = '';
+
+  function divide(rects: any[], x: number, y: number, w: number, h: number, vertical: boolean) {
+    if (rects.length === 0) return;
+    if (rects.length === 1) {
+      const item = rects[0];
+      const color = colorMap[item.name] ?? '#94a3b8';
+      const pct = total > 0 ? ((item.value / total) * 100).toFixed(1) : '0';
+      const lbl = item.krLabel ?? item.label ?? item.name;
+      output += `<rect x="${x + 1}" y="${y + 1}" width="${Math.max(0, w - 2)}" height="${Math.max(0, h - 2)}" fill="${color}" rx="6" opacity="0.9" style="cursor:pointer;transition:all .2s" onmouseover="this.style.opacity=1;this.style.filter='brightness(1.1)';showTip(event,'${lbl}: ${item.value}개 (${pct}%)')" onmouseout="this.style.opacity=0.9;this.style.filter='none';hideTip()"/>`;
+      // 가변 폰트 사이즈 및 표시 여부 결정 (가시성 최우선)
+      const area = w * h;
+      const isLarge  = w > 70 && h > 50;
+      const isMedium = w > 44 && h > 28;
+      const isSmall  = w > 28 && h > 18;
+      const isMicro  = w > 18 && h > 14; // 최소 18px 너비면 % 표시 가능
+
+      if (isLarge) {
+        output += `<text x="${x + w / 2}" y="${y + h / 2 - 8}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="10" opacity="0.85" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.3)">${lbl}</text>`;
+        output += `<text x="${x + w / 2}" y="${y + h / 2 + 8}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="14" font-weight="800" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.3)">${pct}%</text>`;
+      } else if (isMedium) {
+        output += `<text x="${x + w / 2}" y="${y + h / 2 - 7}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="9" opacity="0.85" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.3)">${lbl}</text>`;
+        output += `<text x="${x + w / 2}" y="${y + h / 2 + 7}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="12" font-weight="700" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.3)">${pct}%</text>`;
+      } else if (isSmall) {
+        output += `<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="10" font-weight="700" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.3)">${pct}%</text>`;
+      } else if (isMicro) {
+        output += `<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="8.5" font-weight="700" style="pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.2)">${pct}%</text>`;
+      }
+      return;
+    }
+
+    const mid = Math.ceil(rects.length / 2);
+    const left = rects.slice(0, mid);
+    const right = rects.slice(mid);
+    const leftSum = left.reduce((s, i) => s + i.value, 0);
+    const rightSum = right.reduce((s, i) => s + i.value, 0);
+    const ratio = leftSum / (leftSum + rightSum);
+
+    if (vertical) {
+      const lw = w * ratio;
+      divide(left, x, y, lw, h, false);
+      divide(right, x + lw, y, w - lw, h, false);
+    } else {
+      const lh = h * ratio;
+      divide(left, x, y, w, lh, true);
+      divide(right, x, y + lh, w, h - lh, true);
+    }
   }
 
-  // 4열 원형 범례 (평가 페이지 동일)
-  const cols = 4; const colW = Math.floor(W / cols);
-  const legendItems = items.map((item, i) => {
-    const col = i % cols, row = Math.floor(i / cols);
-    const lx = col * colW + 6, ly = 194 + row * 18;
-    const lbl = item.krLabel ?? item.label ?? item.name;
-    return `<circle cx="${lx+4}" cy="${ly-3}" r="4" fill="${colorMap[item.name] ?? '#94a3b8'}"/>
-<text x="${lx+12}" y="${ly}" font-size="10" fill="#475569">${lbl}</text>`;
-  }).join('');
-  const legendRows = Math.ceil(items.length / cols);
-  const H = 190 + legendRows * 18 + 8;
-
-  // 애니메이션용 clipPath (초기: 점 → JS가 sweep 확장)
-  const clipId = 'dc';
-  const initX = (cx + R * Math.cos(-Math.PI / 2)).toFixed(1);
-  const initY = (cy + R * Math.sin(-Math.PI / 2)).toFixed(1);
-
-  return `<svg class="donut-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
-  data-cx="${cx}" data-cy="${cy}" data-r="${R}">
-  <defs><clipPath id="${clipId}"><path class="donut-clip" d="M ${cx} ${cy} L ${initX} ${initY} Z"/></clipPath></defs>
-  <g clip-path="url(#${clipId})">${paths}</g>
-  ${legendItems}
-</svg>`;
+  divide(sorted, 0, 0, W, H, true);
+  return `<svg class="treemap-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${output}</svg>`;
 }
 
 function svgRadar(items: Array<{ subject: string; A: number; fullMark: number }>): string {
@@ -337,17 +353,25 @@ function buildHTMLContent(data: EvaluationData): string {
   const source    = data.metadata?.source ?? 'N/A';
 
   const intentColorsMap: Record<string, string> = {
-    // 신규 6종
-    fact: '#3b82f6', purpose: '#d946ef', how: '#22c55e',
-    condition: '#f59e0b', comparison: '#6366f1', list: '#06b6d4',
-    // 구형 8종 (하위 호환)
-    factoid: '#3b82f6', numeric: '#eab308', procedure: '#6366f1',
-    why: '#d946ef', definition: '#0ea5e9', boolean: '#c026d3',
+    fact:       '#3b7dd8',
+    purpose:    '#a855b5',
+    how:        '#16a35a',
+    condition:  '#d97706',
+    comparison: '#4f46e5',
+    list:       '#0891b2',
+    factoid:    '#3b7dd8',
+    numeric:    '#ca8a04',
+    procedure:  '#4f46e5',
+    why:        '#a855b5',
+    definition: '#0284c7',
+    boolean:    '#9333ea',
+    summary:    '#0891b2',
+    confirmation: '#9333ea',
   };
 
-  const donutSVG  = svgDonut(data.intentDistribution, intentColorsMap);
-  const radarSVG  = svgRadar(data.layer1Stats);
-  const barsSVG   = svgBars(data.llmQualityScores);
+  const treemapSVG = svgTreemap(data.intentDistribution, intentColorsMap);
+  const radarSVG   = svgRadar(data.layer1Stats);
+  const barsSVG    = svgBars(data.llmQualityScores);
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -483,7 +507,7 @@ function buildHTMLContent(data: EvaluationData): string {
                   질문 의도 분포
                 </div>
                 <div class="chart-sub">질문 의도 분포</div>
-                <div class="chart-card-inner">${donutSVG}</div>
+                <div class="chart-card-inner" style="margin-top:10px">${treemapSVG}</div>
             </div>
             <div class="chart-card">
                 <div class="chart-title">
@@ -499,7 +523,7 @@ function buildHTMLContent(data: EvaluationData): string {
                   통합 품질 평가 점수
                 </div>
                 <div class="chart-sub">RAG Triad + 품질 평가 통합 점수</div>
-                <div class="chart-card-inner">${barsSVG}</div>
+                <div class="chart-card-inner" style="margin-top:10px">${barsSVG}</div>
             </div>
         </div>
     </section>
@@ -542,28 +566,6 @@ function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.
 function hideTip(){document.getElementById('tip').style.display='none';}
 document.addEventListener('mousemove',function(e){var el=document.getElementById('tip');if(el.style.display!=='none'){el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}});
 
-function animateDonut(){
-  document.querySelectorAll('.donut-svg').forEach(function(svg){
-    var cx=+svg.getAttribute('data-cx'),cy=+svg.getAttribute('data-cy'),R=+svg.getAttribute('data-r');
-    var clip=svg.querySelector('.donut-clip');
-    if(!clip)return;
-    var ix=(cx+R*Math.cos(-Math.PI/2)).toFixed(1),iy=(cy+R*Math.sin(-Math.PI/2)).toFixed(1);
-    var st=null,dur=900;
-    function step(ts){
-      if(!st)st=ts;
-      var t=Math.min((ts-st)/dur,1);
-      var e=t<0.5?2*t*t:-1+(4-2*t)*t;
-      if(t>=1){clip.setAttribute('d','M 0 0 H 9999 V 9999 H 0 Z');}
-      else{
-        var a=-Math.PI/2+e*2*Math.PI,lg=e>0.5?1:0;
-        clip.setAttribute('d','M '+cx+' '+cy+' L '+ix+' '+iy+' A '+R+' '+R+' 0 '+lg+' 1 '+(cx+R*Math.cos(a)).toFixed(1)+' '+(cy+R*Math.sin(a)).toFixed(1)+' Z');
-      }
-      if(t<1)requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  });
-}
-
 function animateRadar(){
   document.querySelectorAll('.radar-polygon').forEach(function(poly){
     var cx=+poly.getAttribute('data-cx'),cy=+poly.getAttribute('data-cy');
@@ -597,6 +599,13 @@ function animateBars(){
     },delay);
   });
 }
+
+function initAnimations(){
+  animateRadar();
+  animateBars();
+  renderQATable(0);
+}
+window.onload = initAnimations;
 
 var QA_DATA=${JSON.stringify(data.detailedQA).replace(/<\/script>/gi,'<\\/script>')};
 var QA_PAGE_SIZE=5;

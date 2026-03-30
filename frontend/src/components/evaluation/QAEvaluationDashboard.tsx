@@ -1,6 +1,7 @@
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  Treemap,
 } from 'recharts';
 import {
   Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
@@ -22,29 +23,52 @@ const INTENT_KR: Record<string, string> = {
   comparison: '비교형',
   list:       '열거형',
   // 구형 8종 (하위 호환)
-  factoid:    '사실형',
-  numeric:    '수치형',
-  procedure:  '절차형',
-  why:        '원인형',
-  definition: '정의형',
-  boolean:    '확인형',
+  factoid:      '사실형',
+  numeric:      '수치형',
+  procedure:    '절차형',
+  why:          '원인형',
+  definition:   '정의형',
+  boolean:      '확인형',
+  summary:      '요약형',
+  confirmation: '확인형',
 };
 
 const INTENT_COLORS: Record<string, string> = {
-  // 신규 6종
-  fact:       '#3b82f6',
-  purpose:    '#d946ef',
-  how:        '#22c55e',
-  condition:  '#f59e0b',
-  comparison: '#6366f1',
-  list:       '#06b6d4',
+  // 신규 6종 — 쭄도를 낙춰 세련되게
+  fact:       '#3b7dd8',   // 조용한 블루
+  purpose:    '#a855b5',   // 춨서멈 퍼플
+  how:        '#16a35a',   // 폰 에메랄드
+  condition:  '#d97706',   // 헤이저드 오렌지
+  comparison: '#4f46e5',   // 인디고
+  list:       '#0891b2',   // 다크 시안
   // 구형 8종 (하위 호환)
-  factoid:    '#3b82f6',
-  numeric:    '#eab308',
-  procedure:  '#6366f1',
-  why:        '#d946ef',
-  definition: '#0ea5e9',
-  boolean:    '#c026d3',
+  factoid:      '#3b7dd8',
+  numeric:      '#ca8a04',
+  procedure:    '#4f46e5',
+  why:          '#a855b5',
+  definition:   '#0284c7',
+  boolean:      '#9333ea',
+  summary:      '#0891b2',
+  confirmation: '#9333ea',
+};
+
+// ─── Intent 설명 텍스트 ──────────────────────────────────────────────────────
+const INTENT_DESCRIPTIONS: Record<string, string> = {
+  fact:       '명확한 사실 정보를 확인하는 질문',
+  purpose:    '원인, 배경, 이유를 탐색하는 질문',
+  how:        '구체적 방법이나 절차를 묻는 질문',
+  condition:  '조건·상황별 결과를 확인하는 질문',
+  comparison: '두 대상 이상을 비교하는 질문',
+  list:       '여러 항목을 나열·열거하는 질문',
+  // 구형 하위 호환
+  factoid:      '명확한 사실 정보를 확인하는 질문',
+  numeric:      '수치나 통계 데이터를 묻는 질문',
+  procedure:    '단계적 절차나 방법을 묻는 질문',
+  why:          '원인과 이유를 탐색하는 질문',
+  definition:   '개념이나 용어의 정의를 묻는 질문',
+  boolean:      '참/거짓 여부를 확인하는 질문',
+  summary:      '내용을 요약하여 전달하는 질문',
+  confirmation: '참/거짓 여부를 확인하는 질문',
 };
 
 // ─── 상태 로직 ────────────────────────────────────────────────────────────────
@@ -291,14 +315,24 @@ const TooltipCard = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-// ─── 커스텀 툴팁 (PieChart) ───────────────────────────────────────────────────
-const IntentTooltip = ({ active, payload }: any) => {
+// ─── 커스텀 툴팁 (Treemap hover) ────────────────────────────────────────────
+const IntentTreemapTooltip = ({ active, payload }: any) => {
   if (active && payload?.length) {
     const d = payload[0].payload;
+    const total = d.root?.value ?? d.value;
+    const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+    const desc = INTENT_DESCRIPTIONS[d.name] ?? '';
     return (
       <TooltipCard>
-        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{d.krLabel} <span className="text-slate-400 dark:text-slate-500 font-normal">({d.label})</span></p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">수량: <span className="font-bold text-slate-700 dark:text-slate-200">{d.value}</span></p>
+        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+          {d.krLabel ?? d.name}
+          <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">({d.name})</span>
+        </p>
+        {desc && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{desc}</p>}
+        <div className="flex items-center gap-3 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-white/10">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">수량: <span className="font-bold text-slate-700 dark:text-slate-200">{d.value}개</span></span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">비중: <span className="font-bold text-indigo-600 dark:text-indigo-400">{pct}%</span></span>
+        </div>
       </TooltipCard>
     );
   }
@@ -341,6 +375,136 @@ function ChartInfoTooltip({ title, items }: {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Intent Treemap 차트 ────────────────────────────────────────────────────
+function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; value: number }> }) {
+  const [hoveredName, setHoveredName] = useState<string | null>(null);
+  const total = data.reduce((s, d) => s + d.value, 0);
+
+  // recharts Treemap 데이터
+  const treemapData = [{
+    name: 'root',
+    children: data.map(d => ({
+      name:    d.name,
+      krLabel: d.krLabel,
+      value:   d.value,
+      fill:    INTENT_COLORS[d.name] ?? '#94a3b8',
+      root:    { value: total },
+    })),
+  }];
+
+  const CustomCell = (props: any) => {
+    const { x, y, width, height, name, krLabel, value, fill, depth } = props;
+    if (depth === 0 || !name || name === 'root') return null;
+
+    const isHovered = hoveredName === name;
+    const pct       = total > 0 ? Math.round((value / total) * 100) : 0;
+    const area      = width * height;
+
+    // ── 면적 기반 5단계 티어 ──────────────────────────────────────────
+    // tier1: 초소형 (≤1500px²)  tier2: 소형  tier3: 중형  tier4: 대형  tier5: 최대
+    const tier = area > 12000 ? 5 : area > 5000 ? 4 : area > 2200 ? 3 : area > 900 ? 2 : 1;
+
+    const showPct   = width > 22 && height > 16;   // 더 좁아도 % 표시
+    const showLabel = tier >= 3;                    // tier3 이상에서만 한글 레이블
+
+    const pctSize   = [0, 8, 10, 13, 16, 18][tier];   // tier별 % 폰트 크기
+    const lblSize   = [0, 0,  0,  9, 11, 12][tier];   // tier별 레이블 폰트 크기
+    const sw        = tier <= 2 ? 2 : 3;               // strokeWidth - 작은 셀은 얇게
+
+    const font = "'Inter', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    const textShadow = '0 1px 3px rgba(0,0,0,0.45), 0 0 1px rgba(0,0,0,0.3)';
+
+    return (
+      <g
+        onMouseEnter={() => setHoveredName(name)}
+        onMouseLeave={() => setHoveredName(null)}
+        className="cursor-pointer"
+      >
+        <rect
+          x={x + 1.5} y={y + 1.5}
+          width={Math.max(0, width - 3)}
+          height={Math.max(0, height - 3)}
+          fill={fill}
+          rx={8} ry={8}
+          style={{ 
+            transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+            filter: isHovered
+              ? 'brightness(1.12) saturate(1.15) drop-shadow(0 6px 12px rgba(0,0,0,0.18))'
+              : 'brightness(1.0)',
+            stroke: isHovered ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)',
+            strokeWidth: isHovered ? 2 : 1
+          }}
+        />
+
+        {showPct && (
+          <text
+            x={x + width / 2}
+            y={y + (showLabel ? height / 2 - (pctSize * 0.7) : height / 2 + (pctSize * 0.4))}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#ffffff"
+            fontSize={pctSize}
+            fontWeight={800}
+            fontFamily={font}
+            paintOrder="stroke"
+            stroke="rgba(0,0,0,0.25)"
+            strokeWidth={sw}
+            strokeLinejoin="round"
+            className="pointer-events-none select-none"
+            style={{ filter: `drop-shadow(${textShadow})` }}
+          >
+            {pct}%
+          </text>
+        )}
+
+        {showLabel && (
+          <text
+            x={x + width / 2}
+            y={y + height / 2 + (showPct ? pctSize * 0.85 : lblSize * 0.5)}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="rgba(255,255,255,0.92)"
+            fontSize={lblSize}
+            fontWeight={700}
+            fontFamily={font}
+            paintOrder="stroke"
+            stroke="rgba(0,0,0,0.2)"
+            strokeWidth={sw - 0.5}
+            strokeLinejoin="round"
+            className="pointer-events-none select-none"
+          >
+            {krLabel ?? name}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  if (data.length === 0) {
+    return <div className="flex-1 flex items-center justify-center text-xs text-slate-400">데이터 없음</div>;
+  }
+
+  return (
+    <div
+      className="flex-1 min-h-[240px] mt-1 animate-in fade-in zoom-in-95 duration-500"
+      style={{ animationFillMode: 'both' }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <Treemap
+          data={treemapData}
+          dataKey="value"
+          aspectRatio={4 / 3}
+          stroke="transparent"
+          content={<CustomCell />}
+          isAnimationActive={false}
+        >
+          <Tooltip content={<IntentTreemapTooltip />} isAnimationActive={false} />
+        </Treemap>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -1013,9 +1177,14 @@ export function QAEvaluationDashboard({
               <span>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{getGenerationModel()}</span></span>
             </div>
             {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px]">
+              <div 
+                title={activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}
+                className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px]"
+              >
                 <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>Dataset: <span className="font-semibold truncate">{activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}</span></span>
+                <span className="truncate">
+                  Dataset: <span className="font-semibold">{activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}</span>
+                </span>
               </div>
             )}
             <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm">
@@ -1112,12 +1281,12 @@ export function QAEvaluationDashboard({
       </div>
 
       <div 
-        className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500"
-        style={{ animationDelay: '300ms', animationFillMode: 'both' }}
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-700"
+        style={{ animationDelay: '200ms', animationFillMode: 'both' }}
       >
-        {/* Intent Distribution */}
+        {/* Intent Distribution — Treemap */}
         <div className="bg-white dark:bg-white/5 p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col transition-all duration-300 hover:shadow-md dark:hover:shadow-white/5">
-          <div className="mb-2 flex items-start justify-between">
+          <div className="mb-3 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-cyan-500" /> 의도 분포
@@ -1125,41 +1294,15 @@ export function QAEvaluationDashboard({
               <p className="text-xs text-slate-500 dark:text-slate-400">질문 의도 분포</p>
             </div>
             <ChartInfoTooltip
-              title="의도 분포"
+              title="질문 의도 분포"
               items={[
                 { text: 'QA 질문을 의도별로 분류한 분포입니다.' },
                 { label: '6종', text: '사실·원인·방법·조건·비교·열거' },
-                { label: '기준', text: '분포가 고를수록 다양한 질문 유형을 포괄합니다.' },
+                { label: '기준', text: '면적이 클수록 해당 의도의 비중이 높습니다.' },
               ]}
             />
           </div>
-          {intentDistribution.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">데이터 없음</div>
-          ) : (
-            <>
-              <div className="flex-1 min-h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={intentDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"
-                      isAnimationActive={true} animationBegin={0} animationDuration={900} animationEasing="ease-out">
-                      {intentDistribution.map((entry, i) => (
-                        <Cell key={i} fill={INTENT_COLORS[entry.name] ?? '#94a3b8'} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<IntentTooltip />} isAnimationActive={false} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="grid grid-cols-4 gap-1 mt-2">
-                {intentDistribution.map((e) => (
-                  <div key={e.name} className="flex items-center gap-1 text-[10px] font-medium text-slate-600 dark:text-slate-300 px-1 py-0.5 rounded cursor-default">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: INTENT_COLORS[e.name] ?? '#94a3b8' }} />
-                    <span className="truncate">{e.krLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          <IntentTreemap data={intentDistribution} />
         </div>
 
         {/* Radar: Dataset Stats */}
