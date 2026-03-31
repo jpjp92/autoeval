@@ -123,6 +123,9 @@ async def process_and_ingest(
         doc_id = str(uuid4())
         ingested_at = datetime.utcnow().isoformat()
 
+        # doc_chunks FK(fk_doc_chunks_metadata) 제약 충족을 위해 청킹 전 최소 row 선점
+        await upsert_doc_metadata(document_id=doc_id, filename=filename)
+
         repeated_headers = detect_repeated_headers(pages)
         if repeated_headers:
             logger.info(f"[{filename}] Repeated headers: {list(repeated_headers)[:5]}")

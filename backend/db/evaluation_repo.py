@@ -27,6 +27,8 @@ async def save_evaluation_to_supabase(
         return None
 
     try:
+        raw_gen_id = metadata.get("generation_id")
+        generation_id = raw_gen_id if raw_gen_id and raw_gen_id.strip() else None
         data = {
             "job_id":           job_id,
             "metadata":         metadata,
@@ -36,6 +38,7 @@ async def save_evaluation_to_supabase(
             "final_score":      final_score,
             "final_grade":      final_grade,
             "pipeline_results": pipeline_results,
+            "generation_id":    generation_id,
             "created_at":       datetime.utcnow().isoformat(),
         }
         response = supabase.table("qa_eval_results").insert(data).execute()

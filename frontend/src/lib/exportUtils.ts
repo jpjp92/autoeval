@@ -27,6 +27,7 @@ const INTENT_KR: Record<string, string> = {
 const FAILURE_KR: Record<string, string> = {
   hallucination:      '환각오류',
   faithfulness_error: '근거오류',
+  poor_context:       '문맥부족',
   retrieval_miss:     '검색오류',
   ambiguous_question: '질문모호',
   bad_chunk:          '불량청크',
@@ -427,6 +428,7 @@ function buildHTMLContent(data: EvaluationData): string {
         .status-fail { display: inline-block; padding: 3px 10px; background: #fee2e2; color: #991b1b; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; }
         .failure-hallucination      { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fecaca; background: #fff1f2; color: #be123c; }
         .failure-faithfulness_error { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; }
+        .failure-poor_context       { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #bae6fd; background: #f0f9ff; color: #0369a1; }
         .failure-retrieval_miss     { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; }
         .failure-ambiguous_question { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #fef08a; background: #fefce8; color: #854d0e; }
         .failure-bad_chunk          { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }
@@ -607,7 +609,7 @@ var qaSortDir='asc';
 var qaSortedData=QA_DATA.slice().sort(function(a,b){return (a.id||0)-(b.id||0);});
 var INTENT_KR_JS={fact:'사실형',purpose:'원인형',how:'방법형',condition:'조건형',comparison:'비교형',list:'열거형',factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'원인형',definition:'정의형',boolean:'확인형'};
 var INTENT_COLORS_JS={fact:'#3b82f6',purpose:'#d946ef',how:'#22c55e',condition:'#f59e0b',comparison:'#6366f1',list:'#06b6d4',factoid:'#3b82f6',numeric:'#eab308',procedure:'#6366f1',why:'#d946ef',definition:'#0ea5e9',boolean:'#c026d3'};
-var FAILURE_KR_JS={hallucination:'환각오류',faithfulness_error:'근거오류',retrieval_miss:'검색오류',ambiguous_question:'질문모호',bad_chunk:'불량청크',evaluation_error:'평가오류',low_quality:'품질미달',syntax_error:'구문오류'};
+var FAILURE_KR_JS={hallucination:'환각오류',faithfulness_error:'근거오류',poor_context:'문맥부족',retrieval_miss:'검색오류',ambiguous_question:'질문모호',bad_chunk:'불량청크',evaluation_error:'평가오류',low_quality:'품질미달',syntax_error:'구문오류'};
 var STATUS_ORDER={성공:0,보류:1,실패:2};
 
 function escHtml(s){if(!s)return'-';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -718,6 +720,7 @@ function showQADetail(idx){
   var FAILURE_CALLOUT_STYLE={
     hallucination:      {bg:'#fff1f2',bd:'#fecaca',tx:'#be123c'},
     faithfulness_error: {bg:'#fff7ed',bd:'#fed7aa',tx:'#c2410c'},
+    poor_context:       {bg:'#f0f9ff',bd:'#bae6fd',tx:'#0369a1'},
     retrieval_miss:     {bg:'#fffbeb',bd:'#fde68a',tx:'#92400e'},
     ambiguous_question: {bg:'#fefce8',bd:'#fef08a',tx:'#854d0e'},
     bad_chunk:          {bg:'#f8fafc',bd:'#e2e8f0',tx:'#475569'},

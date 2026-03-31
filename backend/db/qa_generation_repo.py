@@ -30,6 +30,7 @@ async def save_qa_generation_to_supabase(
             "stats":         stats,
             "qa_list":       qa_list,
             "source_doc":    metadata.get("source_doc", ""),
+            "document_id":   metadata.get("document_id") or None,
             "doc_chunk_ids": doc_chunk_ids,
             "created_at":    datetime.utcnow().isoformat(),
         }

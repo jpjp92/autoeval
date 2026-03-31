@@ -103,10 +103,11 @@ async def save_doc_chunks_batch(chunks: list) -> list:
                 skipped += 1
                 continue
             new_rows.append({
-                "content":    c["content"],
-                "embedding":  c["embedding"],
-                "metadata":   meta,
-                "created_at": now,
+                "content":     c["content"],
+                "embedding":   c["embedding"],
+                "metadata":    meta,
+                "document_id": document_id,
+                "created_at":  now,
             })
 
         if skipped:
