@@ -108,12 +108,15 @@ flowchart LR
 
 | 규칙 | 내용 |
 |------|------|
-| 수량 | 4~8개 유연 조정 (컨텍스트 적합성 기반) |
-| 의도 유형 선택 | 근거 있는 유형만, 동일 유형 최대 2회 |
-| 다양성 | 우선 그룹(factoid / definition / how) ≤ 50% |
-| procedure | 문서에 순서 있는 단계(1→2→3) 명시 시에만 선택 |
-| 질문 근거 | 컨텍스트에 명시된 사실/정의/절차에만 한정, 유추 금지 |
+| 수량 | 컨텍스트 밀도 기반 **2~6개** (내용 없으면 0개 허용) |
+| 의도 유형 | 6가지(fact / purpose / how / condition / comparison / list) 중 근거 있는 유형만 선택 |
+| 다양성 | fact + list 합산 ≤ 40%, condition 또는 comparison 1개 이상 권장 |
+| how (방법형) | 구체적 방법·절차 (순서 있으면 단계 포함) |
+| 질문 단일성 | 하나의 질문은 하나의 차원(What/Why/How/조건/비교)만 — 차원 혼합 금지 |
+| 답변 완전성 | 복수 항목 질문 시 컨텍스트에 명시된 모든 항목 빠짐없이 서술 |
+| 질문 근거 | 컨텍스트에 명시된 사실/정의/절차에만 한정 (purpose는 효과로부터 유추 가능) |
 | 답변 스타일 | 메타 표현 시작 금지 ("컨텍스트에 따르면" 등) |
+| context_screening | 목차·연락처·식별자만인 컨텍스트는 즉시 빈 목록 반환 |
 
 #### STEP 4 — QA 평가 (4-Layer Framework)
 
@@ -300,29 +303,27 @@ Supabase (autoeval 프로젝트) — 4개 테이블
 
 | 객체 | 유형 | 설명 |
 |------|------|------|
-| `doc_chunks` | 테이블 | 문서 청크 + vector(1536) + metadata JSONB |
-| `doc_metadata` | 테이블 | 문서별 domain_profile + h2_h3_master (UNIQUE document_id, Option A 논리적 연결) |
-| `qa_gen_results` | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[]) |
-| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade |
+| `doc_chunks` | 테이블 | 문서 청크 + vector(1536) + metadata JSONB + **document_id 전용 컬럼** |
+| `doc_metadata` | 테이블 | 문서별 domain_profile + h2_h3_master (document_id PK) |
+| `qa_gen_results` | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[], **document_id FK**) |
+| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade + **generation_id FK** |
 
-### 테이블 연계
+### 테이블 연계 (Option B FK — 2026-03-31 완료)
 
 ```
-doc_chunks.metadata->>'document_id'
-  ↔ doc_metadata.document_id   (논리적 연결, FK 없음 — Option A)
+doc_metadata (document_id PK)
+  ├──< doc_chunks       (document_id FK, ON DELETE SET NULL)
+  └──< qa_gen_results   (document_id FK, ON DELETE SET NULL)
+        ├──> qa_eval_results (generation_id FK, ON DELETE SET NULL)  ← 역방향
+        └──> qa_eval_results (linked_evaluation_id FK)               ← 기존 단방향
 
 doc_chunks.id
   ← qa_gen_results.doc_chunk_ids[]   (GIN 인덱스)
   ← qa_gen_results.qa_list[*].docId  (JSONB 내부)
-
-qa_gen_results.id
-  ← qa_eval_results.metadata.generation_id
-
-qa_gen_results.linked_evaluation_id
-  → qa_eval_results.id
 ```
 
-> `doc_metadata` FK 연결(Option B)은 파이프라인 안정화 후 DB 전면 재설계 시 적용 예정 (`docs/REF_DB.md` 참고)
+> 업로드 시 `doc_metadata` 최소 row 선점(document_id + filename) → FK 제약 충족.
+> `/analyze-hierarchy` 실행 시 domain_profile 등 나머지 필드 upsert.
 
 ### 최종 등급 체계
 
@@ -506,4 +507,4 @@ docker compose up -d --build
 
 ---
 
-**Last Updated**: 2026-03-30 | **Branch**: main
+**Last Updated**: 2026-03-31 | **Branch**: main

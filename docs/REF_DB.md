@@ -1,29 +1,60 @@
 # DB Schema
 
+> **최종 업데이트**: 2026-03-31 — Option B FK 마이그레이션 완료
+
+---
+
 ## Tables
 
-### `doc_chunks` — PDF 청크 + 벡터
+### `doc_metadata` — 문서 단위 메타
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `document_id` | text UNIQUE NOT NULL | 인제스션 시 생성된 UUID (논리 키) |
+| `filename` | text NOT NULL | 원본 파일명 |
+| `domain_profile` | jsonb | `{ domain, domain_short, target_audience, key_terms, tone }` |
+| `h2_h3_master` | jsonb | `{ "H1명": { "H2명": ["H3", ...] } }` |
+| `created_at` | timestamptz | `now()` |
+| `updated_at` | timestamptz | `now()` (트리거 자동 갱신) |
+
+**인덱스**
+- `idx_doc_metadata_filename` — filename 조회
+
+**비고**
+- `/api/ingestion/upload` 시 `document_id + filename`으로 최소 row 선점 (FK 충족용)
+- `/api/ingestion/analyze-hierarchy` 시 `domain_profile`, `h2_h3_master` upsert
+- ON CONFLICT (document_id) DO UPDATE 방식
+
+---
+
+### `doc_chunks` — PDF/DOCX 청크 + 벡터
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | `id` | uuid PK | `gen_random_uuid()` |
 | `content` | text NOT NULL | 청크 텍스트 |
 | `metadata` | jsonb DEFAULT '{}' | 구조 메타데이터 (아래 참고) |
-| `embedding` | vector(1536) | Gemini Embedding 2 벡터 (HNSW 2000차원 제한으로 1536 설정) |
-| `created_at` | timestamptz | 기본값 `now()` |
+| `embedding` | vector(1536) | Gemini Embedding 2 벡터 |
+| `created_at` | timestamptz | `now()` |
+| `document_id` | text FK | → `doc_metadata.document_id` (ON DELETE SET NULL) |
 
 **metadata JSONB 키**
 
 | 키 | 설명 |
 |----|------|
-| `doc_name` | 원본 파일명 |
+| `filename` | 원본 파일명 |
+| `document_id` | 인제스션 UUID (전용 컬럼과 동일 값 — 하위 호환용 중복 저장) |
 | `page` | 페이지 번호 |
 | `chunk_type` | `body` \| `heading` \| `table` \| `list` \| `colophon` |
 | `section_path` | 계층 경로 (`"섹션 > 소섹션"`) |
-| `keywords` | 추출 키워드 목록 |
 | `content_hash` | SHA-1 중복 제거용 |
+| `chunk_index` | 청크 순서 인덱스 |
+| `total_chunks` | 해당 문서 전체 청크 수 |
+| `chunking_method` | `llm` \| `rule` |
 | `ingested_at` | 수집 ISO 타임스탬프 |
-| `hierarchy_h1` | H1 대분류 (태깅 후 업데이트) |
+| `embedding_model` | 임베딩 모델명 |
+| `hierarchy_h1` | H1 대분류 (Pass3 태깅 후 업데이트) |
 | `hierarchy_h2` | H2 중분류 |
 | `hierarchy_h3` | H3 소분류 |
 
@@ -31,6 +62,10 @@
 - `idx_doc_chunks_hnsw` — HNSW 벡터 인덱스 (cosine ops)
 - `idx_doc_chunks_created_at` — 생성일 DESC
 - `idx_doc_chunks_metadata` — JSONB GIN 인덱스
+- `idx_doc_chunks_document_id` — document_id 전용 컬럼 인덱스
+
+**FK 제약**
+- `fk_doc_chunks_metadata` — `document_id` → `doc_metadata.document_id` ON DELETE SET NULL
 
 ---
 
@@ -42,11 +77,14 @@
 | `job_id` | text UNIQUE | `gen_YYYYMMDD_HHMMSS_μs` |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
+| `source_doc` | text | 파일명 |
+| `doc_chunk_ids` | text[] | 생성에 사용된 청크 UUID 배열 |
 | `metadata` | jsonb | 생성 설정 정보 |
 | `hierarchy` | jsonb | H1/H2/H3 필터 정보 |
 | `stats` | jsonb | 토큰/비용 통계 |
 | `qa_list` | jsonb | 생성된 QA 배열 |
-| `linked_evaluation_id` | uuid FK | `qa_eval_results.id` 연결 |
+| `linked_evaluation_id` | uuid FK | → `qa_eval_results.id` |
+| `document_id` | text FK | → `doc_metadata.document_id` (ON DELETE SET NULL) |
 
 **metadata JSONB**
 ```json
@@ -54,18 +92,8 @@
   "generation_model": "gemini-3.1-flash",
   "lang": "ko",
   "prompt_version": "v1",
-  "source_doc": "파일명.pdf"
-}
-```
-
-**stats JSONB**
-```json
-{
-  "total_qa": 8,
-  "total_documents": 1,
-  "total_tokens_input": 2450,
-  "total_tokens_output": 980,
-  "estimated_cost": 0.0184
+  "source_doc": "파일명.pdf",
+  "document_id": "uuid"
 }
 ```
 
@@ -74,14 +102,11 @@
 [
   {
     "docId": "uuid",
-    "hierarchy": ["H1명", "H2명", "H3명"],
+    "hierarchy": ["H1명", "H2명", null],
     "text": "청크 원문",
     "model": "gemini-3.1-flash",
-    "provider": "google",
-    "input_tokens": 1234,
-    "output_tokens": 567,
     "qa_list": [
-      { "q": "질문", "a": "답변", "intent": "factual", "answerable": true }
+      { "q": "질문", "a": "답변", "intent": "fact", "answerable": true }
     ]
   }
 ]
@@ -91,6 +116,9 @@
 - `idx_qa_gen_created_at` — 생성일 DESC
 - `idx_qa_gen_linked_eval` — FK 인덱스
 - `idx_qa_gen_metadata_gin` — JSONB GIN
+
+**FK 제약**
+- `fk_qa_gen_doc` — `document_id` → `doc_metadata.document_id` ON DELETE SET NULL
 
 ---
 
@@ -110,6 +138,7 @@
 | `final_grade` | text | `A+` \| `A` \| `B+` \| `B` \| `C` \| `F` |
 | `pipeline_results` | jsonb | 레이어별 상세 결과 |
 | `interpretation` | jsonb | LLM 생성 개선 권고 |
+| `generation_id` | uuid FK | → `qa_gen_results.id` (ON DELETE SET NULL) |
 
 **제약 조건**
 - `chk_grade`: `final_grade IN ('A+','A','B+','B','C','F')`
@@ -119,9 +148,9 @@
 ```json
 {
   "syntax":  { "pass_rate": 100.0 },
-  "stats":   { "quality_score": 8.04, "diversity": {...}, "duplication_rate": {...} },
-  "rag":     { "avg_relevance": 0.85, "avg_groundedness": 0.92, "avg_clarity": 0.88, "avg_score": 0.88 },
-  "quality": { "avg_factuality": 0.90, "avg_completeness": 0.88, "avg_specificity": 0.92, "avg_conciseness": 0.88, "avg_quality": 0.90 }
+  "stats":   { "quality_score": 8.04, "diversity": {}, "duplication_rate": {} },
+  "rag":     { "avg_relevance": 0.85, "avg_groundedness": 0.92, "avg_context_relevance": 0.88, "avg_score": 0.88 },
+  "quality": { "avg_completeness": 0.90 }
 }
 ```
 
@@ -131,14 +160,106 @@
 - `idx_eval_final_score` — 점수 DESC
 - `idx_eval_metadata_gin` — JSONB GIN
 
+**FK 제약**
+- `fk_qa_eval_gen` — `generation_id` → `qa_gen_results.id` ON DELETE SET NULL
+
+---
+
+## 테이블 관계도 (현재 상태 — Option B 완료)
+
+```
+doc_metadata (document_id UNIQUE)
+  ├──< doc_chunks       (document_id FK, ON DELETE SET NULL)
+  └──< qa_gen_results   (document_id FK, ON DELETE SET NULL)
+        ├──> qa_eval_results (generation_id FK, ON DELETE SET NULL)  ← 역방향 (신규)
+        └──> qa_eval_results (linked_evaluation_id FK)               ← 기존 단방향
+
+doc_chunks.id
+  ← qa_gen_results.doc_chunk_ids[]   (GIN 인덱스)
+  ← qa_gen_results.qa_list[*].docId  (JSONB 내부)
+```
+
+**FK 현황 요약**
+
+| 제약명 | 테이블 | 컬럼 | 참조 | ON DELETE |
+|--------|--------|------|------|-----------|
+| `fk_doc_chunks_metadata` | `doc_chunks` | `document_id` | `doc_metadata.document_id` | SET NULL |
+| `fk_qa_gen_doc` | `qa_gen_results` | `document_id` | `doc_metadata.document_id` | SET NULL |
+| `fk_qa_eval_gen` | `qa_eval_results` | `generation_id` | `qa_gen_results.id` | SET NULL |
+| (기존) | `qa_gen_results` | `linked_evaluation_id` | `qa_eval_results.id` | — |
+
+> ON DELETE CASCADE 대신 SET NULL 채택 이유: 문서 삭제 시 생성/평가 이력 보존 필요.
+
 ---
 
 ## RPC Functions
 
+### `match_doc_chunks(query_embedding, match_threshold, match_count, filter)` — 벡터 유사도 검색
+
+`doc_chunks`에서 cosine 유사도 기반 K-NN 검색.
+
+### `sample_doc_chunks(p_filename, p_n, p_document_id)` — 균등 샘플링
+
+`chunk_index` 기준 stride 샘플링으로 문서 전체에서 균등하게 N개 반환.
+
+```sql
+CREATE OR REPLACE FUNCTION sample_doc_chunks(
+    p_filename    TEXT,
+    p_n           INT DEFAULT 30,
+    p_document_id TEXT DEFAULT NULL
+)
+RETURNS TABLE(
+    id          uuid,
+    content     text,
+    embedding   vector(1536),
+    metadata    jsonb,
+    created_at  timestamptz,
+    document_id text
+) AS $$
+DECLARE
+    total_count INT;
+    step_size   INT;
+    v_doc_id    TEXT;
+BEGIN
+    IF p_document_id IS NULL THEN
+        SELECT ch.document_id INTO v_doc_id
+        FROM doc_chunks ch
+        WHERE ch.metadata->>'filename' = p_filename
+        ORDER BY ch.created_at DESC
+        LIMIT 1;
+    ELSE
+        v_doc_id := p_document_id;
+    END IF;
+
+    IF v_doc_id IS NULL THEN RETURN; END IF;
+
+    SELECT COUNT(*) INTO total_count
+    FROM doc_chunks ch WHERE ch.document_id = v_doc_id;
+
+    IF total_count = 0 THEN RETURN; END IF;
+    step_size := GREATEST(total_count / p_n, 1);
+
+    RETURN QUERY
+    SELECT ch.id, ch.content, ch.embedding, ch.metadata, ch.created_at, ch.document_id
+    FROM (
+        SELECT ch2.*, ROW_NUMBER() OVER (
+            ORDER BY (ch2.metadata->>'chunk_index')::int
+        ) AS rn
+        FROM doc_chunks ch2
+        WHERE ch2.document_id = v_doc_id
+    ) ch
+    WHERE (ch.rn - 1) % step_size = 0
+    LIMIT p_n;
+END;
+$$ LANGUAGE plpgsql STABLE;
+```
+
+> `RETURNS TABLE(...)` 방식 사용 — `RETURNS SETOF doc_chunks` 대비 테이블 컬럼 변경에 안전.
+> 컬럼 추가/순서 변경 시 `DROP FUNCTION` 후 재생성 필요.
+
 ### `get_eval_qa_scores(p_eval_id uuid)` — export 최적화
 
 `pipeline_results` JSONB 전체 전송 없이 `qa_scores`만 추출 반환.
-`export-by-id` 엔드포인트에서 사용.
 
 ```sql
 CREATE OR REPLACE FUNCTION get_eval_qa_scores(p_eval_id uuid)
@@ -157,154 +278,27 @@ $$;
 
 ---
 
-## 테이블 간 연결 현황 및 설계 방향
+## 마이그레이션 이력
 
-### 현재 연결 상태
+### 2026-03-31 — Option B FK 마이그레이션 완료
 
-```
-doc_chunks
-  metadata->>'document_id'  (text, JSONB 내부) ← FK 불가
-  metadata->>'filename'     (text, JSONB 내부)
-
-qa_gen_results
-  doc_chunk_ids  text[]     ← doc_chunks 참조, FK 없음
-  metadata->>'source_doc'   ← filename 기반, FK 없음
-  linked_evaluation_id uuid FK → qa_eval_results.id  ✅
-
-qa_eval_results
-  qa_gen_results로의 역방향 FK 없음  ❌
-```
-
-**문제점 요약**
-| 연결 | 현황 | 문제 |
+| Step | 내용 | 결과 |
 |------|------|------|
-| `doc_chunks` ↔ `doc_metadata` | 없음 (JSONB 내부 text) | document 단위 조회 불가 |
-| `qa_gen_results` → `doc_chunks` | `doc_chunk_ids text[]` | FK 없음, 무결성 보장 안 됨 |
-| `qa_gen_results` → `doc_metadata` | `source_doc` filename | FK 없음 |
-| `qa_gen_results` → `qa_eval_results` | `linked_evaluation_id` FK | ✅ 존재 |
-| `qa_eval_results` → `qa_gen_results` | 없음 | 역방향 탐색 불가 |
+| 1 | `doc_chunks.document_id` 전용 컬럼 추가 + JSONB 백필 | 558/558 완료 |
+| 2-a | `doc_metadata` 미매핑 document_id 최소 row 삽입 | 14개 보완, total 17개 |
+| 2-b | `fk_doc_chunks_metadata` FK 추가 | ✅ |
+| 3-b | `qa_gen_results.document_id` 백필 (doc_chunk_ids 역추적) | 15/41 성공 |
+| 3-c | `qa_gen_results.document_id` 백필 폴백 (source_doc → doc_metadata) | 41/41 완료 |
+| 3-d | `fk_qa_gen_doc` FK 추가 | ✅ |
+| 4-a/b | `qa_eval_results.generation_id` 추가 + 역방향 백필 | 41/41 완료 |
+| 4-c | `fk_qa_eval_gen` FK 추가 | ✅ |
 
----
-
-### `doc_metadata` 신규 테이블 — Option A vs B
-
-`/analyze-hierarchy` 실행 시 H1/H2/H3 master + domain_profile을 함께 저장할 테이블.
-
-#### Option A — 논리적 연결 (현재 채택)
-
-```sql
-CREATE TABLE doc_metadata (
-  id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  document_id    text        NOT NULL UNIQUE,  -- doc_chunks.metadata->>'document_id'와 일치
-  filename       text        NOT NULL,
-  domain_profile jsonb,      -- { domain, domain_short, target_audience, key_terms, tone, ... }
-  h2_h3_master   jsonb,      -- { "H1명": { "H2명": ["H3", ...] } }
-  created_at     timestamptz DEFAULT now(),
-  updated_at     timestamptz DEFAULT now()
-);
-
--- document_id UNIQUE가 이미 인덱스 생성 → 별도 인덱스 불필요
-CREATE INDEX idx_doc_metadata_filename ON doc_metadata(filename);
-
--- updated_at 자동 갱신 트리거
--- (update_updated_at() 함수가 이미 존재하면 CREATE FUNCTION 부분 스킵)
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_doc_metadata_updated_at
-  BEFORE UPDATE ON doc_metadata
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- RLS (다른 테이블과 동일 정책)
-ALTER TABLE doc_metadata ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "doc_metadata_select" ON doc_metadata FOR SELECT USING (true);
-CREATE POLICY "doc_metadata_insert" ON doc_metadata FOR INSERT WITH CHECK (true);
-CREATE POLICY "doc_metadata_update" ON doc_metadata FOR UPDATE USING (true);
-```
-
-- `document_id`는 논리적 키 — DB 레벨 FK 없이 애플리케이션에서 일치 보장
-- doc_chunks 스키마 변경 없음
-- `/analyze-hierarchy` 재실행 시 `ON CONFLICT (document_id) DO UPDATE`로 upsert 처리
-- 단점: 무결성 강제 불가, 문서 삭제 시 코드에서 직접 정리 필요
-
-#### Option B — 정식 FK (장기 목표)
-
-```sql
--- 1. doc_chunks에 전용 컬럼 추가 (기존 JSONB에서 추출)
-ALTER TABLE doc_chunks ADD COLUMN document_id text;
-UPDATE doc_chunks SET document_id = metadata->>'document_id';
-CREATE INDEX idx_doc_chunks_document_id ON doc_chunks(document_id);
-
--- 2. doc_metadata FK 연결
-ALTER TABLE doc_chunks
-  ADD CONSTRAINT fk_doc_chunks_metadata
-  FOREIGN KEY (document_id)
-  REFERENCES doc_metadata(document_id)
-  ON DELETE CASCADE;
-
--- 3. qa_gen_results → doc_metadata 연결
-ALTER TABLE qa_gen_results ADD COLUMN document_id text;
-ALTER TABLE qa_gen_results
-  ADD CONSTRAINT fk_qa_gen_doc
-  FOREIGN KEY (document_id)
-  REFERENCES doc_metadata(document_id);
-
--- 4. qa_eval_results → qa_gen_results 역방향 FK 추가
-ALTER TABLE qa_eval_results ADD COLUMN generation_id uuid;
-ALTER TABLE qa_eval_results
-  ADD CONSTRAINT fk_qa_eval_gen
-  FOREIGN KEY (generation_id)
-  REFERENCES qa_gen_results(id)
-  ON DELETE SET NULL;
-```
-
-**Option A vs B 비교**
-
-| 항목 | Option A | Option B |
-|------|----------|----------|
-| 구현 난이도 | 낮음 (신규 테이블만) | 높음 (기존 테이블 마이그레이션) |
-| 기존 데이터 영향 | 없음 | doc_chunks 전체 UPDATE 필요 |
-| DB 무결성 | 애플리케이션 보장 | DB 레벨 강제 |
-| 삭제 연쇄 | 수동 처리 | CASCADE 자동 처리 |
-| 역방향 탐색 | 불편 | 자연스러운 JOIN |
-| 장기 운영 | 기술 부채 누적 | 안정적 |
-
-> **결정 (2026-03-27)**
-> - **현재**: Option A 적용 — `doc_metadata` 신규 테이블만 추가, 기존 테이블 변경 없음
-> - **장기**: 전체 플로우 안정화 이후 DB 스키마 전면 재설계 (Option B 스타일)
->   - 단순 마이그레이션이 아닌 **테이블 관계 전체 재구성** 수준
->   - 시점: 인제스션 → QA 생성 → 평가 파이프라인 end-to-end 안정화 확인 후
-
----
-
-### 장기 목표 — 전체 테이블 관계도 (Option B 재설계 시 목표)
-
-```
-doc_metadata (document_id PK)
-  │
-  ├──< doc_chunks (document_id FK, CASCADE)    -- 1:N, 청크 + 벡터
-  │
-  └──< qa_gen_results (document_id FK)         -- 1:N, 생성 이력
-        │
-        └──> qa_eval_results (generation_id FK, SET NULL)  -- 1:1, 평가 결과
-```
-
-**재설계 시 변경 범위**
-
-| 테이블 | 변경 내용 |
-|--------|-----------|
-| `doc_chunks` | `document_id text` 전용 컬럼 추출 + FK 추가 |
-| `qa_gen_results` | `document_id text FK` 추가, `doc_chunk_ids text[]` 정리 |
-| `qa_eval_results` | `generation_id uuid FK` 추가 (역방향 탐색) |
-| `doc_metadata` | Option A → B 전환 시 `document_id` PRIMARY KEY로 승격 |
-
-> 재설계 전 기존 데이터 전체 백업 필수. `doc_chunks` UPDATE 작업이 가장 큰 영향 범위.
+**백엔드 코드 변경 (신규 데이터부터 적용)**
+- `doc_chunk_repo.py` — `save_doc_chunks_batch()`: `document_id` 컬럼 직접 저장
+- `qa_generation_repo.py` — `document_id` 컬럼 저장
+- `generation_api.py` — metadata에 `document_id` 전달
+- `evaluation_repo.py` — `generation_id` 컬럼 저장 (빈 문자열 → None 안전 처리)
+- `ingestion_api.py` — 업로드 시 `upsert_doc_metadata` 선점 호출 (FK 충족)
 
 ---
 
@@ -312,6 +306,7 @@ doc_metadata (document_id PK)
 
 | 테이블 | SELECT | INSERT | UPDATE |
 |--------|--------|--------|--------|
-| `doc_chunks` | 모두 허용 | 인증 필요 | — |
+| `doc_chunks` | 모두 허용 | 모두 허용 | 모두 허용 |
+| `doc_metadata` | 모두 허용 | 모두 허용 | 모두 허용 |
 | `qa_gen_results` | 모두 허용 | 모두 허용 | 모두 허용 |
 | `qa_eval_results` | 모두 허용 | 모두 허용 | 모두 허용 |
