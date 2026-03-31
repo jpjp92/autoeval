@@ -181,7 +181,7 @@ def generate_qa(
                 system_prompt = SYSTEM_PROMPT_EN_V1
                 user_template = USER_TEMPLATE_EN_V1
 
-    hierarchy = " > ".join(item["hierarchy"]) if item.get("hierarchy") else "Uncategorized"
+    hierarchy = " > ".join(h for h in item["hierarchy"] if h) if item.get("hierarchy") else "Uncategorized"
     text = item.get("text", "")[:1500]
     user_prompt = user_template.format(hierarchy=hierarchy, text=text)
 

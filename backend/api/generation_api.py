@@ -397,18 +397,25 @@ async def run_qa_generation_real(
 
         # Chunk -> Item 형식으로 변환 (skip 제외)
         skipped = 0
+        untagged_skipped = 0
         for c in chunks:
             if _should_skip(c):
                 skipped += 1
                 logger.debug(f"[{job_id}] Skipped chunk ({c.get('metadata', {}).get('chunk_type', '?')}): {c.get('content', '')[:40]!r}")
                 continue
             meta = c.get("metadata", {})
+            if not meta.get("hierarchy_h1"):
+                untagged_skipped += 1
+                logger.debug(f"[{job_id}] Skipped untagged chunk: {c.get('content', '')[:40]!r}")
+                continue
             items.append({
                 "docId": c.get("id"),
                 "hierarchy": [meta.get("hierarchy_h1"), meta.get("hierarchy_h2"), meta.get("hierarchy_h3")],
                 "text": c.get("content"),
                 "metadata": meta
             })
+        if untagged_skipped:
+            logger.warning(f"[{job_id}] Skipped {untagged_skipped} untagged chunks (hierarchy_h1=None) — re-run Pass3 tagging if unexpected")
 
         logger.info(f"[{job_id}] Vector DB found {len(items)} chunks (skipped {skipped} heading/colophon)")
     

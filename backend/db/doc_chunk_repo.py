@@ -127,18 +127,26 @@ async def save_doc_chunks_batch(chunks: list) -> list:
         return []
 
 
-async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any]) -> bool:
-    """특정 청크의 메타데이터 업데이트 — to_thread로 이벤트루프 블로킹 방지"""
+async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries: int = 2) -> bool:
+    """특정 청크의 메타데이터 업데이트 — to_thread로 이벤트루프 블로킹 방지.
+    retries: 실패 시 최대 재시도 횟수 (기본 2회, 총 3회 시도)
+    """
     if not supabase:
         return False
-    try:
-        await asyncio.to_thread(
-            lambda: supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Failed to update chunk metadata: {e}")
-        return False
+    for attempt in range(retries + 1):
+        try:
+            await asyncio.to_thread(
+                lambda: supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
+            )
+            return True
+        except Exception as e:
+            if attempt < retries:
+                wait = 0.5 * (attempt + 1)
+                logger.warning(f"update_chunk_metadata retry {attempt + 1}/{retries} (chunk={chunk_id[:8]}): {e}")
+                await asyncio.sleep(wait)
+            else:
+                logger.error(f"Failed to update chunk metadata: {e}")
+                return False
 
 
 async def search_doc_chunks(
