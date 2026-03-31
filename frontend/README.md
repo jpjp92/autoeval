@@ -23,8 +23,7 @@ frontend/
 │       │   ├── StatsCards.tsx           # 지표 카드 (accent border + glass)
 │       │   └── ActivityChart.tsx        # (Phase 8.2 이후 주석 처리) 평가 점수 추이 차트
 │       ├── standardization/
-│       │   ├── DataStandardizationPanel.tsx  # 문서 업로드 + 3단계 계층 태깅 UI
-│       │   └── HierarchyConstructionPanel.tsx # 계층 구성 전용 패널
+│       │   └── DataStandardizationPanel.tsx  # 문서 업로드 + 3단계 계층 태깅 UI
 │       ├── generation/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (L1/L2 드롭다운 + 진행상황)
 │       ├── evaluation/
@@ -35,9 +34,9 @@ frontend/
 │       │                                 # 통계 지표: '충족성(Sufficiency)' — 품질의 '완전성'과 구분
 │       │                                 # QA 목록 테이블: 행 높이 고정 h-[68px], line-clamp-2 (질문/답변)
 │       ├── agents/
-│       │   └── AgentTable.tsx           # 에이전트 목록 테이블
+│       │   └── AgentTable.tsx           # (미구현) 에이전트 목록 테이블
 │       ├── analytics/
-│       │   └── AnalyticsDashboard.tsx   # 분석 대시보드
+│       │   └── AnalyticsDashboard.tsx   # (미구현) 분석 대시보드
 │       ├── playground/
 │       │   └── ChatPlayground.tsx       # 채팅 플레이그라운드 (미구현)
 │       └── settings/

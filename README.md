@@ -120,7 +120,7 @@ flowchart LR
 | 레이어 | 모듈 | 평가 지표 | 가중치 |
 |--------|------|----------|--------|
 | **L1-A Syntax** | `syntax_validator.py` | 구조적 무결성 (필드 존재, 타입, 길이) | 5% |
-| **L1-B Statistics** | `dataset_stats.py` | 데이터셋 건전성 (다양성, 중복률, 편향도) | 5% |
+| **L1-B Statistics** | `dataset_stats.py` | 데이터셋 건전성 (다양성, 중복성, 편향성, 충족성) | 5% |
 | **L2 RAG Triad** | `rag_triad.py` | RAG 품질 (관련성, 근거성, 맥락성) | 65% |
 | **L3 Quality** | `qa_quality.py` | 답변 완전성 (Completeness - 질문 분해 기반) | 25% |
 
@@ -133,27 +133,35 @@ final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness
 
 ## QA 평가 프레임워크 상세
 
-### 1. 구문 검증 (Syntax Validation)
-- **목적**: QA 데이터셋이 API 규격 및 시스템 구조에 부합하는지 기술적으로 검증.
-- **핵심 지표**: 필수 필드(`q`, `a`, `context`, `intent`) 존재 여부, 답변 가능 여부(`answerable`), 데이터 타입 및 최소/최대 길이 준수.
+### 1-A. 구문 검증 (Syntax Validation) — L1-A
+- **목적**: QA 데이터셋이 API 규격 및 기술적 구조에 부합하는지 검증 (형식, 타입, 길이).
+- **핵심 지표**: 필수 필드(`q`, `a`, `context`) 존재 여부, 데이터 타입 및 최소/최대 길이 준수 (q: 5-500자, a: 2-2000자, context: 50-50000자).
+- **평가 범위**: 기술적 규격만 검증하며, 필드 채움 정도는 L1-B Sufficiency에서 평가.
 
-### 2. 데이터 통계 평가 (Statistics & Diversity)
+### 1-B. 데이터 통계 평가 (Statistics & Diversity) — L1-B
 - **목적**: 데이터셋의 정량적 건전성과 다양성을 통계적으로 측정.
 - **핵심 지표**:
     - **다양성(Diversity)**: 인텐트 분포의 엔트로피(Entropy) 및 어휘 다양도(TTR).
-    - **중복률(Duplication)**: 질문 간 텍스트 유사도(SequenceMatcher)가 70% 이상인 Near-duplicate 탐지.
-    - **편향도(Skewness)**: 특정 소스 문서에 대한 질문 집중도 분석.
+    - **중복성(Duplication)**: 질문 간 텍스트 유사도(SequenceMatcher)가 70% 이상인 Near-duplicate 탐지.
+    - **편향성(Skewness)**: 특정 소스 문서에 대한 질문 집중도 분석.
+    - **충족성(Sufficiency)**: 필수 메타 필드(docId, intent) + 핵심 필드(q, a, context) 전체 채움률 분석 (Syntax에서는 존재 여부만, 여기서는 완성도 평가).
 
-### 3. RAG Triad 평가 (LLM-as-a-Judge)
+### 2. RAG Triad 평가 (LLM-as-a-Judge) — L2
 - **목적**: RAG 시스템의 신뢰성과 검색 품질을 3가지 핵심 차원에서 평가.
 - **핵심 지표**:
-    - **Answer Relevance (관련성)**: 답변이 질문의 의도를 정확히 반영하는가.
+    - **Answer Relevance (관련성)**: 답변이 질문의 의도를 정확히 반영하는가 — **주제 적절성** 판단 *(질문 주제와 답변 주제가 일치하는가)*
     - **Groundedness (근거성)**: 답변의 모든 주장이 컨텍스트 내 사실에 기반하는가 (CoT 기법 적용).
     - **Context Relevance (맥락성)**: 검색된 컨텍스트가 질문에 답하기에 충분한가.
 
-### 4. 완전성 평가 (Completeness)
-- **목적**: 답변이 질문의 모든 세부 요구사항을 충실히 다루었는지 정밀 측정.
+### 3. 완전성 평가 (Completeness) — L3
+- **목적**: 답변이 질문의 모든 세부 요구사항을 충실히 다루었는지 정밀 측정 — **요구사항 커버리지** 검증 *(질문의 모든 부분을 빠짐없이 답했는가)*
 - **방법론**: **질문 분해(Decomposition)** 기법을 사용하여 복합 질문을 원자 단위 서브 질문으로 나눈 뒤, 각 요소의 답변 커버리지를 계산.
+- **Answer Relevance와의 차이**:
+  - **Relevance (관련성, L2)**: 주제 적절성만 평가 — "이 답변이 질문과 관련 있는가?"
+  - **Completeness (완전성, L3)**: 요구사항 커버리지 평가 — "이 답변이 질문의 모든 부분을 답했는가?"
+  - **예시**: Q: "서울의 인구와 면적은?" / A: "서울의 인구는 약 1,000만 명입니다."
+    - Relevance: **높음** (서울 정보로 주제 적절)
+    - Completeness: **낮음** (인구만 답했고 **면적은 누락**)
 
 #### STEP 5 — 결과 확인
 
@@ -246,10 +254,10 @@ autoeval/
 
 | 영역 | 기술 |
 |------|------|
-| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite, Lucide icons |
-| **UI Style** | Glassmorphism Light — gradient mesh 배경, backdrop-blur, accent border |
-| **Backend** | FastAPI (Python 3.12+), Uvicorn, uv |
-| **Database** | Supabase (PostgreSQL 15 + pgvector), service_role key |
+| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite, Lucide icons, React Flow, Recharts |
+| **UI Style** | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
+| **Backend** | FastAPI (Python 3.12+), Uvicorn |
+| **Database** | Supabase (PostgreSQL 17 + pgvector), service_role key |
 | **Embeddings** | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — 1536dim, HNSW 인덱스 |
 | **Prompt 구조** | XML 태그 (`<role>` `<principles>` `<intent_types>` `<constraints>` `<context>` `<task>`) |
 | **병렬 처리** | `ThreadPoolExecutor` — 모델별 worker 수 분리 |
@@ -271,6 +279,7 @@ autoeval/
 
 | 모델 | RPM | TPM | Workers |
 |------|-----|-----|---------|
+| GPT-5.1 (`gpt-5.1-2025-11-13`) | 500 | 500K | 5 |
 | GPT-5.2 (`gpt-5.2-2025-12-11`) | 500 | 500K | 5 |
 | Gemini 3 Flash (`gemini-3-flash-preview`) | 1,000 | 2M | 5 |
 | Claude Sonnet 4.6 (`claude-sonnet-4-6`) | 50 | 30K | 2 |

@@ -23,7 +23,7 @@ backend/
 │                                #   정상 플로우: /analyze-hierarchy에서 domain_profile 생성 → doc_metadata 저장 → 재사용
 ├── evaluators/                  # 4레이어 평가 로직
 │   ├── pipeline.py              # 평가 파이프라인 오케스트레이션
-│   ├── syntax_validator.py      # Layer 1-A: 구문 검증 (answerable 필드, Q/A 길이 등)
+│   ├── syntax_validator.py      # Layer 1-A: 구문 검증 (필수 필드: q, a, context / 길이 범위: q 5-500자, a 2-2000자, context 50-50000자)
 │   ├── dataset_stats.py         # Layer 1-B: 통계 분석 (인텐트 엔트로피, TTR, 유사도 기반 중복)
 │   ├── rag_triad.py             # Layer 2: RAG Triad — relevance/groundedness/context_relevance (score + reason)
 │   ├── qa_quality.py            # Layer 3: Quality Score — 질문 분해(Decomposition) 기반 완전성 & 커버리지
@@ -86,6 +86,7 @@ API 문서: `http://localhost:8000/docs`
 |--------|------|------|
 | `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 (`chunking_method`: `llm`(기본) \| `rule`) |
 | `POST` | `/analyze-hierarchy` | Pass 1+2 통합 — anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
+| `POST` | `/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개) |
 | `POST` | `/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 (완료 후 샘플 5개 반환) |
 | `GET`  | `/hierarchy-list` | DB H1/H2/H3 고유 목록 반환 (드롭다운용) |
 
