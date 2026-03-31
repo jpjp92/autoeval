@@ -59,7 +59,7 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
   }
 
   return (
-    <header className="mx-3 mt-3 mb-1 sticky top-3 z-10">
+    <header className="mx-3 mt-3 mb-1 sticky top-3 z-40">
       <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between px-6 py-3">
         <div className="flex items-center gap-2">
           {Icon && <Icon className="w-5 h-5 text-indigo-500/70 dark:text-indigo-400/80 shrink-0" />}
@@ -84,7 +84,7 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
             </button>
 
             {open && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl rounded-2xl border border-white/60 dark:border-white/10 shadow-xl shadow-slate-200/40 dark:shadow-black/40 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-80 z-50 bg-white dark:bg-slate-800 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl shadow-slate-200/40 dark:shadow-black/40 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/8">
                   <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notifications</span>
                   {notifications.length > 0 && (
