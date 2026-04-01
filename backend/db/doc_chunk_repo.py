@@ -14,7 +14,7 @@ logger = logging.getLogger("autoeval.db")
 # supabase-py sync 클라이언트는 HTTP/2 커넥션 풀을 공유하므로
 # asyncio.to_thread 동시 호출이 많아지면 스레드 경합 발생.
 # 전역 세마포어로 동시 DB 쓰기를 제한해 ConnectionTerminated / Broken pipe 방지.
-_DB_WRITE_CONCURRENCY = 4
+_DB_WRITE_CONCURRENCY = 2
 _db_write_sem: asyncio.Semaphore | None = None
 
 
@@ -141,7 +141,7 @@ async def save_doc_chunks_batch(chunks: list) -> list:
 
 
 async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries: int = 3) -> bool:
-    """특정 청크의 메타데이터 업데이트 — to_thread로 이벤트루프 블로킹 방지.
+    """특정 청크의 메타데이터 전체 교체 — to_thread로 이벤트루프 블로킹 방지.
     retries: 실패 시 최대 재시도 횟수 (기본 3회, 총 4회 시도)
 
     전역 세마포어(_write_sem)로 동시 실행 수를 제한해
@@ -149,7 +149,6 @@ async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries
     """
     if not supabase:
         return False
-    # chunk_id를 루프 외부 변수로 캡처해 lambda 클로저 오염 방지
     _id = chunk_id
     _meta = metadata
     for attempt in range(retries + 1):
@@ -169,6 +168,52 @@ async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries
                 await asyncio.sleep(wait)
             else:
                 logger.error(f"Failed to update chunk metadata: {e}")
+                return False
+
+
+async def patch_chunk_hierarchy(
+    chunk_id: str,
+    h1: Optional[str],
+    h2: Optional[str],
+    h3: Optional[str],
+    retries: int = 3,
+) -> bool:
+    """hierarchy 3개 필드만 DB side에서 jsonb merge (patch_chunk_hierarchy RPC).
+
+    메타데이터 전체를 재전송하지 않으므로 페이로드가 작고
+    Cloudflare WAF/rate-limit 문제를 방지한다.
+    전제: Supabase에 patch_chunk_hierarchy 함수가 존재해야 함.
+
+    CREATE OR REPLACE FUNCTION patch_chunk_hierarchy(
+      p_chunk_id UUID, p_h1 TEXT, p_h2 TEXT, p_h3 TEXT
+    ) RETURNS VOID AS $$
+    BEGIN
+      UPDATE doc_chunks
+      SET metadata = metadata || jsonb_build_object(
+        'hierarchy_h1', p_h1, 'hierarchy_h2', p_h2, 'hierarchy_h3', p_h3
+      )
+      WHERE id = p_chunk_id;
+    END;
+    $$ LANGUAGE plpgsql;
+    """
+    if not supabase:
+        return False
+    _id = chunk_id
+    _params = {"p_chunk_id": _id, "p_h1": h1, "p_h2": h2, "p_h3": h3}
+    for attempt in range(retries + 1):
+        try:
+            async with _write_sem():
+                await asyncio.to_thread(
+                    lambda: supabase.rpc("patch_chunk_hierarchy", _params).execute()
+                )
+            return True
+        except Exception as e:
+            if attempt < retries:
+                wait = 0.5 * (2 ** attempt)
+                logger.warning(f"patch_chunk_hierarchy retry {attempt + 1}/{retries} (chunk={chunk_id[:8]}): {e}")
+                await asyncio.sleep(wait)
+            else:
+                logger.error(f"patch_chunk_hierarchy failed: {e}")
                 return False
 
 

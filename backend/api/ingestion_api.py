@@ -38,6 +38,7 @@ from config.supabase_client import (
     is_supabase_available,
     save_doc_chunks_batch,
     update_chunk_metadata,
+    patch_chunk_hierarchy,
 )
 from ingestion.parsers import (
     build_context_prefix,
@@ -820,13 +821,15 @@ Return ONLY a JSON array — no explanation:
                         if idx is None or not isinstance(idx, int) or idx >= len(batch):
                             continue
                         target = batch[idx]
-                        meta = {
-                            **target.get("metadata", {}),
-                            "hierarchy_h1": h.get("h1"),
-                            "hierarchy_h2": h.get("h2"),
-                            "hierarchy_h3": h.get("h3"),
-                        }
-                        update_tasks.append(update_chunk_metadata(target["id"], meta))
+                        # patch_chunk_hierarchy RPC: 3개 필드만 DB side jsonb merge.
+                        # 전체 metadata 재전송을 피해 페이로드를 줄이고
+                        # Cloudflare WAF/rate-limit 오류(400) 방지.
+                        update_tasks.append(patch_chunk_hierarchy(
+                            target["id"],
+                            h.get("h1"),
+                            h.get("h2"),
+                            h.get("h3"),
+                        ))
                         matched += 1
                         if len(samples_collected) < 5 and h.get("h1") != "__admin__":
                             samples_collected.append({
