@@ -86,7 +86,6 @@ class HierarchyAnalysisResponse(BaseModel):
     h1_candidates: List[str]
     h2_h3_master: Dict[str, Any]
     domain_profile: Optional[Dict[str, Any]] = None
-    anchor_ids: Optional[List[str]] = None
     document_id: Optional[str] = None
 
 
@@ -538,7 +537,6 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     if len(filtered) < 10:
         filtered = anchor_chunks  # 필터 후 너무 적으면 원본 사용
     anchor_chunks = filtered[:30]
-    anchor_ids = [c["id"] for c in anchor_chunks]
 
     # 동적 절단: 총 20,000자 한도 내에서 청크당 균등 배분
     per_chunk_limit = max(400, 20000 // len(anchor_chunks))
@@ -643,7 +641,6 @@ Return a JSON object with this exact structure (all string values in Korean):
             h1_candidates=h1_candidates,
             h2_h3_master=h2_h3_master,
             domain_profile=domain_profile,
-            anchor_ids=anchor_ids,
             document_id=document_id,
         )
     except Exception as e:
@@ -720,7 +717,7 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
 
         batch_size = 5
         batches = [all_chunks[i: i + batch_size] for i in range(0, len(all_chunks), batch_size)]
-        semaphore = asyncio.Semaphore(10)
+        semaphore = asyncio.Semaphore(5)  # LLM 동시 배치 수 제한 (DB 커넥션 과부하 방지)
         completed = 0
         samples_collected: list = []
 
@@ -838,8 +835,8 @@ Return ONLY a JSON array — no explanation:
                                 "hierarchy": h,
                             })
 
-                    if update_tasks:
-                        await asyncio.gather(*update_tasks)
+                    # 세마포어(_write_sem)가 전역 동시성을 제어하므로 여기선 gather로 실행
+                    await asyncio.gather(*update_tasks)
 
                     completed += 1
                     logger.info(f"Batch {batch_idx + 1}/{len(batches)} tagged ({matched} updated)")

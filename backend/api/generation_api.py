@@ -123,10 +123,7 @@ class GenerateRequest(BaseModel):
     hierarchy_h3: Optional[str] = None
     retrieval_query: Optional[str] = None
 
-    # anchor_ids: analyze-hierarchy에서 고정된 균등 샘플 청크 ID 목록
-    anchor_ids: Optional[list] = None
-
-    # document_id: 업로드 버전 식별자 — fallback 경로에서 버전 격리용
+    # document_id: 업로드 버전 식별자 — 버전 격리 및 청크 조회용
     document_id: Optional[str] = None
 
 class GenerationStatus(BaseModel):
@@ -291,7 +288,6 @@ async def run_qa_generation_real(
     h3 = config.get("hierarchy_h3")
     r_query = config.get("retrieval_query")
     doc_filename = config.get("filename")
-    anchor_ids = config.get("anchor_ids") or []
     document_id = config.get("document_id")
 
     logger.info(f"[{job_id}] Config: filename={doc_filename!r}, h1={h1!r}, h2={h2!r}, h3={h3!r}, document_id={document_id!r}")
@@ -331,7 +327,7 @@ async def run_qa_generation_real(
             query_vector = (v_np / v_norm).tolist() if v_norm > 0 else query_vector_values
 
         if query_vector is not None:
-            # r_query 있음 → 실제 semantic search
+            # r_query 있음 → semantic search
             chunks = await search_doc_chunks(
                 query_embedding=query_vector,
                 match_threshold=0.3,
@@ -339,23 +335,24 @@ async def run_qa_generation_real(
                 filter=filter_dict
             )
         else:
-            # r_query 없음 → anchor_ids 우선, 없으면 metadata 필터 조회
-            if anchor_ids:
-                chunks = await get_doc_chunks_by_ids(anchor_ids)
-                logger.info(f"[{job_id}] Chunks fetched via anchor_ids: {len(chunks)}")
-                # coverage gap: anchor_ids < samples 이면 같은 h1/h2 범위에서 보충
-                if len(chunks) < samples:
-                    extra = await get_doc_chunks_by_filter(
-                        hierarchy_h1=h1,
-                        hierarchy_h2=h2,
-                        hierarchy_h3=h3,
-                        filename=doc_filename,
-                        document_id=document_id,
-                        limit=samples - len(chunks),
-                        exclude_ids=[c["id"] for c in chunks],
-                    )
-                    chunks.extend(extra)
-                    logger.info(f"[{job_id}] Coverage gap filled: +{len(extra)}, total {len(chunks)}")
+            # r_query 없음 → document_id 기반 균등 샘플링 우선, 없으면 metadata 필터 조회
+            if document_id and doc_filename:
+                from db.doc_chunk_repo import get_doc_chunks_sampled
+                chunks = await get_doc_chunks_sampled(
+                    filename=doc_filename,
+                    n=max(samples * 3, 30),
+                    document_id=document_id,
+                )
+                logger.info(f"[{job_id}] Chunks fetched via sample_doc_chunks(document_id): {len(chunks)}")
+                # h1/h2 필터가 있으면 샘플링 결과를 후처리 필터링
+                if chunks and (h1 or h2 or h3):
+                    chunks = [
+                        c for c in chunks
+                        if (not h1 or c.get("metadata", {}).get("hierarchy_h1") == h1)
+                        and (not h2 or c.get("metadata", {}).get("hierarchy_h2") == h2)
+                        and (not h3 or c.get("metadata", {}).get("hierarchy_h3") == h3)
+                    ]
+                    logger.info(f"[{job_id}] After hierarchy filter: {len(chunks)}")
             else:
                 chunks = await get_doc_chunks_by_filter(
                     hierarchy_h1=h1,
@@ -372,12 +369,12 @@ async def run_qa_generation_real(
                 )
         logger.info(f"[{job_id}] Raw chunks from DB: {len(chunks)} (before skip filter)")
 
-        # anchor_ids 사용 시 태깅 완료율 검증 (30% 초과 미태깅이면 에러)
-        if anchor_ids and chunks:
+        # 태깅 완료율 검증 (30% 초과 미태깅이면 에러)
+        if chunks:
             untagged = [c for c in chunks if not c.get("metadata", {}).get("hierarchy_h1")]
             if len(untagged) > len(chunks) * 0.3:
                 raise ValueError(
-                    f"anchor_ids 청크의 hierarchy 태깅이 완료되지 않았습니다 "
+                    f"hierarchy 태깅이 완료되지 않았습니다 "
                     f"({len(untagged)}/{len(chunks)}개 미태깅). Pass3 태깅을 다시 실행해 주세요."
                 )
 
@@ -485,7 +482,6 @@ async def run_qa_generation_real(
         domain_profile = await analyze_domain(
             hierarchy_h1=h1, hierarchy_h2=h2, hierarchy_h3=h3,
             model=model,
-            anchor_ids=anchor_ids or None,
         )
         logger.info(
             f"[{job_id}] Domain profile (LLM): '{domain_profile.get('domain', '?')}' | "

@@ -42,6 +42,7 @@ interface FormValues {
 interface QAGenerationPanelProps {
   currentFilename?: string | null;
   taggingVersion?: number;
+  taggingTreeData?: { h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null;
   onGenerationComplete?: () => void;
   onEvalComplete?: (evalJobId: string) => void;
   onGoToEvaluation?: () => void;
@@ -157,7 +158,7 @@ const intentColor = (intent: string) => {
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export function QAGenerationPanel({ currentFilename, taggingVersion, onGenerationComplete, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
+export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTreeData, onGenerationComplete, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
 
   const [formValues, setFormValues] = useState<FormValues>({
     model: "gemini-3.1-flash", lang: "ko", samples: 2,
@@ -196,14 +197,30 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onGeneratio
   const [isLoadingHierarchy, setIsLoadingHierarchy] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded]   = useState(false);
 
-  useEffect(() => { loadHierarchyList(); }, [currentFilename, taggingVersion]);
+  // taggingTreeData가 있으면 API 호출 없이 직접 반영 (중복 호출 방지)
+  useEffect(() => {
+    if (taggingTreeData && taggingVersion) {
+      setSelectedH1(""); setSelectedH2(""); setSelectedH3("");
+      setHierarchyH1List(taggingTreeData.h1_list);
+      setHierarchyH2Map(taggingTreeData.h2_by_h1);
+      setHierarchyH3Map(taggingTreeData.h3_by_h1_h2 ?? {});
+      setHierarchyLoaded(true);
+    }
+  }, [taggingVersion, taggingTreeData]);
 
-  const loadHierarchyList = async () => {
-    setSelectedH1(""); setSelectedH2(""); setSelectedH3("");
+  // 파일 변경 시 (taggingTreeData 없는 경우) API 직접 조회
+  useEffect(() => {
     if (!currentFilename) {
       setHierarchyH1List([]); setHierarchyH2Map({}); setHierarchyH3Map({});
       setHierarchyLoaded(false); return;
     }
+    if (taggingTreeData) return; // taggingTreeData로 이미 처리됨
+    loadHierarchyList();
+  }, [currentFilename]);
+
+  const loadHierarchyList = async () => {
+    if (!currentFilename) return;
+    setSelectedH1(""); setSelectedH2(""); setSelectedH3("");
     setIsLoadingHierarchy(true);
     const result = await getHierarchyList(currentFilename);
     if (result.success) {
@@ -336,11 +353,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onGeneratio
     setQaPreview([]);
     setQaPreviewTotal(0);
     try {
-      // localStorage에서 anchor_ids, document_id 조회
-      const savedAnchor = currentFilename
-        ? localStorage.getItem(`anchor_ids:${currentFilename}`)
-        : null;
-      const anchorIds: string[] = savedAnchor ? JSON.parse(savedAnchor) : [];
+      // localStorage에서 document_id 조회
       const documentId = currentFilename
         ? localStorage.getItem(`document_id:${currentFilename}`) ?? undefined
         : undefined;
@@ -352,7 +365,6 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, onGeneratio
         ...(selectedH1 && { hierarchy_h1: selectedH1 }),
         ...(selectedH2 && { hierarchy_h2: selectedH2 }),
         ...(selectedH3 && { hierarchy_h3: selectedH3 }),
-        ...(anchorIds.length > 0 && { anchor_ids: anchorIds }),
         ...(documentId && { document_id: documentId }),
       }) as any;
       if (!response.success || !response.job_id) throw new Error(response.error || "Failed to start generation");

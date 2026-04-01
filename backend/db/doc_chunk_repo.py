@@ -11,6 +11,19 @@ from .base_client import supabase
 
 logger = logging.getLogger("autoeval.db")
 
+# supabase-py sync 클라이언트는 HTTP/2 커넥션 풀을 공유하므로
+# asyncio.to_thread 동시 호출이 많아지면 스레드 경합 발생.
+# 전역 세마포어로 동시 DB 쓰기를 제한해 ConnectionTerminated / Broken pipe 방지.
+_DB_WRITE_CONCURRENCY = 4
+_db_write_sem: asyncio.Semaphore | None = None
+
+
+def _write_sem() -> asyncio.Semaphore:
+    global _db_write_sem
+    if _db_write_sem is None:
+        _db_write_sem = asyncio.Semaphore(_DB_WRITE_CONCURRENCY)
+    return _db_write_sem
+
 
 async def save_doc_chunk(
     content: str,
@@ -127,21 +140,31 @@ async def save_doc_chunks_batch(chunks: list) -> list:
         return []
 
 
-async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries: int = 2) -> bool:
+async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries: int = 3) -> bool:
     """특정 청크의 메타데이터 업데이트 — to_thread로 이벤트루프 블로킹 방지.
-    retries: 실패 시 최대 재시도 횟수 (기본 2회, 총 3회 시도)
+    retries: 실패 시 최대 재시도 횟수 (기본 3회, 총 4회 시도)
+
+    전역 세마포어(_write_sem)로 동시 실행 수를 제한해
+    supabase-py HTTP/2 커넥션 풀 경합(Broken pipe, ConnectionTerminated) 방지.
     """
     if not supabase:
         return False
+    # chunk_id를 루프 외부 변수로 캡처해 lambda 클로저 오염 방지
+    _id = chunk_id
+    _meta = metadata
     for attempt in range(retries + 1):
         try:
-            await asyncio.to_thread(
-                lambda: supabase.table("doc_chunks").update({"metadata": metadata}).eq("id", chunk_id).execute()
-            )
+            async with _write_sem():
+                await asyncio.to_thread(
+                    lambda: supabase.table("doc_chunks")
+                        .update({"metadata": _meta})
+                        .eq("id", _id)
+                        .execute()
+                )
             return True
         except Exception as e:
             if attempt < retries:
-                wait = 0.5 * (attempt + 1)
+                wait = 0.5 * (2 ** attempt)  # 0.5 → 1.0 → 2.0 → 4.0 초
                 logger.warning(f"update_chunk_metadata retry {attempt + 1}/{retries} (chunk={chunk_id[:8]}): {e}")
                 await asyncio.sleep(wait)
             else:

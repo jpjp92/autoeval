@@ -1303,7 +1303,7 @@ export function QAEvaluationDashboard({
     <div className="space-y-6">
       {/* Header */}
       <div 
-        className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-2 animate-in fade-in slide-in-from-top-4 duration-700 relative z-40"
+        className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-2 animate-in fade-in slide-in-from-top-4 duration-700 relative z-30"
         style={{ animationFillMode: 'both' }}
       >
         <div className="space-y-4">
@@ -1355,7 +1355,7 @@ export function QAEvaluationDashboard({
                 )}
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg shadow-slate-200/50 dark:shadow-black/50 z-[60] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 {(['xlsx', 'html', 'zip'] as const).map((fmt) => (
                   <button key={fmt} onClick={() => handleExport(fmt)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
@@ -1729,7 +1729,7 @@ function HistoryDropdown({
         <ChevronDown className={cn('w-3 h-3 transition-transform', showMenu && 'rotate-180')} />
       </button>
       {showMenu && (
-        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-20 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-[60] overflow-hidden">
           <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/60">
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">평가 히스토리 ({historyList.length})</p>
           </div>

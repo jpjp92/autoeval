@@ -9,8 +9,6 @@ export const API_BASE = '';
 export function mapErrorToMessage(error: string): string {
   if (error.includes("계층") && error.includes("청크가 없습니다"))
     return "선택한 계층(H1/H2)에 해당하는 데이터가 없습니다.\nHierarchy 태깅(Pass3)이 완료됐는지 확인해 주세요.";
-  if (error.includes("anchor_ids"))
-    return "문서가 재업로드되어 분석 정보가 만료됐습니다.\nHierarchy 분석을 다시 실행해 주세요.";
   if (error.includes("태깅이 완료되지 않았습니다"))
     return "Hierarchy 태깅(Pass3)이 완료되지 않았습니다.\nPass3을 먼저 실행해 주세요.";
   if (error.includes("Supabase") || error.includes("unavailable"))

@@ -14,8 +14,9 @@ function App() {
   const [currentFilename, setCurrentFilename] = useState<string | null>(null);
   const [lastEvalJobId, setLastEvalJobId] = useState<string | null>(null); // 세션 in-memory job용
   const [lastEvalDbId, setLastEvalDbId]   = useState<string | null>(null); // DB 히스토리 id용
-  // taggingVersion 증가 시 QAGenerationPanel에서 hierarchy 재로드
+  // taggingVersion + 완료 시점 treeData를 QAGenerationPanel에 전달
   const [taggingVersion, setTaggingVersion] = useState(0);
+  const [taggingTreeData, setTaggingTreeData] = useState<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState<'light' | 'dark'>(
     () => (localStorage.getItem('theme') as 'light' | 'dark') ?? 'dark'
@@ -98,7 +99,8 @@ function App() {
                 setCurrentFilename(filename);
                 addNotification({ title: '임베딩 완료', sub: filename, type: 'success' });
               }}
-              onTaggingComplete={() => {
+              onTaggingComplete={(treeData) => {
+                setTaggingTreeData(treeData);
                 setTaggingVersion((v: number) => v + 1);
                 addNotification({ title: '계층 태깅 완료', type: 'success' });
               }}
@@ -109,6 +111,7 @@ function App() {
             <QAGenerationPanel
               currentFilename={currentFilename}
               taggingVersion={taggingVersion}
+              taggingTreeData={taggingTreeData}
               onGenerationComplete={() => {
                 addNotification({ title: 'QA 생성 완료', type: 'success' });
               }}

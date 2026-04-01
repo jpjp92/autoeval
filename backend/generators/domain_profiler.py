@@ -130,36 +130,30 @@ async def analyze_domain(
     hierarchy_h2: Optional[str] = None,
     hierarchy_h3: Optional[str] = None,
     model: str = "gpt-5.1",
-    anchor_ids: Optional[list] = None,
 ) -> dict:
     """
     doc_chunks에서 샘플을 조회하고 LLM으로 도메인을 분석한다.
     실패 시 GENERIC_DOMAIN_PROFILE을 반환 (생성 파이프라인 중단 없음).
 
     Args:
-        hierarchy_h1/h2/h3: 현재 job의 hierarchy 필터 (anchor_ids 없을 때 사용)
+        hierarchy_h1/h2/h3: 현재 job의 hierarchy 필터
         model: 도메인 분석에 사용할 LLM
-        anchor_ids: analyze-hierarchy에서 고정된 균등 샘플 청크 ID 목록
     Returns:
         domain_profile dict
     """
-    from config.supabase_client import get_doc_chunks_by_filter, get_doc_chunks_by_ids, is_supabase_available
+    from config.supabase_client import get_doc_chunks_by_filter, is_supabase_available
 
     if not is_supabase_available():
         logger.warning("[domain_profiler] Supabase unavailable , using GENERIC fallback")
         return GENERIC_DOMAIN_PROFILE.copy()
 
     try:
-        # anchor_ids 있으면 재사용 (균등 분포 보장), 없으면 h1/h2 필터 조회
-        if anchor_ids:
-            samples = await get_doc_chunks_by_ids(anchor_ids[:10])
-        else:
-            samples = await get_doc_chunks_by_filter(
-                hierarchy_h1=hierarchy_h1,
-                hierarchy_h2=hierarchy_h2,
-                hierarchy_h3=hierarchy_h3,
-                limit=10,
-            )
+        samples = await get_doc_chunks_by_filter(
+            hierarchy_h1=hierarchy_h1,
+            hierarchy_h2=hierarchy_h2,
+            hierarchy_h3=hierarchy_h3,
+            limit=10,
+        )
 
         if not samples:
             logger.warning("[domain_profiler] No chunks found , using GENERIC fallback")

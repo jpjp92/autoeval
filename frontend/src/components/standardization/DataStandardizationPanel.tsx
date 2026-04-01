@@ -23,25 +23,20 @@ interface AnalysisResult {
   domain_analysis: string;
   h1_candidates: string[];
   h2_h3_master: Record<string, Record<string, string[]>>;
-  anchor_ids?: string[];
   document_id?: string;
 }
 
-const anchorKey = (filename: string) => `anchor_ids:${filename}`;
 const docIdKey  = (filename: string) => `document_id:${filename}`;
-const saveAnchorIds = (filename: string, ids: string[]) =>
-  localStorage.setItem(anchorKey(filename), JSON.stringify(ids));
 const saveDocumentId = (filename: string, id: string) =>
   localStorage.setItem(docIdKey(filename), id);
-const clearAnchorIds = (filename: string) => {
-  localStorage.removeItem(anchorKey(filename));
+const clearDocumentId = (filename: string) => {
   localStorage.removeItem(docIdKey(filename));
 };
 
 export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTaggingComplete }: {
   setActiveTab?: (tab: string) => void;
   onUploadComplete?: (filename: string) => void;
-  onTaggingComplete?: () => void;
+  onTaggingComplete?: (treeData: { h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> }) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -103,7 +98,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       if (res.ok) {
         setUploadMessage({ text: `"${fileName}" 업로드 및 벡터화 완료.`, type: "success" });
         setUploadedFilename(fileName);
-        clearAnchorIds(fileName); // 재업로드 시 기존 anchor_ids 무효화
+        clearDocumentId(fileName); // 재업로드 시 기존 document_id 무효화
         onUploadComplete?.(fileName);
         setFile(null);
       } else {
@@ -136,9 +131,6 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
       setH2h3Master(data.h2_h3_master);
-      if (data.anchor_ids?.length) {
-        saveAnchorIds(uploadedFilename, data.anchor_ids);
-      }
       if (data.document_id) {
         saveDocumentId(uploadedFilename, data.document_id);
       }
@@ -173,8 +165,10 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         });
         setExpandedH1(expandedH1Init);
         setExpandedH2(expandedH2Init);
+        onTaggingComplete?.(treeRes);
+      } else {
+        onTaggingComplete?.({ h1_list: [], h2_by_h1: {}, h3_by_h1_h2: {} });
       }
-      onTaggingComplete?.();
     } catch (e: any) {
       setHierarchyMessage({ text: e.message, type: "error" });
       setIsAnalyzing(false);
