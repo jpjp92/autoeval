@@ -645,6 +645,9 @@ async def run_qa_generation_real(
                     "prompt_version": prompt_version,
                     "source_doc": doc_filename or "",
                     "document_id": document_id or "",
+                    "hierarchy_h1": h1 or "",
+                    "hierarchy_h2": h2 or "",
+                    "hierarchy_h3": h3 or "",
                 },
                 stats={
                     "total_qa": total_qa,

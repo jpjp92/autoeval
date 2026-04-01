@@ -151,7 +151,7 @@ interface EvalReport {
   job_id: string;
   result_filename: string;
   timestamp: string;
-  metadata: { total_qa: number; valid_qa: number; evaluator_model: string; generation_model?: string; source_doc?: string };
+  metadata: { total_qa: number; valid_qa: number; evaluator_model: string; generation_model?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
   pipeline_results: {
     syntax?:  { total: number; valid: number; invalid: number; pass_rate: number };
     stats?:   {
@@ -179,7 +179,7 @@ interface EvalReport {
 interface HistoryItem {
   id: string;
   job_id: string;
-  metadata: { generation_model?: string; evaluator_model?: string; lang?: string; source_doc?: string };
+  metadata: { generation_model?: string; evaluator_model?: string; lang?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
   result_filename?: string;
   total_qa: number;
   final_score: number;
@@ -319,7 +319,7 @@ const RadarTooltip = ({ active, payload }: any) => {
     return (
       <TooltipCard>
         <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{d.subject}</p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">점수: <span className="font-bold text-slate-700 dark:text-slate-200">{(d.A as number)?.toFixed(1)} / 10</span></p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">점수: <span className="font-bold text-slate-700 dark:text-slate-200">{(d.A as number)?.toFixed(1)} / 10.0</span></p>
       </TooltipCard>
     );
   }
@@ -391,7 +391,7 @@ const MetricRadialGauge = ({ stat }: { stat: { subject: string; A: number } }) =
               <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded", cfg.bg, stat.subject === '다양성' && "text-sky-600 dark:text-sky-400", stat.subject === '중복성' && "text-amber-600 dark:text-amber-400", stat.subject === '편향성' && "text-indigo-600 dark:text-indigo-400", stat.subject === '충족성' && "text-emerald-600 dark:text-emerald-400")}>
                 {stat.subject}
               </span>
-              <span className="text-[10px] font-black text-slate-700 dark:text-slate-200">{stat.A.toFixed(1)} / 10</span>
+              <span className="text-[10px] font-black text-slate-700 dark:text-slate-200">{stat.A.toFixed(1)} / 10.0</span>
             </div>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{cfg.desc}</p>
             <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white/95 dark:bg-slate-800/95 border-r border-b border-slate-200 dark:border-slate-700 rotate-45 invisible sm:visible" />
@@ -1239,7 +1239,7 @@ export function QAEvaluationDashboard({
               <span>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{getGenerationModel()}</span></span>
             </div>
             {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
-              <div 
+              <div
                 title={activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}
                 className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px]"
               >
@@ -1249,6 +1249,26 @@ export function QAEvaluationDashboard({
                 </span>
               </div>
             )}
+            {(() => {
+              const h1 = activeReport?.metadata?.hierarchy_h1 || activeItem?.metadata?.hierarchy_h1 || '';
+              const h2 = activeReport?.metadata?.hierarchy_h2 || activeItem?.metadata?.hierarchy_h2 || '';
+              const h3 = activeReport?.metadata?.hierarchy_h3 || activeItem?.metadata?.hierarchy_h3 || '';
+              if (!h1 && !h2 && !h3) return null;
+              const parts = [h1, h2, h3].filter(Boolean);
+              return (
+                <div className="flex items-center gap-1 px-3 py-1 bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20 rounded-full backdrop-blur-sm text-[12px] font-medium text-indigo-600 dark:text-indigo-400 shadow-sm max-w-[360px] overflow-hidden">
+                  <LayoutGrid className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="flex items-center gap-1 truncate">
+                    {parts.map((p, i) => (
+                      <span key={i} className="flex items-center gap-1">
+                        {i > 0 && <ChevronRight className="w-3 h-3 opacity-50 flex-shrink-0" />}
+                        <span className="font-semibold truncate">{p}</span>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm">
               <Clock className="w-3.5 h-3.5" />
               <span>평가 일시: {formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
