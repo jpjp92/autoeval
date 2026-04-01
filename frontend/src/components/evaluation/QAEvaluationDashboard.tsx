@@ -140,15 +140,11 @@ interface QAPreviewItem {
   // reason — RAG
   relevance_reason?:         string;
   groundedness_reason?:      string;
-  clarity_reason?:           string;  // 구형 (명확성)
-  context_relevance_reason?: string;  // 신형 (맥락성)
+  context_relevance_reason?: string;
   // reason — Quality
-  factuality_reason?:   string;
   completeness_reason?: string;
   coverage?:            number;
   missing_aspects?:     string[];
-  specificity_reason?:  string;
-  conciseness_reason?:  string;
 }
 
 interface EvalReport {
@@ -165,8 +161,8 @@ interface EvalReport {
       skewness:         { score: number };
       data_sufficiency: { score: number };
     };
-    rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_clarity?: number; avg_context_relevance?: number; avg_score: number } };
-    quality?: { pass_count: number; pass_rate: number; summary: { avg_completeness: number; avg_quality: number; avg_factuality?: number; avg_specificity?: number; avg_conciseness?: number } };
+    rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_context_relevance?: number; avg_score: number } };
+    quality?: { pass_count: number; pass_rate: number; summary: { avg_completeness: number; avg_quality: number } };
   };
   summary: {
     syntax_pass_rate: number;
@@ -234,23 +230,11 @@ function buildChartData(report: EvalReport) {
     value:   value as number,
   }));
 
-  const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
-  const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
-    ...(isLegacyClarity
-      ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
-      : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]
-    ),
-    ...(isLegacyQuality ? [
-      { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
-      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
-      { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity  ?? 0, group: 'quality' as const },
-      { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness  ?? 0, group: 'quality' as const },
-    ] : [
-      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
-    ]),
+    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance         ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness      ?? 0, group: 'rag' as const },
+    { name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const },
+    { name: '완전성', nameEn: 'Completeness',     score: qua?.summary?.avg_completeness      ?? 0, group: 'quality' as const },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -287,23 +271,11 @@ function buildChartDataFromHistory(item: HistoryItem) {
     name, label: name.charAt(0).toUpperCase() + name.slice(1), krLabel: INTENT_KR[name] ?? name, value: value as number,
   }));
 
-  const isLegacyQuality  = !!(qua?.summary?.avg_factuality);
-  const isLegacyClarity  = !!(rag?.summary?.avg_clarity);
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance    ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness ?? 0, group: 'rag' as const },
-    ...(isLegacyClarity
-      ? [{ name: '명확성', nameEn: 'Clarity',           score: rag?.summary?.avg_clarity           ?? 0, group: 'rag' as const }]
-      : [{ name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const }]
-    ),
-    ...(isLegacyQuality ? [
-      { name: '사실성', nameEn: 'Factuality',   score: qua?.summary?.avg_factuality   ?? 0, group: 'quality' as const },
-      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
-      { name: '구체성', nameEn: 'Specificity',  score: qua?.summary?.avg_specificity  ?? 0, group: 'quality' as const },
-      { name: '간결성', nameEn: 'Conciseness',  score: qua?.summary?.avg_conciseness  ?? 0, group: 'quality' as const },
-    ] : [
-      { name: '완전성', nameEn: 'Completeness', score: qua?.summary?.avg_completeness ?? 0, group: 'quality' as const },
-    ]),
+    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance         ?? 0, group: 'rag' as const },
+    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness      ?? 0, group: 'rag' as const },
+    { name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const },
+    { name: '완전성', nameEn: 'Completeness',     score: qua?.summary?.avg_completeness      ?? 0, group: 'quality' as const },
   ];
 
   return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
@@ -760,33 +732,17 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   const status = getQAStatus(qa);
   const cfg    = STATUS_CONFIG[status];
 
-  // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
-  const isLegacy = !!(qa.factuality_reason || qa.specificity_reason || qa.conciseness_reason);
-
-  // RAG 차원 (신·구 공통)
+  // RAG 차원
   const ragDimensions = [
-    { label: '관련성', score: qa.relevance, reason: qa.relevance_reason },
-    { label: '근거성', score: qa.groundedness, reason: qa.groundedness_reason },
-    // 구형: 명확성(clarity) / 신형: 맥락성(context_relevance)
-    ...(qa.clarity_reason
-      ? [{ label: '명확성', score: (qa as any).clarity, reason: qa.clarity_reason }]
-      : qa.context_relevance_reason
-        ? [{ label: '맥락성', score: qa.context_relevance, reason: qa.context_relevance_reason }]
-        : []
-    ),
+    { label: '관련성', score: qa.relevance,         reason: qa.relevance_reason },
+    { label: '근거성', score: qa.groundedness,       reason: qa.groundedness_reason },
+    { label: '맥락성', score: qa.context_relevance,  reason: qa.context_relevance_reason },
   ].filter(r => r.reason);
 
-  // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
-  const qualityDimensions = isLegacy
-    ? [
-        { label: '사실성', score: (qa as any).factuality, reason: qa.factuality_reason },
-        { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
-        { label: '구체성', score: (qa as any).specificity, reason: qa.specificity_reason },
-        { label: '간결성', score: (qa as any).conciseness, reason: qa.conciseness_reason },
-      ].filter(r => r.reason)
-    : [
-        { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
-      ].filter(r => r.reason);
+  // Quality 차원
+  const qualityDimensions = [
+    { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
+  ].filter(r => r.reason);
 
   // 통합 차원 목록
   const allDimensions = [...ragDimensions, ...qualityDimensions];
@@ -896,39 +852,16 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
           <div className="flex items-center justify-between px-4 py-1.5 bg-slate-100/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">품질 평가 결과</p>
             <div className="flex items-center gap-3">
-              {isLegacy ? (
-                // 구형(7개): RAG + 품질 각각 표시
-                <>
-                  {qa.rag_avg != null && (
-                    <span className="flex items-center gap-1 text-[10px]">
-                      <span className="text-slate-400 dark:text-slate-500 font-medium">RAG</span>
-                      <span className={cn('font-black font-mono text-sm', scoreColor(qa.rag_avg))}>
-                        {qa.rag_avg.toFixed(3)}
-                      </span>
-                    </span>
-                  )}
-                  {qa.quality_avg != null && (
-                    <span className="flex items-center gap-1 text-[10px]">
-                      <span className="text-slate-400 dark:text-slate-500 font-medium">품질</span>
-                      <span className={cn('font-black font-mono text-sm', scoreColor(qa.quality_avg))}>
-                        {qa.quality_avg.toFixed(3)}
-                      </span>
-                    </span>
-                  )}
-                </>
-              ) : (
-                // 신규(4개): 4지표 단순 평균 단일 표시
-                (() => {
-                  const r = qa.rag_avg ?? 0;
-                  const q = qa.quality_avg ?? 0;
-                  const unified = (r * 3 + q) / 4;
-                  return (
-                    <span className={cn('font-black font-mono text-lg', scoreColor(unified))}>
-                      {unified.toFixed(3)}
-                    </span>
-                  );
-                })()
-              )}
+              {(() => {
+                const r = qa.rag_avg ?? 0;
+                const q = qa.quality_avg ?? 0;
+                const unified = (r * 3 + q) / 4;
+                return (
+                  <span className={cn('font-black font-mono text-lg', scoreColor(unified))}>
+                    {unified.toFixed(3)}
+                  </span>
+                );
+              })()}
             </div>
           </div>
           {allDimensions.length > 0 && (
@@ -1127,24 +1060,15 @@ export function QAEvaluationDashboard({
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({ 
-      id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent, 
-      l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass, 
-      primary_failure: q.primary_failure, failure_types: q.failure_types, 
-      relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason, 
-      clarity_reason: q.clarity_reason, context_relevance_reason: q.context_relevance_reason, 
-      factuality_reason: q.factuality_reason, completeness_reason: q.completeness_reason, 
-      specificity_reason: q.specificity_reason, conciseness_reason: q.conciseness_reason, 
+    detailedQA:         qaPreview.map((q, i) => ({
+      id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent,
+      l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass,
+      primary_failure: q.primary_failure, failure_types: q.failure_types,
+      relevance_reason: q.relevance_reason, groundedness_reason: q.groundedness_reason,
+      context_relevance_reason: q.context_relevance_reason, completeness_reason: q.completeness_reason,
       failure_reason: q.failure_reason,
-      // Individual scores
-      relevance: q.relevance, 
-      groundedness: q.groundedness, 
-      context_relevance: q.context_relevance, 
-      completeness: q.completeness,
-      factuality: (q as any).factuality,
-      specificity: (q as any).specificity,
-      conciseness: (q as any).conciseness,
-      clarity: (q as any).clarity,
+      relevance: q.relevance, groundedness: q.groundedness,
+      context_relevance: q.context_relevance, completeness: q.completeness,
     })),
     metadata: {
       qa_model: (() => {
@@ -1184,12 +1108,10 @@ export function QAEvaluationDashboard({
             intent: r.intent, l2_avg: r.quality_avg ?? 0, triad_avg: r.rag_avg ?? 0, pass: r.pass,
             primary_failure: r.primary_failure ?? null, failure_types: r.failure_types ?? [],
             relevance_reason: r.relevance_reason, groundedness_reason: r.groundedness_reason,
-            clarity_reason: r.clarity_reason, context_relevance_reason: r.context_relevance_reason,
-            factuality_reason: r.factuality_reason, completeness_reason: r.completeness_reason,
-            specificity_reason: r.specificity_reason, conciseness_reason: r.conciseness_reason,
+            context_relevance_reason: r.context_relevance_reason, completeness_reason: r.completeness_reason,
             failure_reason: r.failure_reason,
-            relevance: r.relevance, groundedness: r.groundedness, context_relevance: r.context_relevance, completeness: r.completeness,
-            factuality: r.factuality, specificity: r.specificity, conciseness: r.conciseness, clarity: r.clarity,
+            relevance: r.relevance, groundedness: r.groundedness,
+            context_relevance: r.context_relevance, completeness: r.completeness,
           })),
           metadata: { ...evaluationData.metadata, timestamp: res.timestamp ?? evaluationData.metadata?.timestamp },
         });
