@@ -486,6 +486,9 @@ def run_evaluation(
         gen_model      = ""
         gen_prompt_ver = "v1"
         gen_source_doc = ""
+        gen_h1         = ""
+        gen_h2         = ""
+        gen_h3         = ""
 
         # generation_id 있으면 Supabase에서 직접 읽기 (파일 불필요)
         if generation_id:
@@ -497,6 +500,9 @@ def run_evaluation(
                 gen_model      = gen_meta.get("generation_model", "")
                 gen_prompt_ver = gen_meta.get("prompt_version", "v1")
                 gen_source_doc = gen_meta.get("source_doc", "")
+                gen_h1         = gen_meta.get("hierarchy_h1", "")
+                gen_h2         = gen_meta.get("hierarchy_h2", "")
+                gen_h3         = gen_meta.get("hierarchy_h3", "")
 
                 # qa_list 컬럼 = [{docId, text, qa_list: [{q,a,intent}]}, ...]
                 # 로컬 파일 fallback과 동일하게 flatten + context 주입
@@ -640,6 +646,9 @@ def run_evaluation(
                 "evaluator_model":  evaluator_model_id,
                 "generation_model": gen_model,
                 "source_doc":       gen_source_doc,
+                "hierarchy_h1":     gen_h1,
+                "hierarchy_h2":     gen_h2,
+                "hierarchy_h3":     gen_h3,
             },
             "pipeline_results": {
                 "syntax":  syntax_data,
@@ -701,6 +710,9 @@ def run_evaluation(
                         "prompt_version":   gen_prompt_ver,
                         "source_doc":       gen_source_doc,
                         "generation_id":    generation_id or "",
+                        "hierarchy_h1":     gen_h1,
+                        "hierarchy_h2":     gen_h2,
+                        "hierarchy_h3":     gen_h3,
                     },
                     total_qa=len(qa_list),
                     valid_qa=valid_qa_count,
