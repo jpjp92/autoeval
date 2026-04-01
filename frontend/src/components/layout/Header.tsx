@@ -60,7 +60,7 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
 
   return (
     <header className="mx-3 mt-3 mb-1 sticky top-3 z-40">
-      <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between px-6 py-3">
+      <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between px-5 py-2">
         <div className="flex items-center gap-2">
           {Icon && <Icon className="w-5 h-5 text-indigo-500/70 dark:text-indigo-400/80 shrink-0" />}
           <h1 className="text-lg font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500 dark:from-indigo-400 dark:to-purple-400">

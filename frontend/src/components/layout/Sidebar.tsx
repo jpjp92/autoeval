@@ -29,8 +29,11 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       */}
       <div className="h-full rounded-3xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-2xl border border-white/60 dark:border-white/8 shadow-2xl shadow-indigo-500/8 dark:shadow-black/30 flex flex-col p-3 overflow-hidden">
 
-        <div className="relative flex items-center h-14 mb-2 shrink-0">
-          
+        <div className={cn(
+          "flex items-center h-11 mb-2 shrink-0 transition-all duration-300",
+          isCollapsed ? "justify-center" : "justify-between"
+        )}>
+
           <div className={cn(
             "overflow-hidden transition-all duration-300 ease-in-out flex items-center",
             isCollapsed ? "w-0 opacity-0" : "w-[160px] opacity-100"
@@ -51,13 +54,13 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className={cn(
-              "absolute right-[2px] top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ease-in-out",
+              "w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ease-in-out",
               "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white",
               "hover:bg-slate-200/60 dark:hover:bg-white/10 active:scale-95 hover:shadow-sm"
             )}
             title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {isCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            {isCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
         </div>
 
