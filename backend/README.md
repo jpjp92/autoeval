@@ -34,7 +34,7 @@ backend/
 │   ├── qa_generation_repo.py    # QA 생성 결과 저장/조회
 │   ├── evaluation_repo.py       # 평가 결과 저장/조회
 │   ├── generation_eval_link.py  # 생성-평가 연결 (linked_evaluation_id)
-│   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색 + save_doc_chunks_batch() 배치 INSERT
+│   ├── doc_chunk_repo.py        # 문서 청크 CRUD + vector 검색 + save_doc_chunks_batch() 배치 INSERT + patch_chunk_hierarchy() RPC
 │   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
 │   ├── doc_metadata_repo.py     # 문서 단위 메타 (domain_profile + h2_h3_master) upsert/조회
 │   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs, grade_dist, model_benchmarks)
@@ -44,14 +44,12 @@ backend/
 │   ├── models.py                # 모델 alias → model_id, cost, provider 매핑
 │   └── constants.py             # worker 수 등 기본 상수
 ├── scripts/
-│   ├── setup_vector_db.sql          # doc_chunks 테이블 + match_doc_chunks RPC
+│   ├── setup_vector_db.sql          # doc_chunks 테이블 + match_doc_chunks RPC + patch_chunk_hierarchy RPC
 │   ├── setup_qa_eval_tables.sql     # qa_eval_results, qa_gen_results + get_eval_qa_scores RPC
 │   ├── inspect_db_state.py          # 각 테이블 현황 점검 스크립트
 │   ├── detect_cleanup_targets.py    # 구버전/고아 행 탐지 → cleanup_targets.json + cleanup_queries.sql
-│   ├── regenerate_anchor_ids.py     # 삭제 후 anchor_ids 재생성 (LLM 없음) → anchor_ids_localstorage.js
 │   ├── cleanup_targets.json         # 탐지된 정리 대상 목록
-│   ├── cleanup_queries.sql          # 구버전 삭제 + 검증 쿼리
-│   └── anchor_ids_localstorage.js   # 재생성된 anchor_ids (브라우저 콘솔 붙여넣기용)
+│   └── cleanup_queries.sql          # 구버전 삭제 + 검증 쿼리
 └── requirements.txt
 ```
 
@@ -115,12 +113,14 @@ API 문서: `http://localhost:8000/docs`
   "samples":         8,
   "prompt_version":  "v1",
   "filename":        "document.pdf",
+  "document_id":     "<doc_metadata.document_id>",
   "hierarchy_h1":    "대분류",
   "hierarchy_h2":    "중분류"
 }
 ```
 
-> `filename` + `hierarchy_h1/h2/h3`는 청크 필터 조건. 모두 생략 시 전체 청크에서 생성.
+> `document_id` + `filename` 있으면 `sample_doc_chunks` RPC 균등 샘플링.
+> `hierarchy_h1/h2/h3`는 샘플링 후 후처리 필터 조건. 모두 생략 시 전체 청크에서 생성.
 
 ### Evaluation  `/api/evaluate`
 
@@ -194,8 +194,9 @@ Pass 2: /analyze-hierarchy
   → doc_metadata upsert (domain_profile 등 나머지 필드 채움)
 
 Pass 3: /apply-granular-tagging
-  청크별 hierarchy 태깅 (batch=5, parallel=5)
-  update_chunk_metadata: 실패 시 최대 2회 재시도 (0.5s → 1.0s backoff)
+  청크별 hierarchy 태깅 (batch=5, parallel=5, LLM 세마포어 5 제한)
+  patch_chunk_hierarchy RPC: hierarchy 3개 필드만 DB side jsonb merge (페이로드 최소화)
+    → 전역 세마포어(_write_sem, 동시 2) + 실패 시 최대 3회 재시도 (0.5s → 1.0s → 2.0s → 4.0s backoff)
 ```
 
 ---
@@ -204,13 +205,16 @@ Pass 3: /apply-granular-tagging
 
 ```
 [사전] 청크 조회
-    hierarchy_h1/h2/h3 필터 → get_doc_chunks_by_filter()
-    결과 0건 + hierarchy 필터 있으면 → ValueError (Pass3 태깅 미완료 안내)
+    document_id + filename 있으면:
+      sample_doc_chunks(document_id, n=samples*3) RPC 균등 샘플링
+      → h1/h2/h3 후처리 필터링
+    fallback: get_doc_chunks_by_filter(document_id, hierarchy_h1/h2/h3, ...)
 
     청크 필터링:
       - chunk_type=heading / __admin__ / colophon 키워드 → skip
       - hierarchy_h1=None (태깅 실패 청크) → skip + WARNING 로그 출력
         (h2/h3=None은 정상 — h1 레벨 섹션 청크)
+      - 결과 0건 + hierarchy 필터 있으면 → ValueError (Pass3 태깅 미완료 안내)
 
 [1단계] 도메인 프로파일 로드
     doc_metadata에서 domain_profile 조회 (document_id → filename 순)
