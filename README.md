@@ -41,21 +41,21 @@ PDF/DOCX 업로드
 
 #### STEP 1 — 데이터 규격화
 
-| 처리 | 내용 |
-|------|------|
-| 파싱 | PDF(PyMuPDF) / DOCX(python-docx) — 원시 블록 추출 (`extract_text_by_page`) |
-| 청킹 | **LLM 청킹** (기본값, `chunking_method=llm`) — Gemini 2.5 Flash, 배치 단위 의미 경계 분할, 노이즈 제거 포함 / `rule` 옵션으로 rule-based 전환 가능 |
-| 정규화 | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합 |
-| 중복 방지 | SHA-1 `content_hash` 기반 — 배치 중복 SELECT → 신규 청크만 1회 배치 INSERT |
-| 벡터화 | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — **1536차원** 벡터 변환 |
-| 저장 | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) — `hierarchy_h1/h2/h3` metadata에 포함 |
+| 처리      | 내용                                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 파싱      | PDF(PyMuPDF) / DOCX(python-docx) — 원시 블록 추출 (`extract_text_by_page`)                                                                                 |
+| 청킹      | **LLM 청킹** (기본값, `chunking_method=llm`) — Gemini 2.5 Flash, 배치 단위 의미 경계 분할, 노이즈 제거 포함 / `rule` 옵션으로 rule-based 전환 가능 |
+| 정규화    | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합                                                                                                                    |
+| 중복 방지 | SHA-1 `content_hash` 기반 — 배치 중복 SELECT → 신규 청크만 1회 배치 INSERT                                                                                |
+| 벡터화    | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — **1536차원** 벡터 변환                                                                           |
+| 저장      | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) — `hierarchy_h1/h2/h3` metadata에 포함                                                    |
 
 #### STEP 2 — 계층 태깅 (2단계)
 
-| 단계 | API | 동작 |
-|------|-----|------|
-| 단계 1 — H1/H2/H3 Master + domain_profile 생성 | `analyze-hierarchy` | anchor 청크 30개 → LLM **1회** → **H1(3~5개) + H2/H3 전체 master + domain_profile 동시 생성** → `doc_metadata` 저장 |
-| 단계 2 — 청크 태깅 | `apply-granular-tagging` | 청크별 계층 목록에서 **선택만** (신규 생성 금지) — 일괄 적용, `__admin__` 제외 샘플 5개 반환 |
+| 단계                                            | API                        | 동작                                                                                                                                |
+| ----------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 단계 1 — H1/H2/H3 Master + domain_profile 생성 | `analyze-hierarchy`      | anchor 청크 30개 → LLM**1회** → **H1(3~5개) + H2/H3 전체 master + domain_profile 동시 생성** → `doc_metadata` 저장 |
+| 단계 2 — 청크 태깅                             | `apply-granular-tagging` | 청크별 계층 목록에서**선택만** (신규 생성 금지) — 일괄 적용, `__admin__` 제외 샘플 5개 반환                                |
 
 > 단계 1에서 `domain_profile`(domain, domain_short, target_audience, key_terms, tone)을 `doc_metadata` 테이블에 함께 저장 → QA 생성 시 LLM 재호출 없이 캐시 사용
 >
@@ -63,35 +63,35 @@ PDF/DOCX 업로드
 
 #### STEP 3 — QA 생성
 
-| 단계 | 내용 |
-|------|------|
-| 청크 샘플링 | `document_id` 기준 `sample_doc_chunks` RPC 균등 샘플링 → H1/H2/H3 후처리 필터링 (heading·colophon·`__admin__` 제외) |
-| 도메인 프로파일 | `doc_metadata` 캐시 우선 조회 (LLM 0회) — 없을 경우에만 `domain_profiler.analyze_domain()` 폴백 |
-| 프롬프트 빌드 | `build_user_template` — domain_profile 기반 XML 태그 적응형 구성 |
-| 다중 모델 동시 생성 | `ThreadPoolExecutor` — 모델별 worker 수 분리 병렬 실행 |
+| 단계                | 내용                                                                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 청크 샘플링         | `document_id` 기준 `sample_doc_chunks` RPC 균등 샘플링 → H1/H2/H3 후처리 필터링 (heading·colophon·`__admin__` 제외) |
+| 도메인 프로파일     | `doc_metadata` 캐시 우선 조회 (LLM 0회) — 없을 경우에만 `domain_profiler.analyze_domain()` 폴백                         |
+| 프롬프트 빌드       | `build_user_template` — domain_profile 기반 XML 태그 적응형 구성                                                          |
+| 다중 모델 동시 생성 | `ThreadPoolExecutor` — 모델별 worker 수 분리 병렬 실행                                                                    |
 
 **생성 규칙**
 
-| 규칙 | 내용 |
-|------|------|
-| 수량 | 컨텍스트 밀도 기반 **2~6개** (내용 없으면 0개 허용) |
-| 의도 유형 | 6가지(fact / purpose / how / condition / comparison / list) 중 근거 있는 유형만 선택 |
-| 다양성 | fact + list 합산 ≤ 40%, condition 또는 comparison 1개 이상 권장 |
-| how (방법형) | 구체적 방법·절차 (순서 있으면 단계 포함) |
-| 질문 단일성 | 하나의 질문은 하나의 차원(What/Why/How/조건/비교)만 — 차원 혼합 금지 |
-| 답변 완전성 | 복수 항목 질문 시 컨텍스트에 명시된 모든 항목 빠짐없이 서술 |
-| 질문 근거 | 컨텍스트에 명시된 사실/정의/절차에만 한정 (purpose는 효과로부터 유추 가능) |
-| 답변 스타일 | 메타 표현 시작 금지 ("컨텍스트에 따르면" 등) |
-| context_screening | 목차·연락처·식별자만인 컨텍스트는 즉시 빈 목록 반환 |
+| 규칙              | 내용                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| 수량              | 컨텍스트 밀도 기반**2~6개** (내용 없으면 0개 허용)                             |
+| 의도 유형         | 6가지(fact / purpose / how / condition / comparison / list) 중 근거 있는 유형만 선택 |
+| 다양성            | fact + list 합산 ≤ 40%, condition 또는 comparison 1개 이상 권장                     |
+| how (방법형)      | 구체적 방법·절차 (순서 있으면 단계 포함)                                            |
+| 질문 단일성       | 하나의 질문은 하나의 차원(What/Why/How/조건/비교)만 — 차원 혼합 금지                |
+| 답변 완전성       | 복수 항목 질문 시 컨텍스트에 명시된 모든 항목 빠짐없이 서술                          |
+| 질문 근거         | 컨텍스트에 명시된 사실/정의/절차에만 한정 (purpose는 효과로부터 유추 가능)           |
+| 답변 스타일       | 메타 표현 시작 금지 ("컨텍스트에 따르면" 등)                                         |
+| context_screening | 목차·연락처·식별자만인 컨텍스트는 즉시 빈 목록 반환                                |
 
 #### STEP 4 — QA 평가 (4-Layer Framework)
 
-| 레이어 | 모듈 | 평가 지표 | 가중치 |
-|--------|------|----------|--------|
-| **L1-A Syntax** | `syntax_validator.py` | 구조적 무결성 (필드 존재, 타입, 길이) | 5% |
-| **L1-B Statistics** | `dataset_stats.py` | 데이터셋 건전성 (다양성, 중복성, 편향성, 충족성) | 5% |
-| **L2 RAG Triad** | `rag_triad.py` | RAG 품질 (관련성, 근거성, 맥락성) | 65% |
-| **L3 Quality** | `qa_quality.py` | 답변 완전성 (Completeness - 질문 분해 기반) | 25% |
+| 레이어                    | 모듈                    | 평가 지표                                        | 가중치 |
+| ------------------------- | ----------------------- | ------------------------------------------------ | ------ |
+| **L1-A Syntax**     | `syntax_validator.py` | 구조적 무결성 (필드 존재, 타입, 길이)            | 5%     |
+| **L1-B Statistics** | `dataset_stats.py`    | 데이터셋 건전성 (다양성, 중복성, 편향성, 충족성) | 5%     |
+| **L2 RAG Triad**    | `rag_triad.py`        | RAG 품질 (관련성, 근거성, 맥락성)                | 65%    |
+| **L3 Quality**      | `qa_quality.py`       | 답변 완전성 (Completeness - 질문 분해 기반)      | 25%    |
 
 ```
 final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness×0.25)
@@ -103,26 +103,30 @@ final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness
 ## QA 평가 프레임워크 상세
 
 ### 1-A. 구문 검증 (Syntax Validation) — L1-A
+
 - **목적**: QA 데이터셋이 API 규격 및 기술적 구조에 부합하는지 검증 (형식, 타입, 길이).
 - **핵심 지표**: 필수 필드(`q`, `a`, `context`) 존재 여부, 데이터 타입 및 최소/최대 길이 준수 (q: 5-500자, a: 2-2000자, context: 50-50000자).
 - **평가 범위**: 기술적 규격만 검증하며, 필드 채움 정도는 L1-B Sufficiency에서 평가.
 
 ### 1-B. 데이터 통계 평가 (Statistics & Diversity) — L1-B
+
 - **목적**: 데이터셋의 정량적 건전성과 다양성을 통계적으로 측정.
 - **핵심 지표**:
-    - **다양성(Diversity)**: 인텐트 분포의 엔트로피(Entropy) 및 어휘 다양도(TTR).
-    - **중복성(Duplication)**: 질문 간 텍스트 유사도(SequenceMatcher)가 70% 이상인 Near-duplicate 탐지.
-    - **편향성(Skewness)**: 특정 소스 문서에 대한 질문 집중도 분석.
-    - **충족성(Sufficiency)**: 필수 메타 필드(docId, intent) + 핵심 필드(q, a, context) 전체 채움률 분석 (Syntax에서는 존재 여부만, 여기서는 완성도 평가).
+  - **다양성(Diversity)**: 인텐트 분포의 엔트로피(Entropy) 및 어휘 다양도(TTR).
+  - **중복성(Duplication)**: 질문 간 텍스트 유사도(SequenceMatcher)가 70% 이상인 Near-duplicate 탐지.
+  - **편향성(Skewness)**: 특정 소스 문서에 대한 질문 집중도 분석.
+  - **충족성(Sufficiency)**: 필수 메타 필드(docId, intent) + 핵심 필드(q, a, context) 전체 채움률 분석 (Syntax에서는 존재 여부만, 여기서는 완성도 평가).
 
-### 2. RAG Triad 평가 (LLM-as-a-Judge) — L2
+### 2. 품질평가: RAG Triad 평가 (LLM-as-a-Judge) — L2
+
 - **목적**: RAG 시스템의 신뢰성과 검색 품질을 3가지 핵심 차원에서 평가.
 - **핵심 지표**:
-    - **Answer Relevance (관련성)**: 답변이 질문의 의도를 정확히 반영하는가 — **주제 적절성** 판단 *(질문 주제와 답변 주제가 일치하는가)*
-    - **Groundedness (근거성)**: 답변의 모든 주장이 컨텍스트 내 사실에 기반하는가 (CoT 기법 적용).
-    - **Context Relevance (맥락성)**: 검색된 컨텍스트가 질문에 답하기에 충분한가.
+  - **Answer Relevance (관련성)**: 답변이 질문의 의도를 정확히 반영하는가 — **주제 적절성** 판단 *(질문 주제와 답변 주제가 일치하는가)*
+  - **Groundedness (근거성)**: 답변의 모든 주장이 컨텍스트 내 사실에 기반하는가 (CoT 기법 적용).
+  - **Context Relevance (맥락성)**: 검색된 컨텍스트가 질문에 답하기에 충분한가.
 
-### 3. 완전성 평가 (Completeness) — L3
+### 3. 품질평가: 완전성 평가 (LLM-as-a-Judge) — L3
+
 - **목적**: 답변이 질문의 모든 세부 요구사항을 충실히 다루었는지 정밀 측정 — **요구사항 커버리지** 검증 *(질문의 모든 부분을 빠짐없이 답했는가)*
 - **방법론**: **질문 분해(Decomposition)** 기법을 사용하여 복합 질문을 원자 단위 서브 질문으로 나눈 뒤, 각 요소의 답변 커버리지를 계산.
 - **Answer Relevance와의 차이**:
@@ -134,12 +138,12 @@ final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness
 
 #### STEP 5 — 결과 확인
 
-| 기능 | 내용 |
-|------|------|
-| 평가 결과 확인 | QA 상세 · 차원별 평가 근거 · 실패 유형 뱃지 연동 |
-| 리포트 내보내기 | 평가 이력 관리 · 버튼 크기 통일(w-36) · XLSX / HTML / ZIP 다운로드 |
-| 대시보드 | 파이프라인 로그 연동 · 평가 등급 분포 · **모델별 성능 비교 리더보드 (합격률/점수)** |
-| 히스토리 연동 | 대시보드 파이프라인 로그 클릭 → 평가 탭 자동 이동 + 해당 이력 다크모드 하이라이트 |
+| 기능            | 내용                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| 평가 결과 확인  | QA 상세 · 차원별 평가 근거 · 실패 유형 뱃지 연동                                         |
+| 리포트 내보내기 | 평가 이력 관리 · 버튼 크기 통일(w-36) · XLSX / HTML / ZIP 다운로드                       |
+| 대시보드        | 파이프라인 로그 연동 · 평가 등급 분포 ·**모델별 성능 비교 리더보드 (합격률/점수)** |
+| 히스토리 연동   | 대시보드 파이프라인 로그 클릭 → 평가 탭 자동 이동 + 해당 이력 다크모드 하이라이트         |
 
 ---
 
@@ -221,15 +225,15 @@ autoeval/
 
 ## 기술 스택
 
-| 영역 | 기술 |
-|------|------|
-| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite, Lucide icons, React Flow, Recharts |
-| **UI Style** | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
-| **Backend** | FastAPI (Python 3.12+), Uvicorn |
-| **Database** | Supabase (PostgreSQL 17 + pgvector), service_role key |
-| **Embeddings** | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — 1536dim, HNSW 인덱스 |
-| **Prompt 구조** | XML 태그 (`<role>` `<principles>` `<intent_types>` `<constraints>` `<context>` `<task>`) |
-| **병렬 처리** | `ThreadPoolExecutor` — 모델별 worker 수 분리 |
+| 영역                  | 기술                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Frontend**    | React 19, TypeScript, Tailwind CSS, Vite, Lucide icons, React Flow, Recharts                                 |
+| **UI Style**    | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
+| **Backend**     | FastAPI (Python 3.12+), Uvicorn                                                                              |
+| **Database**    | Supabase (PostgreSQL 17 + pgvector), service_role key                                                        |
+| **Embeddings**  | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) — 1536dim, HNSW 인덱스                                  |
+| **Prompt 구조** | XML 태그 (`<role>` `<principles>` `<intent_types>` `<constraints>` `<context>` `<task>`)         |
+| **병렬 처리**   | `ThreadPoolExecutor` — 모델별 worker 수 분리                                                              |
 
 ---
 
@@ -237,29 +241,29 @@ autoeval/
 
 ### 파이프라인 전용 모델
 
-| 용도 | 모델 | 비고 |
-|------|------|------|
-| LLM 청킹 | Gemini 2.5 Flash (`gemini-2.5-flash`) | 배치 단위, thinking OFF (`thinking_budget=0`) |
-| Embedding | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) | 1536차원, RPM 3,000 |
-| Hierarchy + domain_profile 분석 | Gemini 3 Flash (`gemini-3-flash-preview`) | anchor 30청크 → 1회 호출 |
-| 계층 태깅 (Pass 3) | Gemini 2.5 Flash (`gemini-2.5-flash`) | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
+| 용도                            | 모델                                                | 비고                                            |
+| ------------------------------- | --------------------------------------------------- | ----------------------------------------------- |
+| LLM 청킹                        | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 배치 단위, thinking OFF (`thinking_budget=0`) |
+| Embedding                       | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) | 1536차원, RPM 3,000                             |
+| Hierarchy + domain_profile 분석 | Gemini 3 Flash (`gemini-3-flash-preview`)         | anchor 30청크 → 1회 호출                       |
+| 계층 태깅 (Pass 3)              | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
 
 ### QA 생성 모델
 
-| 모델 | RPM | TPM | Workers |
-|------|-----|-----|---------|
-| GPT-5.1 (`gpt-5.1-2025-11-13`) | 500 | 500K | 5 |
-| GPT-5.2 (`gpt-5.2-2025-12-11`) | 500 | 500K | 5 |
-| Gemini 3 Flash (`gemini-3-flash-preview`) | 1,000 | 2M | 5 |
-| Claude Sonnet 4.6 (`claude-sonnet-4-6`) | 50 | 30K | 2 |
+| 모델                                        | RPM   | TPM  | Workers |
+| ------------------------------------------- | ----- | ---- | ------- |
+| GPT-5.1 (`gpt-5.1-2025-11-13`)            | 500   | 500K | 5       |
+| GPT-5.2 (`gpt-5.2-2025-12-11`)            | 500   | 500K | 5       |
+| Gemini 3 Flash (`gemini-3-flash-preview`) | 1,000 | 2M   | 5       |
+| Claude Sonnet 4.6 (`claude-sonnet-4-6`)   | 50    | 30K  | 2       |
 
 ### 평가 모델
 
-| 모델 | RPM | TPM | Workers |
-|------|-----|-----|---------|
-| GPT-5.1 (`gpt-5.1-2025-11-13`) | 500 | 500K | 8 |
-| Gemini 2.5 Flash (`gemini-2.5-flash`) | 1,000 | 1M | 10 |
-| Claude Haiku 4.5 (`claude-haiku-4-5`) | 50 | 50K | 2 |
+| 모델                                    | RPM   | TPM  | Workers |
+| --------------------------------------- | ----- | ---- | ------- |
+| GPT-5.1 (`gpt-5.1-2025-11-13`)        | 500   | 500K | 8       |
+| Gemini 2.5 Flash (`gemini-2.5-flash`) | 1,000 | 1M   | 10      |
+| Claude Haiku 4.5 (`claude-haiku-4-5`) | 50    | 50K  | 2       |
 
 ---
 
@@ -267,12 +271,12 @@ autoeval/
 
 Supabase (autoeval 프로젝트) — 4개 테이블
 
-| 객체 | 유형 | 설명 |
-|------|------|------|
-| `doc_chunks` | 테이블 | 문서 청크 + vector(1536) + metadata JSONB + **document_id 전용 컬럼** |
-| `doc_metadata` | 테이블 | 문서별 domain_profile + h2_h3_master (document_id PK) |
-| `qa_gen_results` | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[], **document_id FK**) |
-| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade + **generation_id FK** |
+| 객체                | 유형   | 설명                                                                        |
+| ------------------- | ------ | --------------------------------------------------------------------------- |
+| `doc_chunks`      | 테이블 | 문서 청크 + vector(1536) + metadata JSONB +**document_id 전용 컬럼**  |
+| `doc_metadata`    | 테이블 | 문서별 domain_profile + h2_h3_master (document_id PK)                       |
+| `qa_gen_results`  | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[],**document_id FK**) |
+| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade +**generation_id FK**   |
 
 ### 테이블 연계 (Option B FK — 2026-03-31 완료)
 
@@ -403,9 +407,9 @@ docker compose build client && docker compose up -d client
 docker compose up -d --build
 ```
 
-| 서비스 | 포트 | 설명 |
-|--------|------|------|
-| client | 3000 | Nginx → SPA + `/api/` 프록시 → server |
+| 서비스 | 포트 | 설명                                        |
+| ------ | ---- | ------------------------------------------- |
+| client | 3000 | Nginx → SPA +`/api/` 프록시 → server    |
 | server | 8000 | FastAPI (직접 접근 가능, Swagger `/docs`) |
 
 > **참고**: nginx upstream DNS 지연 문제로 `resolver 127.0.0.11`(Docker 내장 DNS) + `set $upstream` 변수 사용 → 요청 시점 동적 조회
@@ -416,49 +420,49 @@ docker compose up -d --build
 
 ### Ingestion
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/api/ingestion/upload` | PDF/DOCX 업로드 → LLM/rule 청킹 → 임베딩 → doc_chunks 저장 |
-| `POST` | `/api/ingestion/analyze-hierarchy` | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
-| `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개) |
-| `POST` | `/api/ingestion/apply-granular-tagging` | Pass 3 — 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환) |
-| `GET`  | `/api/ingestion/hierarchy-list` | H1/H2/H3 고유 목록 (드롭다운용) |
+| 메서드   | 경로                                       | 설명                                                                           |
+| -------- | ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `POST` | `/api/ingestion/upload`                  | PDF/DOCX 업로드 → LLM/rule 청킹 → 임베딩 → doc_chunks 저장                  |
+| `POST` | `/api/ingestion/analyze-hierarchy`       | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
+| `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)            |
+| `POST` | `/api/ingestion/apply-granular-tagging`  | Pass 3 — 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환)        |
+| `GET`  | `/api/ingestion/hierarchy-list`          | H1/H2/H3 고유 목록 (드롭다운용)                                                |
 
 ### Generation
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/api/generate` | QA 생성 job 시작 |
-| `GET`  | `/api/generate/{job_id}/status` | 생성 job 상태 조회 |
-| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (최대 N개, context 포함) |
-| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
-| `DELETE` | `/api/generate/{job_id}` | job 취소 |
+| 메서드     | 경로                               | 설명                                              |
+| ---------- | ---------------------------------- | ------------------------------------------------- |
+| `POST`   | `/api/generate`                  | QA 생성 job 시작                                  |
+| `GET`    | `/api/generate/{job_id}/status`  | 생성 job 상태 조회                                |
+| `GET`    | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (최대 N개, context 포함) |
+| `GET`    | `/api/generate/jobs`             | 세션 내 전체 job 목록                             |
+| `DELETE` | `/api/generate/{job_id}`         | job 취소                                          |
 
 ### Evaluation
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/api/evaluate` | 4레이어 평가 job 시작 |
-| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
-| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 (in-memory) |
-| `GET`  | `/api/evaluate/history` | Supabase 저장된 평가 이력 전체 |
-| `GET`  | `/api/evaluate/{job_id}/export` | 세션 job QA+점수 상세 내보내기 |
+| 메서드   | 경로                                     | 설명                                |
+| -------- | ---------------------------------------- | ----------------------------------- |
+| `POST` | `/api/evaluate`                        | 4레이어 평가 job 시작               |
+| `GET`  | `/api/evaluate/{job_id}/status`        | 평가 job 상태 + 레이어별 결과       |
+| `GET`  | `/api/evaluate/list`                   | 세션 내 평가 job 목록 (in-memory)   |
+| `GET`  | `/api/evaluate/history`                | Supabase 저장된 평가 이력 전체      |
+| `GET`  | `/api/evaluate/{job_id}/export`        | 세션 job QA+점수 상세 내보내기      |
 | `GET`  | `/api/evaluate/export-by-id/{eval_id}` | Supabase eval_id 기반 상세 내보내기 |
 
 ### System
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `GET` | `/health` | 헬스체크 |
+| 메서드  | 경로                       | 설명                                                                      |
+| ------- | -------------------------- | ------------------------------------------------------------------------- |
+| `GET` | `/health`                | 헬스체크                                                                  |
 | `GET` | `/api/dashboard/metrics` | 대시보드 집계 데이터 (summary, recent_jobs, grade_dist, model_benchmarks) |
 
 ---
 
 ## 배포 구성 (Render + Vercel)
 
-| 플랫폼 | 역할 | 환경변수 |
-| ------ | ---- | -------- |
-| Render | FastAPI 백엔드 | `CORS_ORIGINS=https://autoeval-v1.vercel.app` |
+| 플랫폼 | 역할             | 환경변수                                            |
+| ------ | ---------------- | --------------------------------------------------- |
+| Render | FastAPI 백엔드   | `CORS_ORIGINS=https://autoeval-v1.vercel.app`     |
 | Vercel | React 프론트엔드 | `VITE_API_URL=https://autoeval-uccr.onrender.com` |
 
 - Render는 `PORT` 환경변수를 자동 주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
