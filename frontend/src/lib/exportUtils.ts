@@ -6,22 +6,12 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 
 const INTENT_KR: Record<string, string> = {
-  // 신규 6종 (2026-03-25~)
   fact:       '사실형',
   purpose:    '원인형',
   how:        '방법형',
   condition:  '조건형',
   comparison: '비교형',
   list:       '열거형',
-  // 구형 8종 (하위 호환)
-  factoid:      '사실형',
-  numeric:      '수치형',
-  procedure:    '절차형',
-  why:          '원인형',
-  definition:   '정의형',
-  boolean:      '확인형',
-  summary:      '요약형',
-  confirmation: '확인형',
 };
 
 const FAILURE_KR: Record<string, string> = {
@@ -54,22 +44,14 @@ export interface EvaluationData {
     failure_types?: string[];
     relevance_reason?: string;
     groundedness_reason?: string;
-    clarity_reason?: string;           // 구형 (명확성)
-    context_relevance_reason?: string; // 신형 (맥락성)
-    factuality_reason?: string;
+    context_relevance_reason?: string;
     completeness_reason?: string;
-    specificity_reason?: string;
-    conciseness_reason?: string;
     failure_reason?: string;
     // Individual scores
     relevance?:         number;
     groundedness?:      number;
     context_relevance?: number;
     completeness?:      number;
-    factuality?:        number;
-    specificity?:       number;
-    conciseness?:       number;
-    clarity?:           number;
   }>;
   metadata?: {
     qa_model?:  string;  // QA 생성 모델
@@ -77,9 +59,6 @@ export interface EvaluationData {
     lang?:      string;
     timestamp?: string;
     source?:    string;  // 출처 문서명
-    // 하위 호환 (기존 코드 대응)
-    model?:     string;
-    prompt?:    string;
   };
 }
 
@@ -95,8 +74,8 @@ function toKST(isoString?: string): string {
 function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   const evalDate = toKST(data.metadata?.timestamp);
-  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || '-';
-  const evalModel = data.metadata?.eval_model || data.metadata?.model || '-';
+  const qaModel   = data.metadata?.qa_model  || '-';
+  const evalModel = data.metadata?.eval_model || '-';
   const source    = data.metadata?.source || '-';
 
   // ── Stats 시트 ──────────────────────────────────────────────────────────────
@@ -363,8 +342,8 @@ ${legend}
 
 function buildHTMLContent(data: EvaluationData): string {
   const timestamp = toKST(data.metadata?.timestamp);
-  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || 'N/A';
-  const evalModel = data.metadata?.eval_model || data.metadata?.model || 'N/A';
+  const qaModel   = data.metadata?.qa_model  || 'N/A';
+  const evalModel = data.metadata?.eval_model || 'N/A';
   const source    = data.metadata?.source ?? 'N/A';
 
   const intentColorsMap: Record<string, string> = {
@@ -374,14 +353,6 @@ function buildHTMLContent(data: EvaluationData): string {
     condition:  '#d97706',
     comparison: '#4f46e5',
     list:       '#0891b2',
-    factoid:    '#3b7dd8',
-    numeric:    '#ca8a04',
-    procedure:  '#4f46e5',
-    why:        '#a855b5',
-    definition: '#0284c7',
-    boolean:    '#9333ea',
-    summary:    '#0891b2',
-    confirmation: '#9333ea',
   };
 
   const treemapSVG = svgTreemap(data.intentDistribution, intentColorsMap);
@@ -594,12 +565,7 @@ function animateBars(){
   });
 }
 
-function initAnimations(){
-  // animateRadar(); // 제거됨
-  animateBars();
-  renderQATable(0);
-}
-window.onload = initAnimations;
+window.addEventListener('load',function(){animateBars();renderQATable(0);});
 
 var QA_DATA=${JSON.stringify(data.detailedQA).replace(/<\/script>/gi,'<\\/script>')};
 var QA_PAGE_SIZE=5;
@@ -607,8 +573,8 @@ var qaCurrentPage=0;
 var qaSortCol='id';
 var qaSortDir='asc';
 var qaSortedData=QA_DATA.slice().sort(function(a,b){return (a.id||0)-(b.id||0);});
-var INTENT_KR_JS={fact:'사실형',purpose:'원인형',how:'방법형',condition:'조건형',comparison:'비교형',list:'열거형',factoid:'사실형',numeric:'수치형',procedure:'절차형',why:'원인형',definition:'정의형',boolean:'확인형'};
-var INTENT_COLORS_JS={fact:'#3b82f6',purpose:'#d946ef',how:'#22c55e',condition:'#f59e0b',comparison:'#6366f1',list:'#06b6d4',factoid:'#3b82f6',numeric:'#eab308',procedure:'#6366f1',why:'#d946ef',definition:'#0ea5e9',boolean:'#c026d3'};
+var INTENT_KR_JS={fact:'사실형',purpose:'원인형',how:'방법형',condition:'조건형',comparison:'비교형',list:'열거형'};
+var INTENT_COLORS_JS={fact:'#3b82f6',purpose:'#d946ef',how:'#22c55e',condition:'#f59e0b',comparison:'#6366f1',list:'#06b6d4'};
 var FAILURE_KR_JS={hallucination:'환각오류',faithfulness_error:'근거오류',poor_context:'문맥부족',retrieval_miss:'검색오류',ambiguous_question:'질문모호',bad_chunk:'불량청크',evaluation_error:'평가오류',low_quality:'품질미달',syntax_error:'구문오류'};
 var STATUS_ORDER={성공:0,보류:1,실패:2};
 
@@ -737,28 +703,12 @@ function showQADetail(idx){
       +(qa.failure_reason?'<p class="fc-reason">'+escHtml(qa.failure_reason)+'</p>':'')
       +'</div>';
   }
-  // 구형 데이터 판별: factuality_reason / specificity_reason / conciseness_reason 존재 여부
-  var isLegacy=!!(qa.factuality_reason||qa.specificity_reason||qa.conciseness_reason);
-  var ragMetrics=[
-    {name:'관련성 (Answer Relevance)',  score: qa.relevance,         reason:qa.relevance_reason},
-    {name:'근거성 (Groundedness)',      score: qa.groundedness,      reason:qa.groundedness_reason},
-    ...(qa.clarity_reason
-      ? [{name:'명확성 (Clarity)',      score: qa.clarity,           reason:qa.clarity_reason}]
-      : qa.context_relevance_reason
-        ? [{name:'맥락성 (Context Relevance)', score: qa.context_relevance, reason:qa.context_relevance_reason}]
-        : []
-    )
+  var allMetrics=[
+    {name:'관련성 (Answer Relevance)',      score: qa.relevance,         reason:qa.relevance_reason},
+    {name:'근거성 (Groundedness)',          score: qa.groundedness,      reason:qa.groundedness_reason},
+    {name:'맥락성 (Context Relevance)',     score: qa.context_relevance, reason:qa.context_relevance_reason},
+    {name:'완전성 (Completeness)',          score: qa.completeness,      reason:qa.completeness_reason}
   ];
-  // 신규: 완전성만 / 구형: 사실성·완전성·구체성·간결성
-  var qualMetrics=isLegacy?[
-    {name:'사실성 (Factuality)',   score: qa.factuality,   reason:qa.factuality_reason},
-    {name:'완전성 (Completeness)', score: qa.completeness, reason:qa.completeness_reason},
-    {name:'구체성 (Specificity)',   score: qa.specificity,   reason:qa.specificity_reason},
-    {name:'간결성 (Conciseness)',   score: qa.conciseness,   reason:qa.conciseness_reason}
-  ]:[
-    {name:'완전성 (Completeness)', score: qa.completeness, reason:qa.completeness_reason}
-  ];
-  var allMetrics=ragMetrics.concat(qualMetrics);
   var allRows=allMetrics.map(function(m){
     var s = m.score;
     var sStr = (s !== undefined && s !== null) ? s.toFixed(3) : '-';
@@ -770,19 +720,9 @@ function showQADetail(idx){
       +(m.reason?'<div class="detail-metric-reason">'+escHtml(m.reason)+'</div>':'<div class="detail-metric-reason" style="color:#cbd5e1">사유 없음</div>')
       +'</div>';
   }).join('');
-  var scoreHeader='';
-  if(isLegacy){
-    // 구형(7개): RAG + 품질 각각 표시
-    scoreHeader=''
-      +(qa.triad_avg!=null?'<span style="font-size:10px;color:#64748b">RAG</span> <span style="font-family:monospace;font-size:12px;font-weight:700;color:#0284c7">'+qa.triad_avg.toFixed(3)+'</span>':'')
-      +(qa.triad_avg!=null&&qa.l2_avg!=null?' <span style="color:#cbd5e1;margin:0 4px">·</span> ':'')
-      +(qa.l2_avg!=null?'<span style="font-size:10px;color:#64748b">품질</span> <span style="font-family:monospace;font-size:12px;font-weight:700;color:#7c3aed">'+qa.l2_avg.toFixed(3)+'</span>':'');
-  } else {
-    // 신규(4개): (rag×3 + quality) / 4 단일 점수
-    var unifiedScore=((qa.triad_avg||0)*3+(qa.l2_avg||0))/4;
-    var uColor=unifiedScore>=0.85?'#059669':unifiedScore>=0.7?'#d97706':'#e11d48';
-    scoreHeader='<span style="font-family:monospace;font-size:14px;font-weight:900;color:'+uColor+'">'+unifiedScore.toFixed(3)+'</span>';
-  }
+  var unifiedScore=((qa.triad_avg||0)*3+(qa.l2_avg||0))/4;
+  var uColor=unifiedScore>=0.85?'#059669':unifiedScore>=0.7?'#d97706':'#e11d48';
+  var scoreHeader='<span style="font-family:monospace;font-size:14px;font-weight:900;color:'+uColor+'">'+unifiedScore.toFixed(3)+'</span>';
   var html='<button class="detail-back" onclick="showQAList()">← 목록으로</button>'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">'
     +'<strong style="font-size:20px;color:#1e293b">#'+qa.id+'</strong>'
@@ -827,8 +767,6 @@ function showQAList(){
   document.getElementById('qa-list-view').style.display='';
   document.getElementById('qa-detail-view').style.display='none';
 }
-
-window.addEventListener('load',function(){animateBars();animateDonut();animateRadar();renderQATable(0);});
 </script>
 </body>
 </html>`;
@@ -851,8 +789,8 @@ export function exportToHTML(data: EvaluationData): void {
  * Export evaluation results to JSON (정제된 구조)
  */
 export function exportToJSON(data: EvaluationData): void {
-  const qaModel   = data.metadata?.qa_model   || data.metadata?.model || '-';
-  const evalModel = data.metadata?.eval_model || data.metadata?.model || '-';
+  const qaModel   = data.metadata?.qa_model  || '-';
+  const evalModel = data.metadata?.eval_model || '-';
 
   const cleaned = {
     metadata: {
@@ -865,7 +803,7 @@ export function exportToJSON(data: EvaluationData): void {
     summaryStats: data.summaryStats.map(({ label, value }) => ({ label, value })),
     // A → score, fullMark 제거
     layer1Stats: data.layer1Stats.map(({ subject, A }) => ({ subject, score: +A.toFixed(3) })),
-    // name/label/krLabel 통합 → "factoid(사실형)" 형식
+    // name/label/krLabel 통합 → "fact(사실형)" 형식
     intentDistribution: data.intentDistribution.map((d) => ({
       label: d.krLabel ? `${d.name}(${d.krLabel})` : (d.label ?? d.name),
       count: d.value,

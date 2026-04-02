@@ -13,7 +13,11 @@ frontend/
 │   ├── lib/
 │   │   ├── api.ts                       # 백엔드 API 클라이언트 (fetch 래퍼)
 │   │   ├── exportUtils.ts               # XLSX / HTML / JSON / ZIP 내보내기 (차트 SVG 인라인)
+│   │   ├── evalScoreUtils.ts            # 점수 판정 함수 (SCORE_THRESHOLDS, getScoreColor, getQAStatus)
+│   │   ├── evalChartUtils.ts            # 차트 데이터 변환 (formatKST, buildChartData, buildChartDataFromHistory)
 │   │   └── utils.ts                     # cn() 등 유틸리티
+│   ├── types/
+│   │   └── evaluation.ts                # 평가 타입 + 상수 (QAPreviewItem, EvalReport, INTENT_KR 등)
 │   └── components/
 │       ├── layout/
 │       │   ├── Sidebar.tsx              # 글래스 사이드바 — 4개 탭 메뉴 + 하단 Settings 버튼
@@ -27,7 +31,14 @@ frontend/
 │       ├── generation/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (H1/H2 드롭다운 + 진행상황)
 │       ├── evaluation/
-│       │   └── QAEvaluationDashboard.tsx # 4레이어 평가 결과 + 이력 조회 + 리포트 내보내기
+│       │   ├── QAEvaluationDashboard.tsx # 평가 결과 메인 (state + fetch + layout, 766줄)
+│       │   ├── QADetailView.tsx         # QA 개별 상세 뷰 (Q/A/Context + 평가 결과)
+│       │   ├── HistoryDropdown.tsx      # 평가 히스토리 드롭다운
+│       │   ├── shared.tsx               # 공통 UI (TooltipCard, ChartInfoTooltip)
+│       │   └── charts/
+│       │       ├── MetricRadialGauge.tsx # SVG 원형 게이지 (다양성/중복성/편향성/충족성)
+│       │       ├── IntentTreemap.tsx     # Recharts Treemap + 커스텀 셀/툴팁
+│       │       └── QualityScoreChart.tsx # 품질 점수 인터랙티브 바 차트
 │       ├── playground/
 │       │   └── ChatPlayground.tsx       # 채팅 플레이그라운드 (미구현)
 │       └── settings/
@@ -167,4 +178,4 @@ VITE_API_URL=http://localhost:8000
 
 ---
 
-**Last Updated**: 2026-04-01 | **Branch**: main
+**Last Updated**: 2026-04-02 | **Branch**: main

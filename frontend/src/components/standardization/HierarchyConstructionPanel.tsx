@@ -183,7 +183,7 @@ export function HierarchyConstructionPanel() {
             )}
           >
             {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{isAnalyzing ? "분석 중..." : "AI 분석 실행"}</span>
+            <span>{isAnalyzing ? <span className="inline-flex items-baseline gap-[1px]">분석 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span> : "AI 분석 실행"}</span>
           </button>
         </div>
       </div>

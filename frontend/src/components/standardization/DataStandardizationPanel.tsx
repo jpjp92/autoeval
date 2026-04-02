@@ -327,7 +327,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                 )}
               >
                 {(isAnalyzing || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {isAnalyzing ? "카테고리 분류 중..." : isTagging ? "카테고리 적용 중..." : "컨텍스트 분석"}
+                {isAnalyzing ? <span className="inline-flex items-baseline gap-[1px]">카테고리 분류 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span> : isTagging ? <span className="inline-flex items-baseline gap-[1px]">카테고리 적용 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span> : "컨텍스트 분석"}
               </button>
             </div>
 
@@ -343,8 +343,10 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {(isAnalyzing || isTagging) && (
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
-                <p className="text-sm text-indigo-700 dark:text-indigo-400">
-                  {isAnalyzing ? "문서 구조를 분석하고 카테고리를 분류하는 중입니다..." : "분류된 카테고리를 문서에 적용하는 중입니다..."}
+                <p className="text-sm text-indigo-700 dark:text-indigo-400 inline-flex items-baseline">
+                  {isAnalyzing
+                    ? <span className="inline-flex items-baseline gap-[1px]">문서 구조를 분석하고 카테고리를 분류하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>
+                    : <span className="inline-flex items-baseline gap-[1px]">분류된 카테고리를 문서에 적용하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>}
                 </p>
               </div>
             )}
