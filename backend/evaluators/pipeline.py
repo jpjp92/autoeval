@@ -250,7 +250,7 @@ def run_full_evaluation_pipeline(
     if "syntax" in layers:
         logger.info(f"[{job_id}] Layer 1-A: Syntax Validation (workers={SYNTAX_MAX_WORKERS})")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message="Layer 1-A: 구문 검증 중...", progress=5)
+            eval_manager.update_job(job_id, message="구문 검증 중...", progress=5)
             eval_manager.update_layer_status(job_id, "syntax", "running", 50, "필드, 타입, 길이 검증 중...")
 
         validator = SyntaxValidator()
@@ -284,7 +284,7 @@ def run_full_evaluation_pipeline(
         }
 
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"Layer 1-A: 구문 검증 완료 {len(valid_qa)}/{len(qa_list)} 통과", progress=15)
+            eval_manager.update_job(job_id, message=f"구문 검증 완료 ({len(valid_qa)}/{len(qa_list)} 통과)", progress=15)
             eval_manager.update_layer_status(job_id, "syntax", "completed", 100, f"✓ {len(valid_qa)}/{len(qa_list)} 통과")
         logger.info(f"[{job_id}] Layer 1-A: {len(valid_qa)}/{len(qa_list)} passed")
 
@@ -292,7 +292,7 @@ def run_full_evaluation_pipeline(
     if "stats" in layers:
         logger.info(f"[{job_id}] Layer 1-B: Dataset Statistics")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message="2️⃣ 데이터셋 통계 분석 중...", progress=30)
+            eval_manager.update_job(job_id, message="통계 검증 중...", progress=30)
 
         dataset_stats = DatasetStats(qa_list).analyze_all()
         results["layers"]["stats"] = dataset_stats
@@ -314,7 +314,7 @@ def run_full_evaluation_pipeline(
     if "rag" in layers and valid_qa:
         logger.info(f"[{job_id}] Layer 2: RAG Triad (workers={max_api_workers})")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 평가 진행 중... (0/{len(valid_qa)})", progress=45)
+            eval_manager.update_job(job_id, message=f"품질 평가 중... (0/{len(valid_qa)})", progress=45)
             eval_manager.update_layer_status(job_id, "rag", "running", 5, f"관련성, 근거성, 명확성 평가 중... (0/{len(valid_qa)})")
 
         rag_evaluator = RAGTriadEvaluator(evaluator_model)
@@ -339,7 +339,7 @@ def run_full_evaluation_pipeline(
                     pct = int(cnt / len(valid_qa) * 100)
                     eval_manager.update_job(
                         job_id,
-                        message=f"3️⃣ RAG Triad 평가: {cnt}/{len(valid_qa)}",
+                        message=f"품질 평가(관련성, 근거성, 맥락성) 중... ({cnt}/{len(valid_qa)})",
                         progress=45 + int(pct * 0.25)
                     )
                     eval_manager.update_layer_status(job_id, "rag", "running", pct, f"{cnt}/{len(valid_qa)} 평가 완료")
@@ -365,7 +365,7 @@ def run_full_evaluation_pipeline(
 
         if eval_manager and job_id:
             rag_avg = results["layers"]["rag"]["summary"]["avg_score"]
-            eval_manager.update_job(job_id, message=f"Layer 2: RAG Triad 완료: {rag_avg:.3f}", progress=70)
+            eval_manager.update_job(job_id, message=f"RAG 평가 완료 (평균: {rag_avg:.3f})", progress=70)
             eval_manager.update_layer_status(job_id, "rag", "completed", 100, f"✓ 점수: {rag_avg:.3f}")
         logger.info(f"[{job_id}] Layer 2: {len(valid_qa)} QA evaluated")
 
@@ -373,7 +373,7 @@ def run_full_evaluation_pipeline(
     if "quality" in layers and valid_qa:
         logger.info(f"[{job_id}] Layer 3: Quality Evaluation (workers={max_api_workers})")
         if eval_manager and job_id:
-            eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 진행 중... (0/{len(valid_qa)})", progress=75)
+            eval_manager.update_job(job_id, message=f"완전성 평가 중... (0/{len(valid_qa)})", progress=75)
             eval_manager.update_layer_status(job_id, "quality", "running", 5, f"완전성 CoT 평가 중... (0/{len(valid_qa)})")
 
         quality_evaluator = QAQualityEvaluator(evaluator_model)
@@ -399,7 +399,7 @@ def run_full_evaluation_pipeline(
                     passed_so_far = sum(1 for s in quality_scores.values() if s.get("pass", False))
                     eval_manager.update_job(
                         job_id,
-                        message=f"4️⃣ LLM 품질 평가: {cnt}/{len(valid_qa)} (통과: {passed_so_far})",
+                        message=f"품질 평가(완전성) 중... ({cnt}/{len(valid_qa)}, 통과: {passed_so_far})",
                         progress=75 + int(pct * 0.25)
                     )
                     eval_manager.update_layer_status(job_id, "quality", "running", pct, f"{cnt}/{len(valid_qa)} 평가 완료 (통과: {passed_so_far})")
@@ -427,7 +427,7 @@ def run_full_evaluation_pipeline(
 
         if eval_manager and job_id:
             quality_avg = results["layers"]["quality"]["summary"]["avg_quality"]
-            eval_manager.update_job(job_id, message=f"Layer 3: 품질 평가 완료: {quality_avg:.3f} (통과: {pass_rate}%)", progress=85)
+            eval_manager.update_job(job_id, message=f"품질 평가 완료 (평균: {quality_avg:.3f}, 통과: {pass_rate}%)", progress=85)
             eval_manager.update_layer_status(job_id, "quality", "completed", 100, f"✓ 점수: {quality_avg:.3f}, 통과율: {pass_rate}%")
         logger.info(f"[{job_id}] Layer 3: {passed}/{len(valid_qa)} passed ({pass_rate}%)")
 

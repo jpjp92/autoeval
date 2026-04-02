@@ -487,7 +487,13 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
             {isLoadingHierarchy ? (
               <div className="flex items-center gap-2 text-sm text-slate-400 py-3 justify-center">
-                <Loader2 className="w-4 h-4 animate-spin" /> <span>불러오는 중...</span>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="inline-flex items-baseline gap-[1px]">
+                  불러오는 중&nbsp;
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+                </span>
               </div>
             ) : !hierarchyLoaded ? (
               <div className="px-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/8 rounded-xl">
@@ -568,7 +574,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>
                     {phase === "generating"
-                      ? (statusMessage || "QA 생성 중...")
+                      ? (statusMessage || <span className="inline-flex items-baseline gap-[1px]">QA 생성 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>)
                       : "생성 완료"}
                   </span>
                   {phase === "generating" && <span className="text-indigo-600 font-semibold">{progress}%</span>}
@@ -707,7 +713,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             {phase === "evaluating" && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-slate-500">
-                  <span>{statusMessage || "평가 중..."}</span>
+                  <span>{statusMessage || <span className="inline-flex items-baseline gap-[1px]">평가 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>}</span>
                   <span className="text-indigo-600 font-semibold">{progress}%</span>
                 </div>
                 <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">

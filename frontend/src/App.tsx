@@ -102,7 +102,7 @@ function App() {
               onTaggingComplete={(treeData) => {
                 setTaggingTreeData(treeData);
                 setTaggingVersion((v: number) => v + 1);
-                addNotification({ title: '계층 태깅 완료', type: 'success' });
+                addNotification({ title: '카테고리 분류 완료', type: 'success' });
               }}
             />
           </div>

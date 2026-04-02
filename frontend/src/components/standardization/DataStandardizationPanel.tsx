@@ -282,7 +282,14 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               )}
             >
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-              {isUploading ? "벡터화 중..." : "업로드 및 벡터화"}
+              {isUploading ? (
+                <span className="inline-flex items-baseline gap-[1px]">
+                  문서 분석 중&nbsp;
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
+                  <span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+                </span>
+              ) : "문서 업로드"}
             </button>
           </div>
         )}
@@ -323,7 +330,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                 )}
               >
                 {(isAnalyzing || isTagging) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {isAnalyzing ? "마스터 생성 중..." : isTagging ? "태깅 중..." : "컨텍스트 분석"}
+                {isAnalyzing ? "카테고리 분류 중..." : isTagging ? "카테고리 적용 중..." : "컨텍스트 분석"}
               </button>
             </div>
 
@@ -340,7 +347,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
                 <p className="text-sm text-indigo-700 dark:text-indigo-400">
-                  {isAnalyzing ? "1단계: H1/H2/H3 마스터 생성 중..." : "2단계: 청크 태깅 적용 중..."}
+                  {isAnalyzing ? "문서 구조를 분석하고 카테고리를 분류하는 중입니다..." : "분류된 카테고리를 문서에 적용하는 중입니다..."}
                 </p>
               </div>
             )}
