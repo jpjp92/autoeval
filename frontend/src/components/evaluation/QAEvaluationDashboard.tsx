@@ -4,7 +4,7 @@ import {
   Treemap,
 } from 'recharts';
 import {
-  Download, CheckCircle2, AlertCircle, FileText, Activity, Target, Zap,
+  Download, AlertCircle, FileText, Activity, Target, Zap,
   Code2, ChevronDown, Clock, History, Loader2, LayoutGrid, Info,
   ArrowLeft, ChevronLeft, ChevronRight, Bot,
   Shuffle, Copy, Scale, ShieldCheck
@@ -13,273 +13,10 @@ import { cn } from '@/src/lib/utils';
 import { useState, useEffect, useRef } from 'react';
 import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
 import { getEvalStatus, getEvalHistory, getEvalExport, getEvalExportById } from '@/src/lib/api';
-
-// ─── Intent 레이블 ────────────────────────────────────────────────────────────
-const INTENT_KR: Record<string, string> = {
-  // 신규 6종 (2026-03-25~)
-  fact:       '사실형',
-  purpose:    '원인형',
-  how:        '방법형',
-  condition:  '조건형',
-  comparison: '비교형',
-  list:       '열거형',
-  // 구형 8종 (하위 호환)
-  factoid:      '사실형',
-  numeric:      '수치형',
-  procedure:    '절차형',
-  why:          '원인형',
-  definition:   '정의형',
-  boolean:      '확인형',
-  summary:      '요약형',
-  confirmation: '확인형',
-};
-
-const INTENT_COLORS: Record<string, string> = {
-  // 신규 6종 — 쭄도를 낙춰 세련되게
-  fact:       '#3b7dd8',   // 조용한 블루
-  purpose:    '#a855b5',   // 춨서멈 퍼플
-  how:        '#16a35a',   // 폰 에메랄드
-  condition:  '#d97706',   // 헤이저드 오렌지
-  comparison: '#4f46e5',   // 인디고
-  list:       '#0891b2',   // 다크 시안
-  // 구형 8종 (하위 호환)
-  factoid:      '#3b7dd8',
-  numeric:      '#ca8a04',
-  procedure:    '#4f46e5',
-  why:          '#a855b5',
-  definition:   '#0284c7',
-  boolean:      '#9333ea',
-  summary:      '#0891b2',
-  confirmation: '#9333ea',
-};
-
-// ─── Intent 설명 텍스트 ──────────────────────────────────────────────────────
-const INTENT_DESCRIPTIONS: Record<string, string> = {
-  fact:       '명확한 사실 정보를 확인하는 질문',
-  purpose:    '원인, 배경, 이유를 탐색하는 질문',
-  how:        '구체적 방법이나 절차를 묻는 질문',
-  condition:  '조건·상황별 결과를 확인하는 질문',
-  comparison: '두 대상 이상을 비교하는 질문',
-  list:       '여러 항목을 나열·열거하는 질문',
-  // 구형 하위 호환
-  factoid:      '명확한 사실 정보를 확인하는 질문',
-  numeric:      '수치나 통계 데이터를 묻는 질문',
-  procedure:    '단계적 절차나 방법을 묻는 질문',
-  why:          '원인과 이유를 탐색하는 질문',
-  definition:   '개념이나 용어의 정의를 묻는 질문',
-  boolean:      '참/거짓 여부를 확인하는 질문',
-  summary:      '내용을 요약하여 전달하는 질문',
-  confirmation: '참/거짓 여부를 확인하는 질문',
-};
-
-// ─── 상태 로직 ────────────────────────────────────────────────────────────────
-type QAStatus = 'success' | 'hold' | 'fail';
-
-function getQAStatus(qa: Partial<QAPreviewItem>): QAStatus {
-  if (!qa) return 'fail';
-  const { quality_avg, rag_avg, pass, failure_types } = qa;
-
-  // 1. 기본 점수 기반 판정 (임계값 0.7 미만 시 실패/보류)
-  const qFail = quality_avg == null || quality_avg < 0.7;
-  const rFail = rag_avg    == null || rag_avg    < 0.7;
-
-  if (qFail && rFail) return 'fail';
-
-  // 2. 예외 처리: 고득점(0.7 이상)이지만 결함이 발견된 경우 -> '보류(Hold)'
-  // - 백엔드에서 pass: false를 줬거나 실질적인 failure_types가 존재하는 경우
-  const hasError = (pass === false) || (failure_types && failure_types.length > 0);
-  if (!qFail && !rFail && hasError) {
-    return 'hold';
-  }
-
-  // 3. 점수가 하나라도 낮으면 원래대로 '보류'
-  if (qFail || rFail) return 'hold';
-
-  // 4. 모든 조건 충족 시 성공
-  return 'success';
-}
-
-const STATUS_CONFIG: Record<QAStatus, { label: string; className: string; dotColor: string }> = {
-  success: { label: '성공', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', dotColor: 'bg-emerald-500' },
-  hold:    { label: '보류', className: 'bg-amber-50 text-amber-700 border-amber-200',       dotColor: 'bg-amber-400'  },
-  fail:    { label: '실패', className: 'bg-rose-50 text-rose-700 border-rose-200',          dotColor: 'bg-rose-500'   },
-};
-
-// ─── Failure Type ─────────────────────────────────────────────────────────────
-const FAILURE_CONFIG: Record<string, { label: string; className: string }> = {
-  hallucination:      { label: '환각오류',   className: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-200 dark:border-rose-500/20' },
-  faithfulness_error: { label: '근거오류',   className: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
-  poor_context:       { label: '문맥부족',   className: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-slate-800/50 dark:text-slate-200 dark:border-slate-700/50' },
-  retrieval_miss:     { label: '검색오류',   className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
-  ambiguous_question: { label: '질문모호',   className: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50' },
-  bad_chunk:          { label: '불량청크',   className: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-700/30' },
-  evaluation_error:   { label: '평가오류',   className: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-indigo-950/30 dark:text-indigo-200 dark:border-indigo-500/20' },
-  low_quality:        { label: '품질미달',   className: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-500/20' },
-  syntax_error:       { label: '구문오류',   className: 'bg-red-50 text-red-700 border-red-200 dark:bg-rose-950/30 dark:text-rose-200 dark:border-rose-500/20' },
-};
-
-// ─── 타입 ─────────────────────────────────────────────────────────────────────
-interface QAPreviewItem {
-  qa_index:     number;
-  q:            string;
-  a?:           string;
-  context?:     string;
-  intent:       string;
-  rag_avg?:     number;
-  quality_avg?: number;
-  pass:         boolean;
-  // individual scores
-  relevance?:         number;
-  groundedness?:      number;
-  context_relevance?: number;
-  completeness?:      number;
-  // failure
-  failure_types?:   string[];
-  primary_failure?: string | null;
-  failure_reason?:  string;
-  // reason — RAG
-  relevance_reason?:         string;
-  groundedness_reason?:      string;
-  context_relevance_reason?: string;
-  // reason — Quality
-  completeness_reason?: string;
-  coverage?:            number;
-  missing_aspects?:     string[];
-}
-
-interface EvalReport {
-  job_id: string;
-  result_filename: string;
-  timestamp: string;
-  metadata: { total_qa: number; valid_qa: number; evaluator_model: string; generation_model?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
-  pipeline_results: {
-    syntax?:  { total: number; valid: number; invalid: number; pass_rate: number };
-    stats?:   {
-      integrated_score: number;
-      diversity:        { score: number; intent_distribution: Record<string, number> };
-      duplication_rate: { score: number };
-      skewness:         { score: number };
-      data_sufficiency: { score: number };
-    };
-    rag?:     { evaluated_count: number; summary: { avg_relevance: number; avg_groundedness: number; avg_context_relevance?: number; avg_score: number } };
-    quality?: { pass_count: number; pass_rate: number; summary: { avg_completeness: number; avg_quality: number } };
-  };
-  summary: {
-    syntax_pass_rate: number;
-    dataset_quality_score: number;
-    rag_average_score: number;
-    quality_average_score: number;
-    quality_pass_rate: number;
-    final_score: number;
-    grade: string;
-  };
-  qa_preview?: QAPreviewItem[];
-}
-
-interface HistoryItem {
-  id: string;
-  job_id: string;
-  metadata: { generation_model?: string; evaluator_model?: string; lang?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
-  result_filename?: string;
-  total_qa: number;
-  final_score: number;
-  final_grade: string;
-  created_at: string;
-  scores?: Record<string, any>;
-  pipeline_results?: Record<string, any>;
-}
-
-// ─── 시간 포맷 (KST) ─────────────────────────────────────────────────────────
-function formatKST(dateStr: string): string {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-}
-
-// ─── 데이터 변환 ──────────────────────────────────────────────────────────────
-function buildChartData(report: EvalReport) {
-  const s   = report.pipeline_results?.stats;
-  const rag = report.pipeline_results?.rag;
-  const qua = report.pipeline_results?.quality;
-  const sum = report.summary;
-
-  const successCount = (report.qa_preview ?? [])
-    .filter(qa => getQAStatus(qa) === 'success').length;
-  const summaryStats = [
-    { label: '총 생성된 QA',   value: report.metadata.total_qa.toLocaleString(), icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100',
-      tooltip: { title: '총 생성된 QA', items: [{ text: '문서에서 추출된 전체 질의응답 세트의 수입니다.' }, { label: '기준', text: '의미론적 중복을 제거한 최종본 개수' }] } },
-    { label: '성공 QA 수',     value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
-      tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
-    { label: '통합 품질 평균 점수', value: (sum.final_score ?? 0).toFixed(3), icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100',
-      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
-    { label: '종합 평가 등급', value: sum.grade ?? '-',    icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100',
-      tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
-  ];
-
-  const layer1Stats = [
-    { subject: '다양성', A: s?.metrics?.diversity_score    ?? s?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복성', A: s?.metrics?.duplication_score  ?? s?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향성', A: s?.metrics?.skewness_score     ?? s?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충족성', A: s?.metrics?.sufficiency_score   ?? s?.data_sufficiency?.score ?? 0, fullMark: 10 },
-  ];
-
-  const intentDist = s?.diversity?.intent_distribution ?? {};
-  const intentDistribution = Object.entries(intentDist).map(([name, value]) => ({
-    name,
-    label:   name.charAt(0).toUpperCase() + name.slice(1),
-    krLabel: INTENT_KR[name] ?? name,
-    value:   value as number,
-  }));
-
-  const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance         ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness      ?? 0, group: 'rag' as const },
-    { name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const },
-    { name: '완전성', nameEn: 'Completeness',     score: qua?.summary?.avg_completeness      ?? 0, group: 'quality' as const },
-  ];
-
-  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
-}
-
-function buildChartDataFromHistory(item: HistoryItem) {
-  const pl  = item.pipeline_results?.layers ?? {};
-  const st  = pl.stats;
-  const rag = pl.rag;
-  const qua = pl.quality;
-  const sc  = item.scores ?? {};
-
-  const passCount = sc.quality?.pass_count ?? sc.syntax?.valid ?? item.total_qa;
-  const summaryStats = [
-    { label: '총 생성된 QA',   value: item.total_qa.toLocaleString(),                                          icon: FileText,    color: 'text-indigo-600',  bg: 'bg-indigo-100',
-      tooltip: { title: '총 생성된 QA', items: [{ text: '문서에서 추출된 전체 질의응답 세트의 수입니다.' }, { label: '기준', text: '의미론적 중복을 제거한 최종본 개수' }] } },
-    { label: '성공 QA 수',     value: `${passCount} / ${item.total_qa.toLocaleString()}`,                      icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
-      tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
-    { label: '통합 품질 평균 점수', value: (item.final_score ?? 0).toFixed(3),                            icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100',
-      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
-    { label: '종합 평가 등급', value: item.final_grade ?? '-',                            icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100',
-      tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
-  ];
-
-  const layer1Stats = [
-    { subject: '다양성', A: st?.metrics?.diversity_score    ?? st?.diversity?.score        ?? 0, fullMark: 10 },
-    { subject: '중복성', A: st?.metrics?.duplication_score  ?? st?.duplication_rate?.score ?? 0, fullMark: 10 },
-    { subject: '편향성', A: st?.metrics?.skewness_score     ?? st?.skewness?.score         ?? 0, fullMark: 10 },
-    { subject: '충족성', A: st?.metrics?.sufficiency_score   ?? st?.data_sufficiency?.score ?? 0, fullMark: 10 },
-  ];
-
-  const intentDist = st?.diversity?.intent_distribution ?? {};
-  const intentDistribution = Object.entries(intentDist).map(([name, value]) => ({
-    name, label: name.charAt(0).toUpperCase() + name.slice(1), krLabel: INTENT_KR[name] ?? name, value: value as number,
-  }));
-
-  const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance', score: rag?.summary?.avg_relevance         ?? 0, group: 'rag' as const },
-    { name: '근거성', nameEn: 'Groundedness',     score: rag?.summary?.avg_groundedness      ?? 0, group: 'rag' as const },
-    { name: '맥락성', nameEn: 'Context Relevance', score: rag?.summary?.avg_context_relevance ?? 0, group: 'rag' as const },
-    { name: '완전성', nameEn: 'Completeness',     score: qua?.summary?.avg_completeness      ?? 0, group: 'quality' as const },
-  ];
-
-  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
-}
+import type { QAStatus, QAPreviewItem, EvalReport, HistoryItem } from '@/src/types/evaluation';
+import { INTENT_KR, INTENT_COLORS, INTENT_DESCRIPTIONS, STATUS_CONFIG, FAILURE_CONFIG, GRADE_COLOR, QA_PAGE_SIZE } from '@/src/types/evaluation';
+import { SCORE_THRESHOLDS, getScoreColor, getQAStatus } from '@/src/lib/evalScoreUtils';
+import { formatKST, buildChartData, buildChartDataFromHistory } from '@/src/lib/evalChartUtils';
 
 // ─── 공통 툴팁 wrapper ────────────────────────────────────────────────────────
 const TooltipCard = ({ children }: { children: React.ReactNode }) => (
@@ -678,8 +415,8 @@ function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: strin
   return (
     <div ref={containerRef} className="space-y-3.5 mt-2">
       {data.map((item, i) => {
-        const isHigh = item.score >= 0.85;
-        const isMid  = item.score >= 0.7;
+        const isHigh = item.score >= SCORE_THRESHOLDS.high;
+        const isMid  = item.score >= SCORE_THRESHOLDS.mid;
         const colorClass = isHigh ? 'from-emerald-400 to-teal-500' : isMid ? 'from-amber-400 to-orange-500' : 'from-rose-400 to-red-500';
         const glowClass  = isHigh ? 'shadow-[0_0_12px_rgba(16,185,129,0.3)]' : isMid ? 'shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'shadow-[0_0_12px_rgba(244,63,94,0.3)]';
         const isRag = item.group === 'rag';
@@ -747,8 +484,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   // 통합 차원 목록
   const allDimensions = [...ragDimensions, ...qualityDimensions];
 
-  const scoreColor = (v: number) =>
-    v >= 0.85 ? 'text-emerald-600' : v >= 0.7 ? 'text-amber-500' : 'text-rose-600';
+  const scoreColor = getScoreColor;
 
   return (
     <div className="p-5 space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
@@ -886,17 +622,7 @@ function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void })
   );
 }
 
-// ─── 등급 색상 ────────────────────────────────────────────────────────────────
-const GRADE_COLOR: Record<string, string> = {
-  'A+': 'text-emerald-600 bg-emerald-50 border-emerald-200',
-  'A':  'text-emerald-600 bg-emerald-50 border-emerald-200',
-  'B+': 'text-blue-600 bg-blue-50 border-blue-200',
-  'B':  'text-blue-600 bg-blue-50 border-blue-200',
-  'C':  'text-amber-600 bg-amber-50 border-amber-200',
-  'F':  'text-rose-600 bg-rose-50 border-rose-200',
-};
 
-const QA_PAGE_SIZE = 5;
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 export function QAEvaluationDashboard({ 
@@ -1577,12 +1303,12 @@ export function QAEvaluationDashboard({
                         </td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
                           {row.quality_avg != null
-                            ? <span className={row.quality_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
+                            ? <span className={row.quality_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
                           {row.rag_avg != null
-                            ? <span className={row.rag_avg >= 0.7 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
+                            ? <span className={row.rag_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
                         <td className="px-3 py-2 text-center align-middle">
