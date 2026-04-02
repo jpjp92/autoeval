@@ -1236,14 +1236,14 @@ export function QAEvaluationDashboard({
           <div className="flex flex-col gap-1.5">
             {/* 1행: Model · Dataset · 평가 일시 */}
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-600 dark:text-slate-400 shadow-sm">
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-600 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
                 <Bot className="w-3.5 h-3.5 text-indigo-500" />
                 <span>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{getGenerationModel()}</span></span>
               </div>
               {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
                 <div
                   title={activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px]"
+                  className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-500/40 cursor-default"
                 >
                   <FileText className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">
@@ -1251,7 +1251,7 @@ export function QAEvaluationDashboard({
                   </span>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm">
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
                 <Clock className="w-3.5 h-3.5" />
                 <span>평가 일시: {formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
               </div>
@@ -1266,7 +1266,7 @@ export function QAEvaluationDashboard({
               const parts = [h1, h2, h3].filter(Boolean);
               if (parts.length === 0) return null;
               return (
-                <div className="flex items-center gap-1 px-3 py-1 bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20 rounded-full backdrop-blur-sm text-[12px] font-medium text-indigo-600 dark:text-indigo-400 shadow-sm w-fit max-w-[480px] overflow-hidden">
+                <div className="flex items-center gap-1 px-3 py-1 bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20 rounded-full backdrop-blur-sm text-[12px] font-medium text-indigo-600 dark:text-indigo-400 shadow-sm w-fit max-w-[480px] overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-500/40 cursor-default">
                   <LayoutGrid className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="flex items-center gap-1 truncate">
                     <span className="opacity-70 mr-0.5">Category:</span>

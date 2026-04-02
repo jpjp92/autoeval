@@ -97,7 +97,7 @@ function App() {
               setActiveTab={setActiveTab}
               onUploadComplete={(filename) => {
                 setCurrentFilename(filename);
-                addNotification({ title: '임베딩 완료', sub: filename, type: 'success' });
+                addNotification({ title: '문서 분석 완료', sub: filename, type: 'success' });
               }}
               onTaggingComplete={(treeData) => {
                 setTaggingTreeData(treeData);

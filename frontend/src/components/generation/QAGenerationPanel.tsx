@@ -661,7 +661,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
       {/* ── Step 3: QA 평가 ──────────────────────────────────────────────── */}
       <StepCard
         step={3} title="QA 평가"
-        subtitle="4-Layer 평가 파이프라인을 실행하고 품질 지표를 확인합니다."
+        subtitle="생성된 QA의 품질을 자동으로 검증하고 점수를 확인합니다."
         icon={<BarChart2 className="w-4 h-4" />}
         status={step3Status} isLast={true}
       >
@@ -716,38 +716,46 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
               </div>
             )}
 
-            {/* 4-Layer 상태 (평가 시작 후에만 표시) */}
+            {/* 파이프라인 단계 상태 (평가 시작 후에만 표시) */}
             {(phase === "evaluating" || evaluationDone) && <div className="space-y-2.5">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">평가 파이프라인</p>
-              {(["syntax", "stats", "rag", "quality"] as const).map(layer => {
-                const info = evalLayers[layer];
-                const label = {
-                  syntax:  "Layer 1-A · Syntax Validation",
-                  stats:   "Layer 1-B · Data Statistics",
-                  rag:     "Layer 2 · RAG Triad",
-                  quality: "Layer 3 · 완전성 평가",
-                }[layer];
-                return (
-                  <div key={layer} className="space-y-1">
+              {(() => {
+                const ragStatus   = evalLayers["rag"].status;
+                const qualStatus  = evalLayers["quality"].status;
+                const ragQualStatus =
+                  ragStatus === "completed" && qualStatus === "completed" ? "completed" :
+                  ragStatus === "running"   || qualStatus === "running"   ? "running"   : "pending";
+                const ragQualProgress = Math.round(
+                  ((evalLayers["rag"].progress || 0) + (evalLayers["quality"].progress || 0)) / 2
+                );
+
+                const steps: { key: string; label: string; status: string; progress: number }[] = [
+                  { key: "syntax",      label: "구문 검증",   status: evalLayers["syntax"].status,  progress: evalLayers["syntax"].progress  || 0 },
+                  { key: "stats",       label: "통계 검증",   status: evalLayers["stats"].status,   progress: evalLayers["stats"].progress   || 0 },
+                  { key: "rag_quality", label: "품질 평가",   status: ragQualStatus,                progress: ragQualProgress },
+                ];
+
+                return steps.map(({ key, label, status, progress }) => (
+                  <div key={key} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono text-slate-600">{label}</span>
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">{label}</span>
                       <span className={cn("font-semibold px-2 py-0.5 rounded-full text-[11px]",
-                        info.status === "completed" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" :
-                        info.status === "running"   ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
-                                                      "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
+                        status === "completed" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" :
+                        status === "running"   ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
+                                                 "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
                       )}>
-                        {info.status === "completed" ? "완료" : info.status === "running" ? "실행 중" : "대기"}
+                        {status === "completed" ? "완료" : status === "running" ? "실행 중" : "대기"}
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1 overflow-hidden">
                       <div className={cn("h-full rounded-full transition-all duration-300",
-                        info.status === "completed" ? "bg-emerald-400" :
-                        info.status === "running"   ? "bg-amber-400" : "bg-slate-200 dark:bg-white/10"
-                      )} style={{ width: `${info.progress || 0}%` }} />
+                        status === "completed" ? "bg-emerald-400" :
+                        status === "running"   ? "bg-amber-400" : "bg-slate-200 dark:bg-white/10"
+                      )} style={{ width: `${progress}%` }} />
                     </div>
                   </div>
-                );
-              })}
+                ));
+              })()}
             </div>}
 
             {/* 완료 지표 */}
@@ -760,21 +768,25 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                   {(() => {
                     const s = evalReport.summary;
                     const m = evalReport.metadata ?? {};
+                    const ragScore = s.rag_average_score ?? 0;
+                    const qualScore = s.quality_average_score ?? 0;
+                    const qualityAvg = ((ragScore + qualScore) / 2).toFixed(2);
+                    const qualityOk = (ragScore + qualScore) / 2 >= 0.7;
                     return [
-                      { label: "총 QA",      value: `${m.total_qa ?? '-'}개`,                        ok: null              },
-                      { label: "구문 통과율", value: `${s.syntax_pass_rate ?? 0}%`,                   ok: (s.syntax_pass_rate ?? 0) >= 80     },
-                      { label: "Dataset",    value: `${s.dataset_quality_score ?? 0}/10`,             ok: (s.dataset_quality_score ?? 0) >= 7 },
-                      { label: "RAG 점수",   value: s.rag_average_score?.toFixed(2) ?? '-',           ok: (s.rag_average_score ?? 0) >= 0.7   },
-                      { label: "품질 점수",  value: s.quality_average_score?.toFixed(2) ?? '-',       ok: (s.quality_average_score ?? 0) >= 0.7 },
-                      { label: "최종 점수",  value: `${((s.final_score ?? 0) * 100).toFixed(1)}/100`, ok: 'highlight' as any },
+                      { label: "총 QA",        value: `${m.total_qa ?? '-'}개`,                        ok: null              },
+                      { label: "구문 통과율",   value: `${s.syntax_pass_rate ?? 0}%`,                   ok: (s.syntax_pass_rate ?? 0) >= 80 },
+                      { label: "유효 QA 수량", value: `${m.valid_qa ?? '-'}개`,                         ok: null              },
+                      { label: "통합 품질 점수", value: qualityAvg,                                      ok: qualityOk         },
+                      { label: "최종 점수",     value: `${((s.final_score ?? 0) * 100).toFixed(1)}/100`, ok: 'highlight' as any },
+                      { label: "평가 모델",     value: m.evaluator_model ?? '-',                         ok: null              },
                     ];
                   })().map(({ label, value, ok }) => (
                     <div key={label} className={cn(
-                      "rounded-xl border flex flex-col items-center justify-center py-3 gap-1 cursor-default select-none transition-all",
-                      ok === 'highlight' ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-100 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-500/20" :
-                      ok === true        ? "bg-white dark:bg-white/5 border-emerald-100 dark:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" :
-                      ok === false       ? "bg-white dark:bg-white/5 border-amber-100 dark:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/10" :
-                                          "bg-white dark:bg-white/5 border-slate-100 dark:border-white/8 hover:bg-slate-50 dark:hover:bg-white/8"
+                      "rounded-xl border flex flex-col items-center justify-center py-3 gap-1 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm",
+                      ok === 'highlight' ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 hover:border-indigo-300 dark:hover:bg-indigo-500/25 dark:hover:border-indigo-400/50 hover:shadow-indigo-100 dark:hover:shadow-indigo-500/10" :
+                      ok === true        ? "bg-white dark:bg-white/5 border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-50 hover:border-emerald-300 dark:hover:bg-emerald-500/15 dark:hover:border-emerald-400/50 hover:shadow-emerald-100 dark:hover:shadow-emerald-500/10" :
+                      ok === false       ? "bg-white dark:bg-white/5 border-amber-200 dark:border-amber-500/30 hover:bg-amber-50 hover:border-amber-300 dark:hover:bg-amber-500/15 dark:hover:border-amber-400/50 hover:shadow-amber-100 dark:hover:shadow-amber-500/10" :
+                                          "bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-50 hover:border-slate-300 dark:hover:bg-white/10 dark:hover:border-white/20 hover:shadow-slate-100 dark:hover:shadow-white/5"
                     )}>
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">{label}</p>
                       <p className={cn("text-sm font-bold",

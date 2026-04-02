@@ -65,7 +65,14 @@ PDF 추출 시 발생하는 아래 오류를 모두 수정하세요:
   바로 뒤 내용 청크의 첫 줄로 포함
 - 형식: "제목\\n내용 첫 문장..."
 
-청크 크기 (엄격 적용)
+주제 전환 기준 (의미 기반 경계 — 크기보다 우선)
+- 하나의 청크는 하나의 완결된 주제·논점·사례를 다루어야 합니다
+- 새로운 개념, 주장, 배경 설명, 사례가 시작될 때 새 청크를 시작하세요
+- 접속사나 연결어 없이 갑자기 다른 주제로 전환되는 지점에서 청크를 나누세요
+- 맥락상 앞 내용의 마무리(결론·요약·효과)가 끝나고 새 내용이 시작될 때 경계로 삼으세요
+- 의미적으로 완결된 단위를 우선하되, 800자 상한은 반드시 지킵니다
+
+청크 크기
 - 최소 200자 — 짧은 내용은 의미상 관련된 인접 청크와 합치세요
 - 최대 800자 — 800자를 초과하는 청크는 절대 생성하지 마세요
 - 800자에 도달하면 마침표(.) 또는 항목 경계(①②, 1. 2. 등)에서 즉시 분리하고 다음 청크로 이어가세요
@@ -171,7 +178,14 @@ DOCX_SYSTEM_PROMPT = """\
   바로 뒤 내용 청크의 첫 줄로 포함
 - 형식: "제목\\n내용 첫 문장..."
 
-청크 크기 (엄격 적용)
+주제 전환 기준 (의미 기반 경계 — 크기보다 우선)
+- 하나의 청크는 하나의 완결된 주제·논점·사례를 다루어야 합니다
+- 새로운 개념, 주장, 배경 설명, 사례가 시작될 때 새 청크를 시작하세요
+- 접속사나 연결어 없이 갑자기 다른 주제로 전환되는 지점에서 청크를 나누세요
+- 맥락상 앞 내용의 마무리(결론·요약·효과)가 끝나고 새 내용이 시작될 때 경계로 삼으세요
+- 의미적으로 완결된 단위를 우선하되, 800자 상한은 반드시 지킵니다
+
+청크 크기
 - 최소 200자 — 짧은 내용은 의미상 관련된 인접 청크와 합치세요
 - 최대 800자 — 800자를 초과하는 청크는 절대 생성하지 마세요
 - 800자에 도달하면 마침표(.) 또는 항목 경계(①②, 1. 2. 등)에서 즉시 분리하고 다음 청크로 이어가세요
@@ -349,8 +363,19 @@ def _jaccard(a: list[int], b: list[int]) -> float:
     return len(sa & sb) / len(sa | sb)
 
 
-def merge_short_chunks(chunks: list[dict], min_chars: int = 100) -> list[dict]:
-    """min_chars 미만 청크를 인접 청크에 흡수 (반복 수렴)."""
+def _text_jaccard(a: str, b: str) -> float:
+    """텍스트 내용 기반 어절 단위 Jaccard 유사도."""
+    sa = set(a.split())
+    sb = set(b.split())
+    if not sa and not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def merge_short_chunks(chunks: list[dict], min_chars: int = 200) -> list[dict]:
+    """min_chars 미만 청크를 인접 청크에 흡수 (반복 수렴).
+    기본값 200자 — 프롬프트 최소 크기 기준과 일치.
+    """
     if not chunks:
         return chunks
     result = list(chunks)
@@ -377,7 +402,9 @@ def merge_short_chunks(chunks: list[dict], min_chars: int = 100) -> list[dict]:
                     }
                     result.pop(i)
                 else:
+                    # 앞뒤 청크가 없는 단독 짧은 청크 — 흡수 불가, 그냥 유지
                     i += 1
+                    continue
                 changed = True
             else:
                 i += 1
@@ -393,27 +420,39 @@ _DANGLING_RE = re.compile(
 
 
 def trim_dangling_conjunctions(chunks: list[dict]) -> list[dict]:
-    """청크 끝에 홀로 남은 접속사/연결어를 다음 청크 앞으로 이동."""
+    """청크 끝에 홀로 남은 접속사/연결어를 다음 청크 앞으로 이동.
+    마지막 청크에 접속사가 있는 경우 이동할 다음 청크가 없으므로 원본을 유지.
+    """
     for i, chunk in enumerate(chunks):
         m = _DANGLING_RE.search(chunk["text"])
         if not m:
             continue
+        if i + 1 >= len(chunks):
+            # 마지막 청크 — 다음 청크 없음, 내용 유실 방지를 위해 그냥 유지
+            continue
         dangling = m.group(0).strip().lstrip(",").strip()
         chunk["text"] = chunk["text"][:m.start()].rstrip()
-        if i + 1 < len(chunks):
-            chunks[i + 1]["text"] = dangling + " " + chunks[i + 1]["text"].lstrip()
+        chunks[i + 1]["text"] = dangling + " " + chunks[i + 1]["text"].lstrip()
     return chunks
 
 
 def deduplicate_chunks(chunks: list[dict], threshold: float = 0.5) -> list[dict]:
-    """source_blocks Jaccard 유사도 > threshold 이면 중복으로 판단, 긴 텍스트를 유지."""
+    """중복 청크 제거.
+
+    source_blocks Jaccard 또는 텍스트 어절 Jaccard 중 하나라도 threshold 초과 시 중복 판단.
+    두 기준을 OR로 결합해 배치 경계를 넘는 텍스트 중복까지 감지.
+    중복 시 더 긴 텍스트를 유지.
+    """
     result: list[dict] = []
     for chunk in chunks:
-        src = chunk.get("source_blocks", [])
+        src  = chunk.get("source_blocks", [])
+        text = chunk.get("text", "")
         merged = False
         for i, kept in enumerate(result):
-            if _jaccard(src, kept.get("source_blocks", [])) > threshold:
-                if len(chunk["text"]) > len(kept["text"]):
+            src_sim  = _jaccard(src, kept.get("source_blocks", []))
+            text_sim = _text_jaccard(text, kept.get("text", ""))
+            if src_sim > threshold or text_sim > threshold:
+                if len(text) > len(kept["text"]):
                     result[i] = chunk
                 merged = True
                 break

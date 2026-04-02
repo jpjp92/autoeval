@@ -66,7 +66,7 @@ async def save_doc_chunk(
         return None
 
 
-async def save_doc_chunks_batch(chunks: list) -> list:
+async def save_doc_chunks_batch(chunks: list, retries: int = 3) -> list:
     """
     배치 단위로 doc_chunks 저장.
     - (content_hash, document_id) 쌍 1회 SELECT로 중복 확인
@@ -74,70 +74,79 @@ async def save_doc_chunks_batch(chunks: list) -> list:
     - 동일 content + 새 document_id → 새 버전 row INSERT (이전 버전 보존)
     chunks: [{"content": str, "embedding": list, "metadata": dict}]
 
-    Note: supabase-py sync 클라이언트는 블로킹 I/O이므로 asyncio.to_thread로 래핑.
+    Note: _write_sem()으로 동시 DB 쓰기를 제한해 supabase-py HTTP/2 커넥션 풀 경합 방지.
+    실패 시 최대 retries회 지수 백오프 재시도.
     """
     if not supabase or not chunks:
         return []
 
-    try:
-        # 1. hash 목록 수집
-        hash_list = [
-            h for h in (
-                (c.get("metadata") or {}).get("content_hash") for c in chunks
-            ) if h
-        ]
+    async with _write_sem():
+        for attempt in range(retries):
+            try:
+                # 1. hash 목록 수집
+                hash_list = [
+                    h for h in (
+                        (c.get("metadata") or {}).get("content_hash") for c in chunks
+                    ) if h
+                ]
 
-        # 2. 기존 (content_hash, document_id) 쌍 1회 SELECT — to_thread로 이벤트루프 블로킹 방지
-        existing_pairs: set = set()
-        if hash_list:
-            existing_res = await asyncio.to_thread(
-                lambda: supabase.table("doc_chunks")
-                    .select("metadata")
-                    .in_("metadata->>content_hash", hash_list)
-                    .execute()
-            )
-            for r in (existing_res.data or []):
-                meta = r.get("metadata") or {}
-                h = meta.get("content_hash")
-                d = meta.get("document_id")
-                if h and d:
-                    existing_pairs.add((h, d))
+                # 2. 기존 (content_hash, document_id) 쌍 1회 SELECT
+                existing_pairs: set = set()
+                if hash_list:
+                    existing_res = await asyncio.to_thread(
+                        lambda: supabase.table("doc_chunks")
+                            .select("metadata")
+                            .in_("metadata->>content_hash", hash_list)
+                            .execute()
+                    )
+                    for r in (existing_res.data or []):
+                        meta = r.get("metadata") or {}
+                        h = meta.get("content_hash")
+                        d = meta.get("document_id")
+                        if h and d:
+                            existing_pairs.add((h, d))
 
-        # 3. 신규 청크만 필터링 — 동일 (hash, doc_id) 쌍만 skip
-        now = datetime.utcnow().isoformat()
-        new_rows = []
-        skipped = 0
-        for c in chunks:
-            meta = c.get("metadata") or {}
-            content_hash = meta.get("content_hash")
-            document_id = meta.get("document_id")
-            if content_hash and document_id and (content_hash, document_id) in existing_pairs:
-                logger.debug(f"Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
-                skipped += 1
-                continue
-            new_rows.append({
-                "content":     c["content"],
-                "embedding":   c["embedding"],
-                "metadata":    meta,
-                "document_id": document_id,
-                "created_at":  now,
-            })
+                # 3. 신규 청크만 필터링 — 동일 (hash, doc_id) 쌍만 skip
+                now = datetime.utcnow().isoformat()
+                new_rows = []
+                skipped = 0
+                for c in chunks:
+                    meta = c.get("metadata") or {}
+                    content_hash = meta.get("content_hash")
+                    document_id = meta.get("document_id")
+                    if content_hash and document_id and (content_hash, document_id) in existing_pairs:
+                        logger.debug(f"Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
+                        skipped += 1
+                        continue
+                    new_rows.append({
+                        "content":     c["content"],
+                        "embedding":   c["embedding"],
+                        "metadata":    meta,
+                        "document_id": document_id,
+                        "created_at":  now,
+                    })
 
-        if skipped:
-            logger.info(f"Batch duplicate skip: {skipped} chunks")
+                if skipped:
+                    logger.info(f"Batch duplicate skip: {skipped} chunks")
 
-        # 4. 신규 청크 1회 배치 INSERT — to_thread로 이벤트루프 블로킹 방지
-        if not new_rows:
-            return []
+                # 4. 신규 청크 1회 배치 INSERT
+                if not new_rows:
+                    return []
 
-        response = await asyncio.to_thread(
-            lambda: supabase.table("doc_chunks").insert(new_rows).execute()
-        )
-        return [r["id"] for r in (response.data or [])]
+                response = await asyncio.to_thread(
+                    lambda: supabase.table("doc_chunks").insert(new_rows).execute()
+                )
+                return [r["id"] for r in (response.data or [])]
 
-    except Exception as e:
-        logger.error(f"Failed to save doc chunks batch: {e}")
-        return []
+            except Exception as e:
+                if attempt < retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(f"save_doc_chunks_batch retry {attempt + 1}/{retries} (wait={wait}s): {e}")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Failed to save doc chunks batch: {e}")
+                    return []
+    return []
 
 
 async def update_chunk_metadata(chunk_id: str, metadata: Dict[str, Any], retries: int = 3) -> bool:

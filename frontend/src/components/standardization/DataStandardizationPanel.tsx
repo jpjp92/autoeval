@@ -96,7 +96,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const res = await fetch(`${API_BASE}/api/ingestion/upload`, { method: "POST", body: formData });
       const data = await res.json();
       if (res.ok) {
-        setUploadMessage({ text: `"${fileName}" 업로드 및 벡터화 완료.`, type: "success" });
+        setUploadMessage({ text: `"${fileName}" 분석이 완료되었습니다.`, type: "success" });
         setUploadedFilename(fileName);
         clearDocumentId(fileName); // 재업로드 시 기존 document_id 무효화
         onUploadComplete?.(fileName);
@@ -126,7 +126,15 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: uploadedFilename }),
       });
-      if (!res.ok) throw new Error((await res.json()).detail || "분석 실패");
+      if (!res.ok) {
+        const errData = await res.json();
+        const detail = errData.detail || "";
+        const isOverloaded = res.status === 503 || detail.includes("503") || detail.toLowerCase().includes("unavailable") || detail.toLowerCase().includes("high demand");
+        throw new Error(isOverloaded
+          ? "현재 일시적으로 응답이 지연됩니다. 잠시 후 다시 시도해 주세요."
+          : detail || "분석 중 오류가 발생했습니다. 다시 시도해 주세요."
+        );
+      }
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
@@ -190,7 +198,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       <StepCard
         step={1}
         title="문서 업로드"
-        subtitle="PDF, DOCX 파일을 업로드하면 Gemini Embedding 2로 벡터화합니다."
+        subtitle="PDF 또는 DOCX 문서를 업로드하면 문맥을 파악해 의미 단위로 나누어 저장합니다."
         icon={<Database className="w-4 h-4" />}
         status={uploadDone ? "done" : "active"}
         isLast={false}
@@ -201,7 +209,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-emerald-800 dark:text-emerald-400 truncate">{uploadedFilename}</p>
-              <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">벡터화 완료 · 다음 단계를 진행하세요</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">분석 완료 · 다음 단계로 이동하세요</p>
             </div>
             <button
               onClick={() => { setUploadedFilename(null); setUploadMessage(null); setAnalysis(null); setTaggingSamples([]); setHierarchyTree(null); }}
@@ -284,7 +292,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       <StepCard
         step={2}
         title="컨텍스트 분석"
-        subtitle="LLM이 문서를 분석해 H1/H2/H3 계층 구조를 자동으로 태깅합니다."
+        subtitle="문서의 목차와 구조를 분석해 카테고리를 자동으로 분류합니다."
         icon={<Sparkles className="w-4 h-4" />}
         status={!uploadDone ? "pending" : hierarchyDone ? "done" : "active"}
         isLast={true}
