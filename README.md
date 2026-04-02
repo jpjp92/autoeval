@@ -191,8 +191,7 @@ autoeval/
 │   └── config/
 │       ├── prompts.py               # 호환성 shim — generators/prompts.py re-export
 │       ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
-│       ├── models.py                # 모델 alias → model_id, cost 매핑
-│       └── constants.py             # worker 수 등 기본 상수
+        └── models.py                # 모델 alias → model_id, cost 매핑
 │
 ├── frontend/
 │   ├── Dockerfile                   # Node 빌드 → nginx:alpine (프로덕션)
@@ -279,8 +278,8 @@ Supabase (autoeval 프로젝트) — 4개 테이블
 | ------------------- | ------ | --------------------------------------------------------------------------- |
 | `doc_chunks`      | 테이블 | 문서 청크 + vector(1536) + metadata JSONB +**document_id 전용 컬럼**  |
 | `doc_metadata`    | 테이블 | 문서별 domain_profile + h2_h3_master (document_id PK)                       |
-| `qa_gen_results`  | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[],**document_id FK**) |
-| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade +**generation_id FK**   |
+| `qa_gen_results`  | 테이블 | QA 생성 결과 (qa_list JSONB, doc_chunk_ids uuid[], source_doc, document_id) |
+| `qa_eval_results` | 테이블 | 4레이어 평가 결과 + final_score + final_grade                               |
 
 ### 테이블 연계 (Option B FK — 2026-03-31 완료)
 
@@ -288,8 +287,7 @@ Supabase (autoeval 프로젝트) — 4개 테이블
 doc_metadata (document_id PK)
   ├──< doc_chunks       (document_id FK, ON DELETE SET NULL)
   └──< qa_gen_results   (document_id FK, ON DELETE SET NULL)
-        ├──> qa_eval_results (generation_id FK, ON DELETE SET NULL)  ← 역방향
-        └──> qa_eval_results (linked_evaluation_id FK)               ← 기존 단방향
+        └──> qa_eval_results (linked_evaluation_id FK)  ← qa_gen_results → qa_eval_results
 
 doc_chunks.id
   ← qa_gen_results.doc_chunk_ids[]   (GIN 인덱스)
@@ -345,9 +343,8 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 Supabase SQL Editor에서 순서대로 실행:
 
 ```
-backend/scripts/setup_vector_db.sql       # doc_chunks + match_doc_chunks RPC
-backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results
--- + get_eval_qa_scores RPC (pipeline_results에서 qa_scores만 추출)
+backend/scripts/setup_vector_db.sql       # doc_chunks + doc_metadata 테이블, match_doc_chunks / patch_chunk_hierarchy / sample_doc_chunks RPC
+backend/scripts/setup_qa_eval_tables.sql  # qa_eval_results, qa_gen_results 테이블, get_eval_qa_scores RPC, v_eval_summary / v_db_health / v_hierarchy_coverage 뷰
 ```
 
 #### 4. 서버 실행
@@ -478,7 +475,16 @@ docker compose up -d --build
   로컬  : localhost:3000/api/... → Vite 프록시 → localhost:8000
   Vercel: autoeval-v1.vercel.app/api/... → Vercel rewrites → autoeval-uccr.onrender.com
 ```
+### Render 슬립 방지 (UptimeRobot)
 
+Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~20초 지연 발생.
+
+| 항목 | 내용 |
+| --- | --- |
+| 서비스 | [UptimeRobot](https://uptimerobot.com) 무료 플랜 |
+| 모니터 URL | `https://autoeval-uccr.onrender.com/health` |
+| 폙 간격 | 5분 (Render 15분 슬립 기준 충분) |
+| 응답 | `{"status": "healthy", "timestamp": "..."}` 동적 타임스햃프 내포함 |
 ---
 
 **Last Updated**: 2026-04-02 | **Branch**: main

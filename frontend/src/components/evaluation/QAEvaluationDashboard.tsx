@@ -434,7 +434,7 @@ export function QAEvaluationDashboard({
                     <div>
                       <div className="font-medium">{fmt.toUpperCase()}</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {fmt === 'xlsx' ? '스프레드시트' : fmt === 'html' ? 'HTML 리포트' : 'XLSX + HTML 묶음'}
+                        {fmt === 'xlsx' ? '스프레드시트' : fmt === 'html' ? 'HTML 리포트' : 'XLSX + HTML Zip'}
                       </div>
                     </div>
                   </button>

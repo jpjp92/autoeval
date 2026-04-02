@@ -88,6 +88,25 @@ API 문서: `http://localhost:8000/docs`
 
 ---
 
+## 배포 환경 (Render)
+
+| 항목           | 내용                                          |
+| -------------- | --------------------------------------------- |
+| 플랫폼       | Render (Free tier)                            |
+| 서비스 URL    | `https://autoeval-uccr.onrender.com`        |
+| 환경 변수   | `CORS_ORIGINS`, `PORT` (자동 주입)          |
+| 슬립 방지    | UptimeRobot — 5분 간격 `GET /health` ping     |
+
+**Render 무료 플랜은 15분 비활성 후 spin-down** → UptimeRobot 5분 ping으로 슬립 방지 중.
+
+```
+모니터 URL : https://autoeval-uccr.onrender.com/health
+폙 간격   : 5분
+응답 형식 : {"status": "healthy", "timestamp": "<ISO-8601>"}
+```
+
+---
+
 ## API 엔드포인트
 
 ### Ingestion  `/api/ingestion`
@@ -300,7 +319,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | LLM 청킹 (PDF/DOCX)             | gemini-2.5-flash           | thinking_budget=0, temperature=0.1         |
 | 임베딩                          | gemini-embedding-2-preview | 1536차원, RETRIEVAL_DOCUMENT/QUERY         |
 | Hierarchy + domain_profile 생성 | gemini-3-flash-preview     | H1/H2/H3 master + domain_profile 동시 생성 |
-| Hierarchy 태깅                  | gemini-3-flash-preview     | batch=5, parallel=5, temperature=0         |
+| Hierarchy 태깅                  | gemini-2.5-flash           | batch=5, parallel=5, temperature=0         |
 
 ### domain_profile
 
@@ -329,6 +348,6 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | 빈 QA 저장 방지                 | `total_qa == 0` early return                                                                                                                               | 컨텍스트 부족 노드 선택 시 빈 레코드 DB 저장 방지                                                                                       |
 | H2/H3 최소 조건                 | `MIN_CHUNKS=2`, `MIN_CONTENT_CHARS=300`                                                                                                                  | 청크 수와 실제 텍스트 길이를 모두 충족해야 드롭다운 노출                                                                                |
 | `ingestion_api.py` 모듈화     | `prompts / tagging / chunker / pipeline` 분리                                                                                                              | 870줄 단일 파일 → 라우터 331줄 + 4개 전담 모듈, 프롬프트/태깅/청킹/파이프라인 독립 테스트 가능                                         |
-| `generation_api.py` 모듈화    | `prompts / job_manager / worker` 분리                                                                                                                      | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거,`config/prompts.py` → `generators/prompts.py` 이동 |
+| `generation_api.py` 모듈화    | `prompts / job_manager / worker` 분리                                                                                                                      | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거 |
 | `config/prompts.py` 제거      | `generators/prompts.py`로 완전 이전, shim 삭제                                                                                                             | generation 전용 프롬프트를 generators 레이어로 귀속, `config/` 불필요 파일 제거                                                        |
 | `evaluation_api.py` 정리      | `TYPE_CHECKING` 제거, `try/except ImportError` → `sys.path.insert` 통일, `_build_export_detail` → `evaluators/pipeline.build_export_detail` 이동 | 418줄 → 321줄, 이중 import 패턴 제거, export 헬퍼 비즈니스 로직을 evaluators 레이어로 귀속                                             |
