@@ -19,8 +19,8 @@ QA 평가 Job 관리 및 결과 export 엔드포인트.
   evaluators/rag_triad.py      — RAGTriadEvaluator (Layer 2)
   evaluators/qa_quality.py     — QAQualityEvaluator (Layer 3)
   evaluators/recommendations.py — generate_recommendations
-  evaluators/pipeline.py       — run_full_evaluation_pipeline, run_evaluation,
-                                  build_export_detail, _classify_failure_types
+  evaluators/pipeline.py       — run_evaluation, build_export_detail,
+                                  _classify_failure_types (내부 사용)
 """
 
 import logging
@@ -39,18 +39,11 @@ logging.getLogger("alembic").setLevel(logging.WARNING)
 
 logger = logging.getLogger("autoeval.evaluation")
 
-# ============= evaluators 패키지에서 모두 import =============
+# ============= evaluators 패키지에서 import =============
 from evaluators import (
     EvalJobStatus,
     EvalJob,
     EvaluationManager,
-    SyntaxValidator,
-    DatasetStats,
-    RAGTriadEvaluator,
-    clean_markdown,
-    QAQualityEvaluator,
-    generate_recommendations,
-    run_full_evaluation_pipeline,
     run_evaluation,
 )
 from evaluators.pipeline import build_export_detail
@@ -274,7 +267,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             return {"success": False, "error": f"Generation data not found for id={job.generation_id}"}
 
         pipeline = (job.eval_report or {}).get("pipeline_results", {})
-        detail = _build_export_detail(gen_data.get("qa_list", []), pipeline)
+        detail = build_export_detail(gen_data.get("qa_list", []), pipeline)
 
         return {
             "success":   True,
@@ -325,7 +318,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 }
             }
 
-            detail = _build_export_detail(gen_row.get("qa_list", []), pipeline_slim)
+            detail = build_export_detail(gen_row.get("qa_list", []), pipeline_slim)
 
             return {
                 "success":   True,

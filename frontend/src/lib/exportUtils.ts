@@ -95,7 +95,7 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
 
   statsRows.push(['[ 데이터 통계 (0-10) ]', '']);
   statsRows.push(['지표', '점수']);
-  data.layer1Stats.forEach((s) => statsRows.push([s.subject, +s.A.toFixed(3)]));
+  data.layer1Stats.forEach((s) => statsRows.push([s.subject, s.A.toFixed(2)]));
   statsRows.push([]);
 
   statsRows.push(['[ 질문 의도 분포 ]', '']);
@@ -110,7 +110,7 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
   statsRows.push(['지표', '점수']);
   data.llmQualityScores.forEach((s) => {
     const displayName = s.nameEn ? `${s.name}(${s.nameEn})` : s.name;
-    statsRows.push([displayName, +s.score.toFixed(4)]);
+    statsRows.push([displayName, s.score.toFixed(2)]);
   });
 
   const wsStats = XLSX.utils.aoa_to_sheet(statsRows);
@@ -137,8 +137,8 @@ function buildWorkbook(data: EvaluationData): XLSX.WorkBook {
       qa.context ?? '',
       qa.q,
       qa.a ?? '',
-      +qa.l2_avg.toFixed(4),
-      +qa.triad_avg.toFixed(4),
+      qa.l2_avg.toFixed(2),
+      qa.triad_avg.toFixed(2),
       status,
       failureLabel,
       evalDate,
@@ -802,7 +802,7 @@ export function exportToJSON(data: EvaluationData): void {
     // icon / color / bg 제거, label + value만
     summaryStats: data.summaryStats.map(({ label, value }) => ({ label, value })),
     // A → score, fullMark 제거
-    layer1Stats: data.layer1Stats.map(({ subject, A }) => ({ subject, score: +A.toFixed(3) })),
+    layer1Stats: data.layer1Stats.map(({ subject, A }) => ({ subject, score: A.toFixed(2) })),
     // name/label/krLabel 통합 → "fact(사실형)" 형식
     intentDistribution: data.intentDistribution.map((d) => ({
       label: d.krLabel ? `${d.name}(${d.krLabel})` : (d.label ?? d.name),
@@ -811,7 +811,7 @@ export function exportToJSON(data: EvaluationData): void {
     // name + nameEn → "사실성(Factuality)" 형식
     llmQualityScores: data.llmQualityScores.map((s) => ({
       metric: s.nameEn ? `${s.name}(${s.nameEn})` : s.name,
-      score:  +s.score.toFixed(4),
+      score:  s.score.toFixed(2),
     })),
     detailedQA: data.detailedQA.map((qa) => {
       const qFail = qa.l2_avg < 0.7;
@@ -822,8 +822,8 @@ export function exportToJSON(data: EvaluationData): void {
         q:           qa.q,
         a:           qa.a ?? '',
         context:     qa.context ?? '',
-        quality_avg: +qa.l2_avg.toFixed(4),
-        triad_avg:   +qa.triad_avg.toFixed(4),
+        quality_avg: qa.l2_avg.toFixed(2),
+        triad_avg:   qa.triad_avg.toFixed(2),
         status:      qFail && rFail ? '실패' : (qFail || rFail) ? '보류' : '성공',
       };
     }),

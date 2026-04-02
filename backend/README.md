@@ -51,8 +51,8 @@ backend/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임
 │   └── models.py                # 모델 alias → model_id, cost, provider 매핑
 └── scripts/
-    ├── setup_vector_db.sql          # doc_chunks 테이블 + match_doc_chunks / patch_chunk_hierarchy RPC
-    ├── setup_qa_eval_tables.sql     # qa_eval_results, qa_gen_results + get_eval_qa_scores RPC
+    ├── setup_vector_db.sql          # doc_chunks + doc_metadata 테이블, match_doc_chunks / patch_chunk_hierarchy / sample_doc_chunks RPC
+    ├── setup_qa_eval_tables.sql     # qa_eval_results, qa_gen_results 테이블, get_eval_qa_scores RPC, v_eval_summary / v_db_health / v_hierarchy_coverage 뷰
     ├── inspect_db_state.py          # 각 테이블 현황 점검
     ├── detect_cleanup_targets.py    # 구버전/고아 행 탐지 → cleanup_targets.json + cleanup_queries.sql
     ├── cleanup_targets.json

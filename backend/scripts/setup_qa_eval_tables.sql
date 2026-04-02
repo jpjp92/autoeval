@@ -36,46 +36,17 @@ CREATE TABLE IF NOT EXISTS qa_eval_results (
   total_qa    INT NOT NULL,
   valid_qa    INT NOT NULL,
 
-  -- scores: 4레이어 요약 점수
+  -- scores: 4레이어 요약 점수 (v_eval_summary 뷰 참조)
   -- {
-  --   "syntax": {
-  --     "pass_rate": 100.0                          -- float (0-100)
-  --   },
-  --   "stats": {
-  --     "quality_score": 8.04,                      -- integrated_score (0-10)
-  --     "diversity": {                              -- _analyze_diversity() 반환 dict
-  --       "score": 7.5,
-  --       "intent_type_count": 8,
-  --       "doc_count": 1,
-  --       "vocabulary_diversity": 0.92,
-  --       "intent_balance": 0.8,
-  --       "intent_distribution": {"factoid": 2, ...},
-  --       "question_length": {"avg": 24.5, "std": 3.2},
-  --       "answer_length":   {"avg": 68.1, "std": 12.0}
-  --     },
-  --     "duplication_rate": {                       -- _analyze_duplication_rate() 반환 dict
-  --       "score": 10.0,
-  --       "duplicate_count": 0,
-  --       "near_duplicate_rate": 0.0
-  --     }
-  --   },
-  --   "rag": {                                      -- rag_data["summary"]
-  --     "avg_relevance":    0.85,
-  --     "avg_groundedness": 0.92,
-  --     "avg_clarity":      0.88,
-  --     "avg_score":        0.88
-  --   },
-  --   "quality": {                                  -- quality_data["summary"]
-  --     "avg_factuality":   0.90,
-  --     "avg_completeness": 0.88,
-  --     "avg_groundedness": 0.92,
-  --     "avg_quality":      0.90
-  --   }
+  --   "syntax":      {"score": 1.0,  ...},   -- float 0-1
+  --   "statistical": {"score": 0.80, ...},   -- float 0-1
+  --   "rag":         {"score": 0.88, ...},   -- float 0-1
+  --   "quality":     {"score": 0.90, ...}    -- float 0-1
   -- }
   scores      JSONB NOT NULL,
 
   -- 최종 점수 (자주 쿼리 → 별도 컬럼)
-  -- 가중치: syntax*0.2 + stats*0.2 + rag*0.3 + quality*0.3
+  -- 가중치: syntax*0.05 + statistical*0.05 + rag*0.65 + quality*0.25
   final_score FLOAT NOT NULL,
   final_grade TEXT  NOT NULL,
 
@@ -109,9 +80,9 @@ CREATE TABLE IF NOT EXISTS qa_eval_results (
 );
 
 COMMENT ON TABLE qa_eval_results IS '4레이어 평가 파이프라인 결과 (pipeline.py → save_evaluation_to_supabase)';
-COMMENT ON COLUMN qa_eval_results.scores IS '4레이어 요약 점수: syntax.pass_rate / stats.quality_score+diversity+duplication_rate / rag.avg_* / quality.avg_*';
+COMMENT ON COLUMN qa_eval_results.scores IS '4레이어 요약 점수: syntax.score / statistical.score / rag.score / quality.score (v_eval_summary 기준)';
 COMMENT ON COLUMN qa_eval_results.pipeline_results IS 'run_full_evaluation_pipeline() 전체 반환값 (레이어별 qa_scores 포함)';
-COMMENT ON COLUMN qa_eval_results.final_score IS '0-1 종합 점수 (syntax*0.2 + stats*0.2 + rag*0.3 + quality*0.3)';
+COMMENT ON COLUMN qa_eval_results.final_score IS '0-1 종합 점수 (syntax*0.05 + statistical*0.05 + rag*0.65 + quality*0.25)';
 
 -- 인덱스
 CREATE INDEX IF NOT EXISTS idx_eval_created_at   ON qa_eval_results(created_at DESC);
@@ -141,6 +112,13 @@ CREATE TABLE IF NOT EXISTS qa_gen_results (
   job_id      TEXT UNIQUE NOT NULL,   -- "gen_20260317_100137_561909"
   created_at  TIMESTAMPTZ DEFAULT now(),
   updated_at  TIMESTAMPTZ DEFAULT now(),
+
+  -- 원본 문서 파일명 (v_eval_summary, v_db_health 에서 조인 키로 사용)
+  source_doc  TEXT,
+  -- 생성에 사용된 청크 UUID 배열 (참조 무결성 검사: v_db_health)
+  doc_chunk_ids UUID[],
+  -- 업로드 버전 식별자 (document_id)
+  document_id TEXT,
 
   -- save_qa_generation_to_supabase() metadata 인자
   -- {"generation_model": "gpt-5.2", "lang": "en", "prompt_version": "v1"}
@@ -198,7 +176,10 @@ COMMENT ON COLUMN qa_gen_results.linked_evaluation_id IS 'link_generation_to_eva
 -- 인덱스
 CREATE INDEX IF NOT EXISTS idx_qa_gen_created_at    ON qa_gen_results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_qa_gen_linked_eval   ON qa_gen_results(linked_evaluation_id);
+CREATE INDEX IF NOT EXISTS idx_qa_gen_source_doc    ON qa_gen_results(source_doc);
+CREATE INDEX IF NOT EXISTS idx_qa_gen_document_id   ON qa_gen_results(document_id);
 CREATE INDEX IF NOT EXISTS idx_qa_gen_metadata_gin  ON qa_gen_results USING GIN (metadata);
+CREATE INDEX IF NOT EXISTS idx_qa_gen_chunk_ids_gin ON qa_gen_results USING GIN (doc_chunk_ids);
 
 -- updated_at 트리거 (linked_evaluation_id UPDATE 시 갱신)
 CREATE TRIGGER trg_qa_gen_updated_at
@@ -213,53 +194,133 @@ CREATE POLICY "qa_gen_insert" ON qa_gen_results FOR INSERT WITH CHECK (true);
 CREATE POLICY "qa_gen_update" ON qa_gen_results FOR UPDATE USING (true) WITH CHECK (true);
 
 
+
 -- ============================================================
--- 3. QA 쌍 flat 뷰 (샘플 확인 / 검증용)
+-- 3. RPC: get_eval_qa_scores
+-- export-by-id 엔드포인트에서 pipeline_results 전체 전송 방지용
+-- 반환값: {"rag_qa_scores": [...], "quality_qa_scores": [...]}
 -- ============================================================
-CREATE OR REPLACE VIEW qa_pairs_view AS
+CREATE OR REPLACE FUNCTION get_eval_qa_scores(p_eval_id UUID)
+RETURNS JSONB
+LANGUAGE sql STABLE AS $$
+  SELECT jsonb_build_object(
+    'rag_qa_scores',     pipeline_results->'layers'->'rag'->'qa_scores',
+    'quality_qa_scores', pipeline_results->'layers'->'quality'->'qa_scores'
+  )
+  FROM qa_eval_results
+  WHERE id = p_eval_id;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_eval_qa_scores(UUID) TO anon, authenticated;
+
+
+-- ============================================================
+-- 4. Views
+-- ============================================================
+
+-- v_eval_summary: 평가 결과 요약 (평가 목록 화면)
+CREATE OR REPLACE VIEW v_eval_summary AS
 SELECT
-  qg.job_id,
-  qg.created_at,
-  doc->>'docId'                AS doc_id,
-  doc->'hierarchy'             AS hierarchy,
-  qa->>'q'                     AS question,
-  qa->>'a'                     AS answer,
-  qa->>'intent'                AS intent,
-  (qa->>'answerable')::boolean AS answerable
-FROM qa_gen_results qg,
-  jsonb_array_elements(qg.qa_list) AS doc,
-  jsonb_array_elements(doc->'qa_list') AS qa;
+    qg.source_doc                                        AS filename,
+    qe.id                                                AS eval_id,
+    qe.job_id,
+    qe.total_qa,
+    qe.valid_qa,
+    qe.final_score,
+    qe.final_grade,
+    qe.created_at::date                                  AS eval_date,
+    (qe.scores->'syntax'     ->>'score')::numeric        AS syntax_score,
+    (qe.scores->'statistical'->>'score')::numeric        AS stat_score,
+    (qe.scores->'rag'        ->>'score')::numeric        AS rag_score,
+    (qe.scores->'quality'    ->>'score')::numeric        AS quality_score
+FROM qa_eval_results qe
+JOIN qa_gen_results qg ON qg.linked_evaluation_id = qe.id
+ORDER BY qe.created_at DESC;
 
-COMMENT ON VIEW qa_pairs_view IS 'qa_gen_results.qa_list 중첩 구조를 flat하게 펼친 QA 샘플 확인용 뷰';
-
-
--- ============================================================
--- 4. 조인 뷰 (생성 ↔ 평가)
--- ============================================================
-CREATE OR REPLACE VIEW evaluation_qa_joined AS
+-- v_db_health: DB 무결성 점검 뷰 (doc_metadata, doc_chunks, qa_gen_results 교차 검사)
+CREATE OR REPLACE VIEW v_db_health AS
 SELECT
-  e.id              AS evaluation_id,
-  e.job_id          AS eval_job_id,
-  e.final_score,
-  e.final_grade,
-  e.created_at      AS evaluated_at,
-  q.id              AS generation_id,
-  q.job_id          AS gen_job_id,
-  q.metadata        AS gen_metadata,
-  q.stats           AS gen_stats,
-  q.qa_list,
-  q.created_at      AS generated_at
-FROM qa_eval_results e
-LEFT JOIN qa_gen_results q
-  ON q.linked_evaluation_id = e.id;
+    'doc_metadata: domain/master null' AS check_item,
+    COUNT(*)                           AS count,
+    CASE WHEN COUNT(*) = 0 THEN 'OK' ELSE 'WARN' END AS status,
+    CASE WHEN COUNT(*) = 0 THEN NULL
+         ELSE string_agg(filename || ' (' || document_id::text || ')', ', ')
+    END AS detail
+FROM doc_metadata
+WHERE domain_profile IS NULL OR h2_h3_master IS NULL
 
-COMMENT ON VIEW evaluation_qa_joined IS 'qa_eval_results ↔ qa_gen_results 조인 뷰 (linked_evaluation_id 기준)';
+UNION ALL
+
+SELECT
+    'doc_chunks: hierarchy_h1 null',
+    COUNT(*),
+    CASE WHEN COUNT(*) = 0 THEN 'OK' ELSE 'WARN' END,
+    CASE WHEN COUNT(*) = 0 THEN NULL
+         ELSE string_agg(DISTINCT
+             (metadata->>'filename') || ' / doc_id=' || LEFT(metadata->>'document_id', 8) || '...'
+         , ' | ')
+    END
+FROM doc_chunks
+WHERE metadata->>'hierarchy_h1' IS NULL
+
+UNION ALL
+
+SELECT
+    'doc_chunks: orphan (no doc_metadata)',
+    COUNT(DISTINCT metadata->>'document_id'),
+    CASE WHEN COUNT(DISTINCT metadata->>'document_id') = 0 THEN 'OK' ELSE 'WARN' END,
+    CASE WHEN COUNT(DISTINCT metadata->>'document_id') = 0 THEN NULL
+         ELSE string_agg(DISTINCT
+             (metadata->>'filename') || ' / doc_id=' || LEFT(metadata->>'document_id', 8) || '...'
+         , ' | ')
+    END
+FROM doc_chunks dc
+WHERE NOT EXISTS (
+    SELECT 1 FROM doc_metadata dm
+    WHERE dm.document_id::text = dc.metadata->>'document_id'
+)
+
+UNION ALL
+
+SELECT
+    'qa_gen_results: broken chunk refs',
+    COUNT(*),
+    CASE WHEN COUNT(*) = 0 THEN 'OK' ELSE 'WARN' END,
+    CASE WHEN COUNT(*) = 0 THEN NULL
+         ELSE string_agg(source_doc || ' (gen_id=' || LEFT(id::text, 8) || '...)', ' | ')
+    END
+FROM qa_gen_results qg
+WHERE NOT EXISTS (
+    SELECT 1 FROM doc_chunks dc
+    WHERE dc.id = ANY(qg.doc_chunk_ids)
+    LIMIT 1
+);
+
+-- v_hierarchy_coverage: 청크 계층 태깅 커버리지 확인
+CREATE OR REPLACE VIEW v_hierarchy_coverage AS
+SELECT
+    metadata->>'filename'      AS filename,
+    metadata->>'document_id'   AS document_id,
+    metadata->>'hierarchy_h1'  AS h1,
+    metadata->>'hierarchy_h2'  AS h2,
+    metadata->>'hierarchy_h3'  AS h3,
+    COUNT(*)                   AS chunk_count
+FROM doc_chunks
+WHERE metadata->>'hierarchy_h1' IS NOT NULL
+  AND metadata->>'hierarchy_h1' != '__admin__'
+GROUP BY
+    metadata->>'filename',
+    metadata->>'document_id',
+    metadata->>'hierarchy_h1',
+    metadata->>'hierarchy_h2',
+    metadata->>'hierarchy_h3'
+ORDER BY filename, h1, h2, h3;
 
 
 -- ============================================================
 -- DB 초기화 (재테스트 시)
 -- ============================================================
--- DROP VIEW  IF EXISTS evaluation_qa_joined;
+-- DROP VIEW  IF EXISTS v_eval_summary, v_db_health, v_hierarchy_coverage;
 -- DELETE FROM qa_gen_results;
 -- DELETE FROM qa_eval_results;
 -- DELETE FROM doc_chunks;
