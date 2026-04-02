@@ -270,7 +270,7 @@ export function QAEvaluationDashboard({
               <span className="w-1.5 h-6 bg-indigo-500 rounded-full" />
               QA Evaluation
             </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">QA Pipeline에서 평가를 실행하거나 히스토리에서 이전 결과를 선택하세요</p>
           </div>
           {historyList.length > 0 && (
             <HistoryDropdown historyList={historyList} selectedHistoryId={selectedHistoryId} showMenu={showHistoryMenu} setShowMenu={setShowHistoryMenu} onSelect={selectHistory} />
@@ -292,7 +292,7 @@ export function QAEvaluationDashboard({
           <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">준비된 평가 결과가 없습니다</h3>
           <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed mb-8 text-[13px]">
             QA Pipeline에서 질문-답변 세트를 생성하고 평가를 시작해 보세요.<br/>
-            생성된 데이터셋의 품질 지표가 이곳에 화려하게 요약됩니다.
+            생성된 데이터셋의 평가 결과를 확인할 수 있습니다.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3">
@@ -546,16 +546,14 @@ export function QAEvaluationDashboard({
           <div className="mb-3 flex items-start justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <Target className="w-4 h-4 text-indigo-500" /> 통합 품질 평가 점수
+                <Target className="w-4 h-4 text-indigo-500" /> 품질 평가
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">RAG Triad + 품질 평가 통합 점수</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">관련성 · 근거성 · 맥락성 · 완전성</p>
             </div>
             <ChartInfoTooltip
-              title="통합 품질 평가 점수"
+              title="품질 평가"
               items={[
-                { text: 'LLM 기반 평가 점수입니다 (0–1).' },
-                { label: 'RAG Triad', text: '관련성(답변) · 근거성 · 맥락성' },
-                { label: '품질 평가', text: '완전성' },
+                { text: '4개 기준으로 QA 품질을 LLM이 직접 평가합니다 (0–1).' },
                 { label: '최종 점수', text: 'RAG ×0.65 + 품질 ×0.25 + 구문·통계 ×0.1' },
                 { label: '등급', text: '0.85↑ 우수 / 0.70↑ 양호 / 미만 미흡' },
               ]}

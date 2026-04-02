@@ -2,20 +2,20 @@ import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG } from '@/src/types/evaluation';
-import { getScoreColor, getQAStatus } from '@/src/lib/evalScoreUtils';
+import { getScoreColor, getQAStatus, SCORE_THRESHOLDS } from '@/src/lib/evalScoreUtils';
 
 export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void }) {
   const status = getQAStatus(qa);
   const cfg    = STATUS_CONFIG[status];
 
-  // RAG 차원
+  // RAG Triad 평가
   const ragDimensions = [
     { label: '관련성', score: qa.relevance,         reason: qa.relevance_reason },
     { label: '근거성', score: qa.groundedness,       reason: qa.groundedness_reason },
     { label: '맥락성', score: qa.context_relevance,  reason: qa.context_relevance_reason },
   ].filter(r => r.reason);
 
-  // Quality 차원
+  // 완전성 평가 
   const qualityDimensions = [
     { label: '완전성', score: qa.completeness, reason: qa.completeness_reason },
   ].filter(r => r.reason);
@@ -62,11 +62,41 @@ export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => 
           <div className="px-4 py-1.5 bg-rose-50/50 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-500/10">
             <p className="text-[10px] font-bold uppercase tracking-widest text-rose-600/80 dark:text-rose-400">주요 실패 유형</p>
           </div>
-          <div className="p-4 text-xs space-y-1">
+          <div className="p-4 text-xs space-y-2">
             <p className="font-semibold text-rose-700 dark:text-rose-300">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
             {qa.failure_reason && <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{qa.failure_reason}</p>}
+
+            {/* 개별 점수 breakdown — 미달 항목 강조 */}
+            {(() => {
+              const dims = [
+                { label: '관련성', value: qa.relevance },
+                { label: '근거성', value: qa.groundedness },
+                { label: '맥락성', value: qa.context_relevance },
+                { label: '완전성', value: qa.completeness },
+              ].filter(d => d.value != null) as { label: string; value: number }[];
+              if (!dims.length) return null;
+              return (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {dims.map(({ label, value }) => {
+                    const fail = value < SCORE_THRESHOLDS.mid;
+                    return (
+                      <span key={label} className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold",
+                        fail
+                          ? "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400"
+                          : "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                      )}>
+                        <span className={cn("w-1.5 h-1.5 rounded-full", fail ? "bg-rose-400" : "bg-emerald-400")} />
+                        {label} {value.toFixed(2)}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {(qa.failure_types?.length ?? 0) > 1 && (
-              <p className="text-slate-400 dark:text-slate-500 text-[10px] pt-1">
+              <p className="text-slate-400 dark:text-slate-500 text-[10px] pt-0.5">
                 전체 실패 항목: {qa.failure_types!.map(f => FAILURE_CONFIG[f]?.label ?? f).join(', ')}
               </p>
             )}

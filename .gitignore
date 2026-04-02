@@ -44,3 +44,8 @@ sample/
 image/
 테스트자동화_260327.pptx
 sample.txt
+backend/scripts/anchor_ids_localstorage.js
+backend/scripts/anchor_ids_regen.json
+backend/scripts/cleanup_queries.sql
+backend/scripts/cleanup_targets.json
+docs/feedback.md

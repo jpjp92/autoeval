@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/src/lib/utils';
 import { SCORE_THRESHOLDS } from '@/src/lib/evalScoreUtils';
 
+const METRIC_META: Record<string, { desc: string; chip: string; text: string }> = {
+  관련성: { desc: '답변이 질문 의도를 정확히 반영하는지 평가',     chip: 'bg-blue-500/10 dark:bg-blue-500/15',     text: 'text-blue-600 dark:text-blue-400'     },
+  근거성: { desc: '답변이 컨텍스트 내 사실에 기반하는지 평가',    chip: 'bg-teal-500/10 dark:bg-teal-500/15',     text: 'text-teal-600 dark:text-teal-400'     },
+  맥락성: { desc: '컨텍스트가 질문에 답하기에 충분한지 평가',     chip: 'bg-cyan-500/10 dark:bg-cyan-500/15',     text: 'text-cyan-600 dark:text-cyan-400'     },
+  완전성: { desc: '답변이 세부 요구사항을 충실히 다루었는지 평가', chip: 'bg-purple-500/10 dark:bg-purple-500/15', text: 'text-purple-600 dark:text-purple-400' },
+};
+
 export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number; group: 'rag' | 'quality' }> }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [animated, setAnimated]     = useState(false);
@@ -57,13 +64,27 @@ export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn
         const targetW = Math.min(item.score * 100, 100);
 
         return (
-          <div 
-            key={item.name} 
+          <div
+            key={item.name}
             className="group/item relative bg-slate-50/50 dark:bg-white/3 border border-slate-100 dark:border-white/5 p-3.5 rounded-xl transition-all duration-300 hover:bg-white dark:hover:bg-white/8 hover:shadow-md hover:-translate-y-0.5 animate-in fade-in slide-in-from-right-4 fill-mode-both"
             style={{ animationDelay: `${i * 100}ms` }}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
+            {hoveredIdx === i && METRIC_META[item.name] && (
+              <div className="absolute -top-14 left-1/2 -translate-x-1/2 z-50 pointer-events-none w-max max-w-xs">
+                <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-black/50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded", METRIC_META[item.name].chip, METRIC_META[item.name].text)}>
+                      {item.name}
+                    </span>
+                    <span className="text-[10px] font-black text-slate-700 dark:text-slate-200">{item.score.toFixed(3)}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{METRIC_META[item.name].desc}</p>
+                </div>
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white/95 dark:bg-slate-800/95 border-r border-b border-slate-200 dark:border-slate-700 rotate-45" />
+              </div>
+            )}
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2.5">
                 <span className={cn(
