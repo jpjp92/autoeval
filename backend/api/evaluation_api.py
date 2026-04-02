@@ -1,17 +1,35 @@
 """
-Backend Evaluation API
-구문정확성, 통계, RAG Triad, quality 평가를 Backend에서 처리
+Evaluation API  —  POST|GET /api/evaluate/*
 
-이 파일은 API 라우트 설정만 담당합니다.
-실제 평가 로직은 evaluators/ 패키지에 분리되어 있습니다.
+QA 평가 Job 관리 및 결과 export 엔드포인트.
+실제 평가 로직은 evaluators/ 패키지에 분리되어 있다.
+
+엔드포인트
+  POST   /api/evaluate                          평가 Job 시작 (BackgroundTask)
+  GET    /api/evaluate/{job_id}/status           Job 상태 조회
+  GET    /api/evaluate/list                      세션 내 Job 목록
+  GET    /api/evaluate/history                   Supabase 저장 평가 히스토리
+  GET    /api/evaluate/{job_id}/export           세션 Job 결과 export (QA + 점수 조인)
+  GET    /api/evaluate/export-by-id/{eval_id}    eval_id 기반 히스토리 export
+
+모듈 구조
+  evaluators/job_manager.py    — EvalJobStatus, EvalJob, EvaluationManager
+  evaluators/syntax_validator.py — SyntaxValidator (Layer 1-A)
+  evaluators/dataset_stats.py  — DatasetStats (Layer 1-B)
+  evaluators/rag_triad.py      — RAGTriadEvaluator (Layer 2)
+  evaluators/qa_quality.py     — QAQualityEvaluator (Layer 3)
+  evaluators/recommendations.py — generate_recommendations
+  evaluators/pipeline.py       — run_full_evaluation_pipeline, run_evaluation,
+                                  build_export_detail, _classify_failure_types
 """
 
 import logging
+import sys
 from datetime import datetime
-from typing import Optional, Any, List, TYPE_CHECKING
+from pathlib import Path
+from typing import Optional, Any, List
 
-if TYPE_CHECKING:
-    from fastapi import FastAPI, BackgroundTasks
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Suppress verbose logging
 logging.getLogger("google.generativeai").setLevel(logging.WARNING)
@@ -22,34 +40,20 @@ logging.getLogger("alembic").setLevel(logging.WARNING)
 logger = logging.getLogger("autoeval.evaluation")
 
 # ============= evaluators 패키지에서 모두 import =============
-try:
-    from evaluators import (
-        EvalJobStatus,
-        EvalJob,
-        EvaluationManager,
-        SyntaxValidator,
-        DatasetStats,
-        RAGTriadEvaluator,
-        clean_markdown,
-        QAQualityEvaluator,
-        generate_recommendations,
-        run_full_evaluation_pipeline,
-        run_evaluation,
-    )
-except ImportError:
-    from backend.evaluators import (
-        EvalJobStatus,
-        EvalJob,
-        EvaluationManager,
-        SyntaxValidator,
-        DatasetStats,
-        RAGTriadEvaluator,
-        clean_markdown,
-        QAQualityEvaluator,
-        generate_recommendations,
-        run_full_evaluation_pipeline,
-        run_evaluation,
-    )
+from evaluators import (
+    EvalJobStatus,
+    EvalJob,
+    EvaluationManager,
+    SyntaxValidator,
+    DatasetStats,
+    RAGTriadEvaluator,
+    clean_markdown,
+    QAQualityEvaluator,
+    generate_recommendations,
+    run_full_evaluation_pipeline,
+    run_evaluation,
+)
+from evaluators.pipeline import build_export_detail
 
 
 # ============= API Endpoints =============
@@ -246,90 +250,6 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
         except Exception as e:
             logger.error(f"Failed to fetch eval history: {e}")
             return {"success": False, "error": str(e), "history": []}
-
-    # ── Export 공통 헬퍼 ────────────────────────────────────────────────────────
-    def _build_export_detail(qa_list_raw: list, pipeline_results: dict) -> list:
-        """qa_gen_results.qa_list + pipeline_results 점수를 조인하여 export 행 목록 반환"""
-        # qa_gen_results.qa_list 구조: [{docId, text, qa_list:[{q,a,intent,...}]}]
-        flat_qa: list = []
-        for result in qa_list_raw:
-            context = result.get("text", "")
-            for qa in result.get("qa_list", []):
-                flat_qa.append({
-                    "q":       qa.get("q", ""),
-                    "a":       qa.get("a", ""),
-                    "context": context,
-                    "intent":  qa.get("intent", ""),
-                    "docId":   result.get("docId", ""),
-                })
-
-        layers = pipeline_results.get("layers", pipeline_results)  # in-memory vs Supabase 구조 대응
-        rag_raw     = (layers.get("rag")     or {}).get("qa_scores", [])
-        quality_raw = (layers.get("quality") or {}).get("qa_scores", [])
-        rag_by_idx     = {s["qa_index"]: s for s in rag_raw}
-        quality_by_idx = {s["qa_index"]: s for s in quality_raw}
-
-        # failure classification helper (pipeline_results.layers.quality.qa_scores에는
-        # failure 필드가 없으므로, 없으면 직접 재계산)
-        try:
-            from backend.evaluators.pipeline import _classify_failure_types as _cft
-        except ImportError:
-            try:
-                from evaluators.pipeline import _classify_failure_types as _cft
-            except ImportError:
-                _cft = None
-
-        detail = []
-        for i, qa in enumerate(flat_qa):
-            r = rag_by_idx.get(i, {})
-            q = quality_by_idx.get(i, {})
-
-            # failure_types / primary_failure가 qa_scores에 저장되어 있으면 그대로 사용,
-            # 없으면 _classify_failure_types로 재계산 (히스토리 로드 대응)
-            failure_types   = q.get("failure_types")   or r.get("failure_types")
-            primary_failure = q.get("primary_failure") or r.get("primary_failure")
-            failure_reason  = q.get("failure_reason")  or r.get("failure_reason", "")
-
-            if not failure_types and not primary_failure and _cft:
-                try:
-                    fi = _cft(r, q, qa.get("context", ""))
-                    failure_types   = fi.get("failure_types", [])
-                    primary_failure = fi.get("primary_failure")
-                    failure_reason  = fi.get("failure_reason", "")
-                except Exception:
-                    failure_types   = []
-
-            detail.append({
-                "qa_index":            i,
-                "q":                   qa["q"],
-                "a":                   qa["a"],
-                "context":             qa["context"],
-                "intent":              qa["intent"],
-                "docId":               qa["docId"],
-                "rag_avg":             r.get("avg_score"),
-                "quality_avg":         q.get("avg_quality"),
-                "pass":                q.get("pass", False),
-                # Individual scores
-                "relevance":           r.get("relevance"),
-                "groundedness":        r.get("groundedness"),
-                "context_relevance":   r.get("context_relevance"),
-                "completeness":        q.get("completeness"),
-                # RAG reason
-                "relevance_reason":          r.get("relevance_reason", ""),
-                "groundedness_reason":       r.get("groundedness_reason", ""),
-                "clarity_reason":            r.get("clarity_reason", ""),            # 구형
-                "context_relevance_reason":  r.get("context_relevance_reason", ""), # 신형 (맥락성)
-                # Quality reason (completeness — 신규 / factuality·specificity·conciseness — legacy 하위호환)
-                "completeness_reason":  q.get("completeness_reason", ""),
-                "factuality_reason":    q.get("factuality_reason", ""),
-                "specificity_reason":   q.get("specificity_reason", ""),
-                "conciseness_reason":   q.get("conciseness_reason", ""),
-                # Failure classification
-                "failure_types":       failure_types   or [],
-                "primary_failure":     primary_failure or None,
-                "failure_reason":      failure_reason,
-            })
-        return detail
 
     @app.get("/api/evaluate/{job_id}/export", tags=["evaluation"])
     async def export_eval_by_job(job_id: str) -> dict:

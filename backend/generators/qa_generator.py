@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Dict
 
 from config.models import MODEL_CONFIG, PROMPT_VERSION
-from config.prompts import (
+from generators.prompts import (
     SYSTEM_PROMPT_KO_V1,
     SYSTEM_PROMPT_EN_V1,
     USER_TEMPLATE_KO_V1,

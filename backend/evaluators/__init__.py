@@ -8,7 +8,7 @@ from .dataset_stats import DatasetStats
 from .rag_triad import RAGTriadEvaluator, clean_markdown
 from .qa_quality import QAQualityEvaluator
 from .recommendations import generate_recommendations
-from .pipeline import run_full_evaluation_pipeline, run_evaluation
+from .pipeline import run_full_evaluation_pipeline, run_evaluation, build_export_detail
 
 __all__ = [
     "EvalJobStatus",
@@ -22,4 +22,5 @@ __all__ = [
     "generate_recommendations",
     "run_full_evaluation_pipeline",
     "run_evaluation",
+    "build_export_detail",
 ]

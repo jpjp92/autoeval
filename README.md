@@ -155,17 +155,24 @@ autoeval/
 │   ├── main.py                      # FastAPI 앱 + 라우트 등록 + 로깅 설정
 │   │                                  GET /api/dashboard/metrics 포함
 │   ├── api/
-│   │   ├── ingestion_api.py         # POST /api/ingestion/* — 라우터 + process_and_ingest
-│   │   ├── generation_api.py        # POST /api/generate — 병렬 QA 생성 job
-│   │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job
+│   │   ├── ingestion_api.py         # POST /api/ingestion/* — 라우터 + Pydantic 모델 (331줄 슬림)
+│   │   ├── generation_api.py        # POST /api/generate — 라우터 + Pydantic 모델 (224줄 슬림)
+│   │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리 (321줄 슬림)
 │   ├── ingestion/
 │   │   ├── parsers.py               # 파싱·정규화·필터·청킹 순수 함수 (I/O 없음)
-│   │   └── llm_chunker.py           # LLM 청킹 모듈 — Gemini 2.5 Flash, 배치·병렬 처리 (기본 청킹)
+│   │   ├── llm_chunker.py           # LLM 청킹 — Gemini 2.5 Flash, 배치·병렬 처리 (기본 청킹)
+│   │   ├── prompts.py               # LLM 프롬프트 빌더 (build_hierarchy_prompt / build_tagging_prompt)
+│   │   ├── tagging.py               # 배치 태깅 코루틴 (run_tagging, _is_admin_anchor)
+│   │   ├── chunker.py               # LLM/Rule-based 청킹 로직 분리 (ingest_with_llm/rule_chunking)
+│   │   └── pipeline.py              # 임베딩 → Supabase 저장 파이프라인 (process_and_ingest)
 │   ├── generators/
+│   │   ├── prompts.py               # 시스템 프롬프트·유저 템플릿 — SYSTEM_PROMPT_*/USER_TEMPLATE_*, build_system_prompt(), build_user_template()
+│   │   ├── job_manager.py           # JobStatus, GenerationJob, JobManager, 전역 job_manager 싱글턴
+│   │   ├── worker.py                # 생성 오케스트레이션 — run_qa_generation*(), 청크 필터·도메인 프로파일·병렬 생성·Supabase 저장
 │   │   ├── qa_generator.py          # 프로바이더별 LLM API 호출 + 응답 파싱
 │   │   └── domain_profiler.py       # 폴백 전용 — doc_metadata 없을 때만 LLM 호출
 │   ├── evaluators/
-│   │   ├── pipeline.py              # 4레이어 순서 실행 + Supabase 저장
+│   │   ├── pipeline.py              # 4레이어 순서 실행 + Supabase 저장 + build_export_detail(), _classify_failure_types()
 │   │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   │   ├── dataset_stats.py         # Layer 1-B: 다양성·중복률 통계
 │   │   ├── rag_triad.py             # Layer 2: RAG Triad (XML 프롬프트)
@@ -182,7 +189,7 @@ autoeval/
 │   │   ├── hierarchy_repo.py        # 계층 목록 조회 / 일괄 업데이트
 │   │   └── dashboard_repo.py        # 대시보드 집계 (summary, recent_jobs, grade_dist)
 │   └── config/
-│       ├── prompts.py               # XML 태그 프롬프트 + 적응형 빌더 (build_user_template)
+│       ├── prompts.py               # 호환성 shim — generators/prompts.py re-export
 │       ├── supabase_client.py       # re-export wrapper → backend/db/ 위임 (하위 호환)
 │       ├── models.py                # 모델 alias → model_id, cost 매핑
 │       └── constants.py             # worker 수 등 기본 상수
@@ -423,7 +430,7 @@ docker compose up -d --build
 | `POST` | `/api/ingestion/analyze-hierarchy`       | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
 | `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)            |
 | `POST` | `/api/ingestion/apply-granular-tagging`  | 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환)                  |
-| `GET`  | `/api/ingestion/hierarchy-list`          | H1/H2/H3 고유 목록 (드롭다운용)                                                |
+| `GET`  | `/api/ingestion/hierarchy-list`          | H1/H2/H3 고유 목록 (`filter_for_qa=true` QA 드롭다운용 / `false` 카테고리 트리 표시용) |
 
 ### Generation
 
@@ -474,4 +481,4 @@ docker compose up -d --build
 
 ---
 
-**Last Updated**: 2026-04-01 | **Branch**: main
+**Last Updated**: 2026-04-02 | **Branch**: main

@@ -1,35 +1,35 @@
 """
-Ingestion API  —  POST /api/ingestion/*
+Ingestion API  —  /api/ingestion/*
 
 문서(PDF/DOCX) 업로드 → 청킹 → Gemini Embedding 2 벡터화 → Supabase doc_chunks 저장
 및 hierarchy(H1/H2/H3) 분석·태깅 엔드포인트를 제공한다.
 
 엔드포인트
-  POST /api/ingestion/upload                파일 수신 → extract_text_by_page → process_and_ingest
-  POST /api/ingestion/analyze-hierarchy     H1 후보 도출 (Gemini)
-  POST /api/ingestion/analyze-h2-h3        H2/H3 master 생성
-  POST /api/ingestion/analyze-tagging-samples  태깅 샘플 미리보기
-  POST /api/ingestion/apply-granular-tagging   청크별 hierarchy 일괄 적용
-  GET  /api/ingestion/hierarchy-list        H1/H2/H3 고유 목록
+  POST /upload                 파일 수신 → 텍스트 추출 → 청킹 → 임베딩 → DB 저장
+  POST /analyze-hierarchy      문서 샘플 기반 H1/H2/H3 master + domain_profile 생성
+  POST /analyze-tagging-samples  기존 태깅 결과 샘플 5개 반환 (미리보기용)
+  POST /apply-granular-tagging   청크별 hierarchy 일괄 태깅 적용
+  GET  /hierarchy-list         H1/H2/H3 고유 목록 (QA 생성용 / 표시용 필터 분리)
+
+모듈 구조
+  ingestion/prompts.py   — LLM 프롬프트 빌더
+  ingestion/tagging.py   — 배치 태깅 코루틴, 행정 메타 청크 감지
+  ingestion/chunker.py   — LLM/Rule-based 청킹 로직
+  ingestion/pipeline.py  — 임베딩 → Supabase 저장 파이프라인
 """
 
 from __future__ import annotations
 
-import asyncio
-import difflib
-import hashlib
 import json
 import logging
 import os
-import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
 
-import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from google import genai as google_genai
 from pydantic import BaseModel
+
+import asyncio
 
 from config.models import MODEL_CONFIG
 from config.supabase_client import (
@@ -37,29 +37,13 @@ from config.supabase_client import (
     get_doc_chunks_sampled,
     get_hierarchy_list,
     is_supabase_available,
-    save_doc_chunks_batch,
-    update_chunk_metadata,
     patch_chunk_hierarchy,
 )
-from ingestion.parsers import (
-    build_context_prefix,
-    build_sections,
-    chunk_blocks_aware,
-    detect_chunk_type,
-    detect_repeated_headers,
-    extract_text_by_page,
-    is_toc_chunk,
-    merge_adjacent_short_blocks,
-    normalize_for_hash,
-    remove_footer_noise,
-    strip_redundant_headings,
-    _is_colophon_chunk,
-    _is_symbol_noise_chunk,
-    _merge_short_chunks,
-    _resolve_chunk_page,
-)
-from ingestion.llm_chunker import run_llm_chunking, run_llm_chunking_docx
 from db.doc_metadata_repo import upsert_doc_metadata
+from ingestion.parsers import extract_text_by_page
+from ingestion.pipeline import process_and_ingest
+from ingestion.prompts import build_hierarchy_prompt
+from ingestion.tagging import _is_admin_anchor, run_tagging
 
 logger = logging.getLogger("autoeval.ingestion")
 
@@ -98,358 +82,9 @@ class GranularTaggingRequest(BaseModel):
     document_id: Optional[str] = None
 
 
-
-
-# ============================================================================
-# 핵심 처리 파이프라인 (Background Task)
-# ============================================================================
-
-async def process_and_ingest(
-    filename: str,
-    pages: List[Dict[str, Any]],
-    metadata: Dict[str, Any],
-    chunking_method: str = "llm",
-):
-    """청킹 → Gemini Embedding 2 → Supabase 저장.
-
-    chunking_method:
-      "llm"  — Gemini 2.5 Flash LLM 청킹 (기본, 품질 우선)
-      "rule" — rule-based 청킹 (parsers.chunk_blocks_aware, 하위 호환)
-    """
-    try:
-        if not gemini_client:
-            logger.error("Gemini client not initialized")
-            return
-
-        doc_id = str(uuid4())
-        ingested_at = datetime.utcnow().isoformat()
-
-        # doc_chunks FK(fk_doc_chunks_metadata) 제약 충족을 위해 청킹 전 최소 row 선점
-        await upsert_doc_metadata(document_id=doc_id, filename=filename)
-
-        repeated_headers = detect_repeated_headers(pages)
-        if repeated_headers:
-            logger.info(f"[{filename}] Repeated headers: {list(repeated_headers)[:5]}")
-
-        all_blocks = []
-        for page_data in pages:
-            all_blocks.extend(page_data.get("blocks", []))
-
-        if not all_blocks:
-            logger.warning(f"[{filename}] No blocks extracted.")
-            return
-
-        # ── 청킹 분기 ──────────────────────────────────────────
-        if chunking_method == "llm":
-            all_chunks_to_embed = await _ingest_with_llm_chunking(
-                filename, pages, all_blocks, repeated_headers
-            )
-        else:
-            all_chunks_to_embed = _ingest_with_rule_chunking(
-                filename, all_blocks, repeated_headers
-            )
-        # ────────────────────────────────────────────────────────
-
-        if len(all_chunks_to_embed) == 0:
-            logger.error(f"[{filename}] 0 chunks produced")
-            return
-
-        embed_batch_size = 64
-        total_chunks = len(all_chunks_to_embed)
-        source_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
-
-        async def _embed_and_save(batch_num: int, batch_start: int, batch: list) -> None:
-            batch_texts = [item["text"] for item in batch]
-            res = await gemini_client.aio.models.embed_content(
-                model="gemini-embedding-2-preview",
-                contents=batch_texts,
-                config=google_genai.types.EmbedContentConfig(
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=1536,
-                ),
-            )
-            batch_rows = []
-            for idx, emb_data in enumerate(res.embeddings):
-                c = batch[idx]
-                embedding_np = np.array(emb_data.values)
-                norm = np.linalg.norm(embedding_np)
-                normalized_embedding = (embedding_np / norm).tolist() if norm > 0 else emb_data.values
-                chunk_metadata = {
-                    **metadata,
-                    "filename": filename,
-                    "content_hash": c["hash"],
-                    "section_title": c["section_title"],
-                    "chunk_type": c["chunk_type"],
-                    "page": c["page"],
-                    "char_length": len(c["raw_text"]),
-                    "chunk_index": batch_start + idx,
-                    "total_chunks": total_chunks,
-                    "chunking_method": chunking_method,
-                    "source": source_ext,
-                    "ingested_at": ingested_at,
-                    "embedding_model": "gemini-embedding-2-preview",
-                }
-                batch_rows.append({
-                    "content":     c["raw_text"],
-                    "embedding":   normalized_embedding,
-                    "metadata":    chunk_metadata,
-                    "document_id": doc_id,   # 전용 컬럼 직접 설정 (metadata 중복 제거)
-                })
-            await save_doc_chunks_batch(batch_rows)
-            logger.info(f"[{filename}] Embed batch {batch_num} done ({len(batch)} chunks)")
-
-        embed_tasks = [
-            _embed_and_save(i // embed_batch_size + 1, i, all_chunks_to_embed[i: i + embed_batch_size])
-            for i in range(0, total_chunks, embed_batch_size)
-        ]
-        await asyncio.gather(*embed_tasks)
-
-        logger.info(f"Ingestion complete: {filename} ({len(all_chunks_to_embed)} chunks, method={chunking_method})")
-
-    except Exception as e:
-        logger.error(f"Ingestion pipeline failed for {filename}: {e}", exc_info=True)
-
-
-# ============================================================================
-# 청킹 헬퍼 — LLM / Rule-based
-# ============================================================================
-
-_TOC_BLOCK_RE = re.compile(
-    r'[·]{3,}'                       # 가운뎃점 점선 TOC
-    r'|(?:\.{4,})\s*\d+\s*$'         # 마침표 점선 + 숫자
-    r'|[가-힣\?)\]】』]\d{1,3}\s*$'  # 점선 없는 TOC 페이지 참조 ("요약 및 정리66")
-)
-
-
-def _is_docx_noise_block(text: str) -> bool:
-    """DOCX 커버/장식 요소에서 잘못 추출된 노이즈 블록 감지."""
-    if len(text) <= 15:
-        meaningful = len(re.findall(r'[가-힣a-zA-Z0-9]', text))
-        if meaningful / max(len(text), 1) < 0.3:
-            return True
-    # 영문 1-2자 + 기호 + 한글 조합 (로고/워터마크 OCR 잔여물)
-    if len(text) <= 12 and re.match(r'^[A-Za-z]{1,2}[)（\]】]', text):
-        return True
-    return False
-
-
-async def _ingest_with_llm_chunking(
-    filename: str,
-    pages: List[Dict[str, Any]],
-    all_blocks: List[Dict[str, Any]],
-    repeated_headers: set,
-) -> List[Dict[str, Any]]:
-    """LLM 청킹 경로: 파일 확장자에 따라 PDF/DOCX 전용 함수로 분기 후 공통 필터 적용."""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    is_docx = ext in ("doc", "docx")
-
-    if is_docx:
-        # DOCX: 노이즈/TOC 블록 사전 필터 후 블록 수 기반 파라미터 사용
-        indexed_blocks = []
-        for b in all_blocks:
-            text = b.get("text", "").strip()
-            if not text:
-                continue
-            if _is_docx_noise_block(text):
-                continue
-            if _TOC_BLOCK_RE.search(text) or is_toc_chunk(text):
-                continue
-            indexed_blocks.append({
-                "index": len(indexed_blocks),
-                "page": b.get("page", 1),
-                "text": text,
-            })
-        chunks = await run_llm_chunking_docx(
-            blocks=indexed_blocks,
-            client=gemini_client,
-            model=MODEL_CONFIG["gemini-flash"]["model_id"],
-        )
-    else:
-        # PDF(기본): 페이지 수 기반 파라미터 사용
-        page_count = max((p.get("page", 1) for p in pages), default=1)
-        indexed_blocks = [
-            {"index": i, "page": b.get("page", 1), "text": b.get("text", "").strip()}
-            for i, b in enumerate(all_blocks)
-            if b.get("text", "").strip()
-        ]
-        chunks = await run_llm_chunking(
-            blocks=indexed_blocks,
-            client=gemini_client,
-            model=MODEL_CONFIG["gemini-flash"]["model_id"],
-            page_count=page_count,
-        )
-
-    all_chunks_to_embed = []
-    seen_hashes: set = set()
-    _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
-
-    for chunk in chunks:
-        chunk_text = chunk.get("text", "").strip()
-        if not chunk_text:
-            continue
-
-        chunk_text = remove_footer_noise(chunk_text, repeated_headers)
-
-        if is_toc_chunk(chunk_text):
-            _filter_counts["toc"] += 1
-            continue
-        if _is_colophon_chunk(chunk_text):
-            _filter_counts["colophon"] += 1
-            continue
-        if _is_symbol_noise_chunk(chunk_text):
-            _filter_counts["symbol"] += 1
-            continue
-        if len(chunk_text) < 60:
-            _filter_counts["too_short"] += 1
-            continue
-
-        norm_text = normalize_for_hash(chunk_text)
-        content_hash = hashlib.sha1(norm_text.encode("utf-8")).hexdigest()
-        if content_hash in seen_hashes:
-            _filter_counts["duplicate"] += 1
-            continue
-        seen_hashes.add(content_hash)
-
-        chunk_type = detect_chunk_type(chunk_text).lower()
-        section_title = chunk.get("section_title", "") or chunk_text.split("\n")[0].strip()[:30]
-
-        all_chunks_to_embed.append({
-            "text": chunk_text,       # LLM 청킹은 context_prefix 없이 저장
-            "raw_text": chunk_text,
-            "page": chunk.get("page", 1),
-            "hash": content_hash,
-            "section_title": section_title,
-            "chunk_type": chunk_type,
-        })
-
-    method_tag = "docx" if is_docx else "pdf"
-    logger.info(f"[{filename}] LLM chunking ({method_tag}): {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
-    return all_chunks_to_embed
-
-
-def _ingest_with_rule_chunking(
-    filename: str,
-    all_blocks: List[Dict[str, Any]],
-    repeated_headers: set,
-) -> List[Dict[str, Any]]:
-    """Rule-based 청킹 경로 (기존 파이프라인, 하위 호환)."""
-    all_blocks_text = [b.get("text", "") for b in all_blocks]
-    merged_blocks_data, _ = merge_adjacent_short_blocks(all_blocks, all_blocks_text)
-    logger.info(f"[{filename}] Block merge: {len(all_blocks)} → {len(merged_blocks_data)}")
-
-    sections = build_sections(merged_blocks_data)
-    logger.info(f"[{filename}] Sections built: {len(sections)}")
-    if not sections:
-        logger.warning(f"[{filename}] No sections built.")
-        return []
-
-    section_stack: List[str] = []
-    all_chunks_to_embed = []
-    seen_hashes: set = set()
-    _filter_counts = {"toc": 0, "colophon": 0, "symbol": 0, "too_short": 0, "duplicate": 0}
-    _law_title_re = re.compile(r'^(제\d+조(?:의\d+)?(?:\([^)]{1,30}\))?)')
-
-    for sec in sections:
-        heading = sec["heading"]
-        level = sec["level"]
-        normalized_heading = heading.replace('\n', ' ').replace('  ', ' ').strip()
-
-        if normalized_heading != "Root":
-            section_stack = section_stack[:level - 1]
-            section_stack.append(normalized_heading)
-
-        section_path = " > ".join(section_stack) if section_stack else "Document"
-
-        block_page_offsets = []
-        section_text_parts = []
-        cur_offset = 0
-        for b in sec["blocks"]:
-            b_text = b.get("text", "")
-            block_page_offsets.append((cur_offset, b.get("page", sec["page"])))
-            section_text_parts.append(b_text)
-            cur_offset += len(b_text) + 1
-        section_text = "\n".join(section_text_parts)
-
-        raw_chunks = chunk_blocks_aware(sec["blocks"])
-        raw_chunks = _merge_short_chunks(raw_chunks, min_chars=300, max_chars=1200)
-
-        for chunk_text in raw_chunks:
-            stripped = chunk_text.lstrip()
-            if stripped.startswith("|") and "---" in stripped and not stripped.startswith("[표]"):
-                chunk_text = "[표]\n" + stripped
-
-            if is_toc_chunk(chunk_text):
-                _filter_counts["toc"] += 1
-                continue
-            if _is_colophon_chunk(chunk_text):
-                _filter_counts["colophon"] += 1
-                continue
-            if _is_symbol_noise_chunk(chunk_text):
-                _filter_counts["symbol"] += 1
-                continue
-
-            chunk_text = remove_footer_noise(chunk_text, repeated_headers)
-            chunk_text = strip_redundant_headings(chunk_text, heading)
-
-            if len(chunk_text.strip()) < 60:
-                _filter_counts["too_short"] += 1
-                continue
-
-            norm_text = normalize_for_hash(chunk_text)
-            content_hash = hashlib.sha1(norm_text.encode('utf-8')).hexdigest()
-            if content_hash in seen_hashes:
-                _filter_counts["duplicate"] += 1
-                continue
-            seen_hashes.add(content_hash)
-
-            chunk_type = detect_chunk_type(chunk_text).lower()
-            normalized_section_title = heading.replace('\n', ' ').replace('  ', ' ').strip()
-            _m = _law_title_re.match(normalized_section_title)
-            prefix_title = _m.group(1) if _m else normalized_section_title
-            context_prefix = build_context_prefix(filename, prefix_title, sec["page"])
-            enriched_text = context_prefix + chunk_text
-
-            all_chunks_to_embed.append({
-                "text": enriched_text,
-                "raw_text": chunk_text,
-                "page": _resolve_chunk_page(chunk_text, section_text, block_page_offsets, sec["page"]),
-                "hash": content_hash,
-                "section_title": normalized_section_title,
-                "chunk_type": chunk_type,
-            })
-
-    too_short_samples = _filter_counts.pop("_too_short_samples", [])
-    logger.info(f"[{filename}] Rule chunking: {len(all_chunks_to_embed)} chunks. Filtered: {_filter_counts}")
-    if too_short_samples:
-        logger.info(f"[{filename}] too_short samples: {too_short_samples}")
-    return all_chunks_to_embed
-
-
-# ============================================================================
-# 헬퍼 — 행정 메타 청크 감지
-# ============================================================================
-
-_SENTENCE_RE = re.compile(r'[가-힣]{2,}[^.\n]{5,}[다요]\b')
-
-
-def _is_admin_anchor(content: str) -> bool:
-    """행정 메타 청크 여부 — 내용 밀도 기반 (문서 유형 무관).
-
-    판별 기준 (두 조건 중 하나 충족 시 True):
-      1) 한글 비율 < 30%  — 날짜·번호·코드·영문 식별자 위주
-      2) 완성 문장 0개    — 서술어(다/요)로 끝나는 절이 없는 조각 나열
-    단, 400자 이상 청크는 내용 있는 것으로 간주하고 통과.
-    """
-    stripped = content.strip()
-    if len(stripped) >= 400:
-        return False
-    korean_chars = len(re.findall(r'[가-힣]', stripped))
-    korean_ratio = korean_chars / max(len(stripped), 1)
-    if korean_ratio < 0.3:
-        return True
-    if not _SENTENCE_RE.search(stripped):
-        return True
-    return False
+class TaggingSamplesRequest(BaseModel):
+    filename: str
+    selected_h1_list: List[str]
 
 
 # ============================================================================
@@ -470,6 +105,8 @@ async def upload_document(
     """
     if not is_supabase_available():
         raise HTTPException(status_code=500, detail="Supabase 설정이 구성되지 않았습니다.")
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
     try:
         content_bytes = await file.read()
@@ -501,7 +138,14 @@ async def upload_document(
             "hierarchy_h3": hierarchy_h3,
             "filename": file.filename,
         }
-        await process_and_ingest(file.filename, pages, metadata, chunking_method=chunking_method)
+        await process_and_ingest(
+            file.filename,
+            pages,
+            metadata,
+            gemini_client=gemini_client,
+            model_id=MODEL_CONFIG["gemini-flash"]["model_id"],
+            chunking_method=chunking_method,
+        )
 
         return IngestionResponse(
             success=True,
@@ -524,73 +168,22 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     if not gemini_client:
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
-    # anchor 균등 샘플링 — 행정 메타 청크 제거 후 사용
     anchor_chunks = await get_doc_chunks_sampled(request.filename, n=40)
     if not anchor_chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
 
     filtered = [c for c in anchor_chunks if not _is_admin_anchor(c["content"])]
     if len(filtered) < 10:
-        filtered = anchor_chunks  # 필터 후 너무 적으면 원본 사용
+        filtered = anchor_chunks
     anchor_chunks = filtered[:30]
 
-    # 동적 절단: 총 20,000자 한도 내에서 청크당 균등 배분
     per_chunk_limit = max(400, 20000 // len(anchor_chunks))
     concatenated_text = "\n\n---\n\n".join(c["content"][:per_chunk_limit] for c in anchor_chunks)
 
     total_chunks = len(anchor_chunks)
     h2_guide = "2~3" if total_chunks <= 50 else ("3~7" if total_chunks > 150 else "2~5")
 
-    prompt = f"""
-<role>
-You are an expert document classifier and domain analyst.
-Build a complete hierarchical taxonomy (H1/H2/H3) AND extract a domain profile for the provided document.
-</role>
-
-<constraints>
-- H1 COUNT RULE (STRICTLY ENFORCED): You MUST output between 3 and 5 H1 keys — no fewer than 3, no more than 5.
-  If you identify more than 5 themes, MERGE the most similar or overlapping ones until you have at most 5.
-  Think of H1 as broad domain pillars, not chapter titles.
-- For each H1, create {h2_guide} H2 sub-categories covering distinct content themes.
-- For each H2, create 2~4 specific H3 leaf labels.
-- All taxonomy names in Korean (한국어), under 15 characters each.
-- H1 must represent LEARNABLE content themes — NOT administrative metadata.
-- H1 must NOT be: dates, ordinance numbers, contact info, department names, page headers.
-- Bad H1 examples: "시행일 관리", "담당부서", "고시번호"
-- Good H1 examples: "데이터 연계 기준", "정보시스템 운영", "보안 정책"
-- TEXT QUALITY RULE: The context may contain PDF extraction artifacts such as digits or ASCII
-  letters embedded inside Korean words (e.g. "상호작2용", "상호작acts용", "인터페Ÿ스").
-  You MUST infer and write the correct clean Korean word — never copy corrupted text into
-  any H1/H2/H3 name. All taxonomy labels must consist of natural Korean only.
-</constraints>
-
-<context>
-{concatenated_text[:20000]}
-</context>
-
-<task>
-Return a JSON object with this exact structure (all string values in Korean):
-{{
-  "domain_analysis": "한 문장으로 문서 전체 성격 요약",
-  "domain_profile": {{
-    "domain": "문서 분야/유형 (예: AI 데이터 구축 가이드라인)",
-    "domain_short": "짧은 도메인명, 10자 이내",
-    "target_audience": "주요 독자층 (예: 데이터 구축 작업자)",
-    "key_terms": ["전문용어1", "전문용어2", "전문용어3", "전문용어4", "전문용어5"],
-    "tone": "문서 문체 (예: 기술 문서 격식체)"
-  }},
-  "h2_h3_master": {{
-    "H1명A": {{
-      "H2명1": ["H3명1", "H3명2"],
-      "H2명2": ["H3명1", "H3명2"]
-    }},
-    "H1명B": {{
-      "H2명1": ["H3명1", "H3명2"]
-    }}
-  }}
-}}
-</task>
-"""
+    prompt = build_hierarchy_prompt(concatenated_text, h2_guide)
 
     try:
         response = await gemini_client.aio.models.generate_content(
@@ -606,10 +199,10 @@ Return a JSON object with this exact structure (all string values in Korean):
         result = json.loads(response.text)
         if not isinstance(result.get("h2_h3_master"), dict):
             raise ValueError(f"Unexpected LLM response: {type(result.get('h2_h3_master'))}")
+
         h2_h3_master = result["h2_h3_master"]
         h1_candidates = list(h2_h3_master.keys())
 
-        # H1 개수 검증 — LLM이 제약을 초과한 경우 앞 5개로 절단
         H1_MAX = 5
         if len(h1_candidates) > H1_MAX:
             logger.warning(
@@ -617,20 +210,17 @@ Return a JSON object with this exact structure (all string values in Korean):
                 f"(제거: {h1_candidates[H1_MAX:]})"
             )
             h1_candidates = h1_candidates[:H1_MAX]
-            h2_h3_master  = {k: h2_h3_master[k] for k in h1_candidates}
+            h2_h3_master = {k: h2_h3_master[k] for k in h1_candidates}
 
-        # domain_profile 추출
         domain_profile: Optional[Dict[str, Any]] = result.get("domain_profile")
         if not (domain_profile and isinstance(domain_profile, dict)):
             domain_profile = None
 
-        # anchor 청크에서 document_id 추출 — 전용 컬럼 우선, 구버전 row는 metadata fallback
         document_id = (
             anchor_chunks[0].get("document_id")
             or (anchor_chunks[0].get("metadata") or {}).get("document_id")
         ) if anchor_chunks else None
 
-        # doc_metadata 저장 (document_id 있을 때만)
         if document_id:
             await upsert_doc_metadata(
                 document_id=document_id,
@@ -651,13 +241,6 @@ Return a JSON object with this exact structure (all string values in Korean):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-
-
-class TaggingSamplesRequest(BaseModel):
-    filename: str
-    selected_h1_list: List[str]
-
-
 @router.post("/analyze-tagging-samples")
 async def analyze_tagging_samples(request: TaggingSamplesRequest):
     """이미 태깅된 청크에서 __admin__ 제외 샘플 5개를 반환한다."""
@@ -666,7 +249,6 @@ async def analyze_tagging_samples(request: TaggingSamplesRequest):
 
     all_chunks = await get_document_chunks(request.filename, limit=2000)
 
-    # Pass 1: one sample per unique h1 (excludes __admin__)
     samples: list = []
     seen_h1s: set = set()
     remaining: list = []
@@ -685,7 +267,6 @@ async def analyze_tagging_samples(request: TaggingSamplesRequest):
         elif len(samples) < 5:
             remaining.append(chunk)
 
-    # Pass 2: fill up to 5 if needed
     for chunk in remaining:
         if len(samples) >= 5:
             break
@@ -693,7 +274,11 @@ async def analyze_tagging_samples(request: TaggingSamplesRequest):
         samples.append({
             "id": chunk["id"],
             "content_preview": chunk["content"][:150] + "...",
-            "hierarchy": {"h1": meta.get("hierarchy_h1"), "h2": meta.get("hierarchy_h2"), "h3": meta.get("hierarchy_h3")},
+            "hierarchy": {
+                "h1": meta.get("hierarchy_h1"),
+                "h2": meta.get("hierarchy_h2"),
+                "h3": meta.get("hierarchy_h3"),
+            },
         })
 
     return {"success": True, "samples": samples}
@@ -702,6 +287,8 @@ async def analyze_tagging_samples(request: TaggingSamplesRequest):
 @router.post("/apply-granular-tagging")
 async def apply_granular_tagging(request: GranularTaggingRequest):
     """Pass 3: 청크별 hierarchy 일괄 적용 (동기 처리)."""
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="Gemini client not initialized")
     if not request.h2_h3_master:
         raise HTTPException(
             status_code=400,
@@ -709,148 +296,28 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
         )
     logger.info(f"Granular tagging start: {request.filename} (document_id={request.document_id or 'all'})")
 
-    async def run_tagging() -> list:
-        all_chunks = await get_document_chunks(
-            request.filename,
-            limit=2000,
-            document_id=request.document_id,
-        )
-        if not all_chunks:
-            return []
+    all_chunks = await get_document_chunks(
+        request.filename,
+        limit=2000,
+        document_id=request.document_id,
+    )
+    if not all_chunks:
+        return {"success": True, "message": "No chunks found.", "samples": []}
 
-        batch_size = 5
-        batches = [all_chunks[i: i + batch_size] for i in range(0, len(all_chunks), batch_size)]
-        semaphore = asyncio.Semaphore(5)  # LLM 동시 배치 수 제한 (DB 커넥션 과부하 방지)
-        completed = 0
-        samples_collected: list = []
-
-        def _build_prompt(chunks_data: list) -> str:
-            if request.h2_h3_master:
-                return f"""
-<role>
-You are a strict document taxonomy classifier.
-Select H1, H2, H3 values EXCLUSIVELY from master_hierarchy. Do NOT generate new values.
-</role>
-
-<constraints>
-- Classify each chunk INDEPENDENTLY. Do not compare chunks within this batch.
-- H1: select ONE from top-level keys of master_hierarchy
-- H2: select ONE from H2 keys under selected H1
-- H3: select ONE from H3 list under selected H2
-- EXCEPTION: If a chunk contains ONLY administrative metadata (dates, ordinance numbers,
-  phone numbers, department names, page headers) with NO learnable content,
-  set h1="__admin__", h2="__admin__", h3="__admin__".
-  Use __admin__ sparingly — only when the chunk has absolutely no subject matter content.
-</constraints>
-
-<master_hierarchy>
-{json.dumps(request.h2_h3_master, ensure_ascii=False, indent=2)}
-</master_hierarchy>
-
-<chunks>
-{json.dumps(chunks_data, ensure_ascii=False)}
-</chunks>
-
-<task>
-Return ONLY a JSON array — no explanation:
-[{{ "idx": 0, "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
-</task>
-"""
-            else:
-                return f"""
-<role>You are a document taxonomy classifier.</role>
-
-<constraints>
-- Classify each chunk INDEPENDENTLY. Do not compare chunks within this batch.
-- H1: select ONE from h1_master
-- H2/H3: Korean, under 15 characters each
-- EXCEPTION: If a chunk contains ONLY administrative metadata (dates, ordinance numbers,
-  phone numbers, department names) with NO learnable content,
-  set h1="__admin__", h2="__admin__", h3="__admin__".
-</constraints>
-
-<h1_master>
-{json.dumps(request.selected_h1_list, ensure_ascii=False)}
-</h1_master>
-
-<chunks>
-{json.dumps(chunks_data, ensure_ascii=False)}
-</chunks>
-
-<task>
-Return ONLY a JSON array — no explanation:
-[{{ "idx": 0, "hierarchy": {{ "h1": "...", "h2": "...", "h3": "..." }} }}]
-</task>
-"""
-
-        async def process_batch(batch_idx: int, batch: list):
-            nonlocal completed
-            async with semaphore:
-                def _make_chunk_entry(i: int, c: dict) -> dict:
-                    meta = c.get("metadata") or {}
-                    entry = {
-                        "idx": i,
-                        "content": c["content"][:800],
-                        "chunk_type": meta.get("chunk_type", "body"),
-                        "char_length": meta.get("char_length", len(c["content"])),
-                    }
-                    st = (meta.get("section_title") or "").strip()
-                    if st:
-                        entry["section_title"] = st
-                    return entry
-                chunks_data = [_make_chunk_entry(i, c) for i, c in enumerate(batch)]
-                try:
-                    res = await gemini_client.aio.models.generate_content(
-                        model=MODEL_CONFIG["gemini-flash"]["model_id"],
-                        contents=_build_prompt(chunks_data),
-                        config=google_genai.types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.0,
-                            top_p=0.95,
-                            thinking_config=google_genai.types.ThinkingConfig(thinking_budget=0),
-                        ),
-                    )
-                    tagging_results = json.loads(res.text)
-
-                    update_tasks = []
-                    matched = 0
-                    for item in tagging_results:
-                        idx = item.get("idx")
-                        h = item.get("hierarchy", {})
-                        if idx is None or not isinstance(idx, int) or idx >= len(batch):
-                            continue
-                        target = batch[idx]
-                        # patch_chunk_hierarchy RPC: 3개 필드만 DB side jsonb merge.
-                        # 전체 metadata 재전송을 피해 페이로드를 줄이고
-                        # Cloudflare WAF/rate-limit 오류(400) 방지.
-                        update_tasks.append(patch_chunk_hierarchy(
-                            target["id"],
-                            h.get("h1"),
-                            h.get("h2"),
-                            h.get("h3"),
-                        ))
-                        matched += 1
-                        if len(samples_collected) < 5 and h.get("h1") != "__admin__":
-                            samples_collected.append({
-                                "id": target["id"],
-                                "content_preview": target["content"][:150] + "...",
-                                "hierarchy": h,
-                            })
-
-                    # 세마포어(_write_sem)가 전역 동시성을 제어하므로 여기선 gather로 실행
-                    await asyncio.gather(*update_tasks)
-
-                    completed += 1
-                    logger.info(f"Batch {batch_idx + 1}/{len(batches)} tagged ({matched} updated)")
-                except Exception as e:
-                    logger.error(f"Batch {batch_idx + 1} error: {e}")
-
-        await asyncio.gather(*[process_batch(i, b) for i, b in enumerate(batches)])
-        logger.info(f"Tagging done: {request.filename} ({completed}/{len(batches)} batches)")
-        return samples_collected
-
-    samples = await run_tagging()
-    return {"success": True, "message": f"Granular tagging completed for {request.filename}.", "samples": samples}
+    samples = await run_tagging(
+        filename=request.filename,
+        all_chunks=all_chunks,
+        gemini_client=gemini_client,
+        model_id=MODEL_CONFIG["gemini-flash"]["model_id"],
+        h2_h3_master=request.h2_h3_master,
+        selected_h1_list=request.selected_h1_list,
+        patch_fn=patch_chunk_hierarchy,
+    )
+    return {
+        "success": True,
+        "message": f"Granular tagging completed for {request.filename}.",
+        "samples": samples,
+    }
 
 
 @router.get("/hierarchy-list")

@@ -16,15 +16,22 @@ backend/
 │   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
 ├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
 │   ├── parsers.py               # PDF/DOCX 파싱·정규화·필터·청킹 전 처리
-│   └── llm_chunker.py           # LLM 청킹 — Gemini 2.5 Flash 기반 의미 단위 청킹
-│                                #   PDF: SYSTEM_PROMPT (noise_correction 포함)
-│                                #   DOCX: DOCX_SYSTEM_PROMPT (noise_correction 없음)
-│                                #   파라미터: PDF=페이지 수 기반, DOCX=블록 수 기반 티어 자동 조정
+│   ├── llm_chunker.py           # LLM 청킹 — Gemini 2.5 Flash 기반 의미 단위 청킹
+│   │                            #   PDF: SYSTEM_PROMPT (noise_correction 포함)
+│   │                            #   DOCX: DOCX_SYSTEM_PROMPT (noise_correction 없음)
+│   │                            #   파라미터: PDF=페이지 수 기반, DOCX=블록 수 기반 티어 자동 조정
+│   ├── prompts.py               # LLM 프롬프트 빌더 — build_hierarchy_prompt / build_tagging_prompt
+│   ├── tagging.py               # 배치 태깅 코루틴 — run_tagging(), _is_admin_anchor()
+│   ├── chunker.py               # LLM/Rule-based 청킹 로직 — ingest_with_llm/rule_chunking()
+│   └── pipeline.py              # 임베딩 → Supabase 저장 파이프라인 — process_and_ingest()
 ├── generators/                  # QA 생성 핵심 로직
+│   ├── prompts.py               # 시스템 프롬프트·유저 템플릿 — SYSTEM_PROMPT_*/USER_TEMPLATE_*, build_system_prompt(), build_user_template()
+│   ├── job_manager.py           # JobStatus, GenerationJob, JobManager, 전역 job_manager 싱글턴
+│   ├── worker.py                # 생성 오케스트레이션 — run_qa_generation*(), 병렬 생성, Supabase 저장
 │   ├── qa_generator.py          # generate_qa() — 프로바이더별 API 호출 (Claude/Gemini/GPT)
 │   └── domain_profiler.py       # 폴백 전용 (/analyze-hierarchy 미실행 시만 호출)
 ├── evaluators/                  # 4레이어 평가 로직
-│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 (ThreadPoolExecutor 병렬)
+│   ├── pipeline.py              # 평가 파이프라인 오케스트레이션 (ThreadPoolExecutor 병렬) + build_export_detail(), _classify_failure_types()
 │   ├── syntax_validator.py      # Layer 1-A: 구문 검증
 │   ├── dataset_stats.py         # Layer 1-B: 통계 분석 (다양성·중복·편향)
 │   ├── rag_triad.py             # Layer 2: RAG Triad (관련성·근거성·맥락성)
@@ -42,7 +49,7 @@ backend/
 │   └── dashboard_repo.py        # 대시보드 집계
 ├── config/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임
-│   ├── prompts.py               # 프롬프트 상수 + 적응형 빌더
+│   ├── prompts.py               # 호환성 shim — generators/prompts.py re-export
 │   ├── models.py                # 모델 alias → model_id, cost, provider 매핑
 │   └── constants.py             # worker 수 등 기본 상수
 └── scripts/
@@ -278,7 +285,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 |-------|----------|----------|---------|
 | `gemini-3.1-flash` | gemini-3-flash-preview | google | 5 |
 | `gpt-5.2` | gpt-5.2-2025-12-11 | openai | 5 |
-| `claude-sonnet` | claude-sonnet-4-6 | anthropic | 4 |
+| `claude-sonnet` | claude-sonnet-4-6 | anthropic | 2 |
 
 ### 평가 모델 (기본값: `gemini-flash`)
 
@@ -324,3 +331,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | hierarchy-list 이중화 | `filter_for_qa` 파라미터 | QA 드롭다운(MIN_CHUNKS/CHARS 필터)과 표시용 트리(필터 없음) 분리 |
 | 빈 QA 저장 방지 | `total_qa == 0` early return | 컨텍스트 부족 노드 선택 시 빈 레코드 DB 저장 방지 |
 | H2/H3 최소 조건 | `MIN_CHUNKS=2`, `MIN_CONTENT_CHARS=300` | 청크 수와 실제 텍스트 길이를 모두 충족해야 드롭다운 노출 |
+| `ingestion_api.py` 모듈화 | `prompts / tagging / chunker / pipeline` 분리 | 870줄 단일 파일 → 라우터 331줄 + 4개 전담 모듈, 프롬프트/태깅/청킹/파이프라인 독립 테스트 가능 |
+| `generation_api.py` 모듈화 | `prompts / job_manager / worker` 분리 | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거, `config/prompts.py` → `generators/prompts.py` 이동 |
+| `config/prompts.py` 위치 이전 | `generators/prompts.py`로 이동, shim 유지 | generation 전용 프롬프트를 config 레이어에서 generators 레이어로 이동, 기존 코드 호환성 보장 |
+| `evaluation_api.py` 정리 | `TYPE_CHECKING` 제거, `try/except ImportError` → `sys.path.insert` 통일, `_build_export_detail` → `evaluators/pipeline.build_export_detail` 이동 | 418줄 → 321줄, 이중 import 패턴 제거, export 헬퍼 비즈니스 로직을 evaluators 레이어로 귀속 |
