@@ -513,7 +513,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {/* QA 생성 이동 */}
             {hierarchyDone && setActiveTab && (
               <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex items-center justify-between animate-in fade-in duration-300">
-                <p className="text-xs text-slate-400 dark:text-slate-500">계층 태깅이 완료되었습니다.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">카테고리 분류가 완료되었습니다.</p>
                 <button
                   onClick={() => setActiveTab("generation")}
                   className="min-w-[168px] flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-all shadow-sm active:scale-[0.99]"

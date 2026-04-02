@@ -11,9 +11,9 @@ FastAPI 기반 QA 생성·평가 백엔드.
 backend/
 ├── main.py                      # FastAPI 앱 + 라우트 통합 허브 + 로깅 설정
 ├── api/                         # API 라우트 레이어
-│   ├── ingestion_api.py         # POST /api/ingestion/* — 업로드·청킹·hierarchy 분석·태깅
-│   ├── generation_api.py        # POST /api/generate — QA 생성 job 관리
-│   └── evaluation_api.py        # POST /api/evaluate — 4레이어 평가 job 관리
+│   ├── ingestion_api.py         # POST|GET /api/ingestion/* — 업로드·청킹·hierarchy 분석·태깅
+│   ├── generation_api.py        # POST|GET|DELETE /api/generate/* — QA 생성 job 관리
+│   └── evaluation_api.py        # POST|GET /api/evaluate/* — 4레이어 평가 job 관리
 ├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
 │   ├── parsers.py               # PDF/DOCX 파싱·정규화·필터·청킹 전 처리
 │   ├── llm_chunker.py           # LLM 청킹 — Gemini 2.5 Flash 기반 의미 단위 청킹
@@ -49,9 +49,7 @@ backend/
 │   └── dashboard_repo.py        # 대시보드 집계
 ├── config/
 │   ├── supabase_client.py       # re-export wrapper → backend/db/ 위임
-│   ├── prompts.py               # 호환성 shim — generators/prompts.py re-export
-│   ├── models.py                # 모델 alias → model_id, cost, provider 매핑
-│   └── constants.py             # worker 수 등 기본 상수
+│   └── models.py                # 모델 alias → model_id, cost, provider 매핑
 └── scripts/
     ├── setup_vector_db.sql          # doc_chunks 테이블 + match_doc_chunks / patch_chunk_hierarchy RPC
     ├── setup_qa_eval_tables.sql     # qa_eval_results, qa_gen_results + get_eval_qa_scores RPC
@@ -94,23 +92,23 @@ API 문서: `http://localhost:8000/docs`
 
 ### Ingestion  `/api/ingestion`
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/upload` | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 (`chunking_method`: `llm`(기본) \| `rule`) |
-| `POST` | `/analyze-hierarchy` | anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
-| `POST` | `/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개) |
-| `POST` | `/apply-granular-tagging` | 청크별 hierarchy 일괄 태깅 (batch=5, parallel=5, 완료 후 샘플 5개 반환) |
-| `GET`  | `/hierarchy-list` | H1/H2/H3 고유 목록. `filter_for_qa=true`(기본, QA 드롭다운용) / `filter_for_qa=false`(표시용, 필터 없음) |
+| 메서드   | 경로                         | 설명                                                                                                        |
+| -------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST` | `/upload`                  | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 (`chunking_method`: `llm`(기본) \| `rule`)       |
+| `POST` | `/analyze-hierarchy`       | anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장                   |
+| `POST` | `/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)                                         |
+| `POST` | `/apply-granular-tagging`  | 청크별 hierarchy 일괄 태깅 (batch=5, parallel=5, 완료 후 샘플 5개 반환)                                     |
+| `GET`  | `/hierarchy-list`          | H1/H2/H3 고유 목록.`filter_for_qa=true`(기본, QA 드롭다운용) / `filter_for_qa=false`(표시용, 필터 없음) |
 
 ### Generation  `/api/generate`
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/api/generate` | QA 생성 job 시작 |
-| `GET`  | `/api/generate/{job_id}/status` | job 상태 (status / progress / result_id) |
-| `GET`  | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (기본 5개) |
-| `GET`  | `/api/generate/jobs` | 세션 내 전체 job 목록 |
-| `DELETE` | `/api/generate/{job_id}` | job 취소 |
+| 메서드     | 경로                               | 설명                                     |
+| ---------- | ---------------------------------- | ---------------------------------------- |
+| `POST`   | `/api/generate`                  | QA 생성 job 시작                         |
+| `GET`    | `/api/generate/{job_id}/status`  | job 상태 (status / progress / result_id) |
+| `GET`    | `/api/generate/{job_id}/preview` | 생성 완료 후 QA 미리보기 (기본 5개)      |
+| `GET`    | `/api/generate/jobs`             | 세션 내 전체 job 목록                    |
+| `DELETE` | `/api/generate/{job_id}`         | job 취소                                 |
 
 **POST /api/generate request body**
 
@@ -132,20 +130,20 @@ API 문서: `http://localhost:8000/docs`
 
 ### Evaluation  `/api/evaluate`
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `POST` | `/api/evaluate` | 4레이어 평가 job 시작 |
-| `GET`  | `/api/evaluate/{job_id}/status` | 평가 job 상태 + 레이어별 결과 |
-| `GET`  | `/api/evaluate/list` | 세션 내 평가 job 목록 |
-| `GET`  | `/api/evaluate/history` | Supabase 과거 평가 이력 (최대 50건) |
-| `GET`  | `/api/evaluate/{job_id}/export` | QA+점수 조인 내보내기 |
+| 메서드   | 경로                                     | 설명                                               |
+| -------- | ---------------------------------------- | -------------------------------------------------- |
+| `POST` | `/api/evaluate`                        | 4레이어 평가 job 시작                              |
+| `GET`  | `/api/evaluate/{job_id}/status`        | 평가 job 상태 + 레이어별 결과                      |
+| `GET`  | `/api/evaluate/list`                   | 세션 내 평가 job 목록                              |
+| `GET`  | `/api/evaluate/history`                | Supabase 과거 평가 이력 (최대 50건)                |
+| `GET`  | `/api/evaluate/{job_id}/export`        | QA+점수 조인 내보내기                              |
 | `GET`  | `/api/evaluate/export-by-id/{eval_id}` | eval_id 기반 내보내기 (RPC `get_eval_qa_scores`) |
 
 ### System
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| `GET` | `/health` | 헬스체크 |
+| 메서드  | 경로                       | 설명                                                               |
+| ------- | -------------------------- | ------------------------------------------------------------------ |
+| `GET` | `/health`                | 헬스체크                                                           |
 | `GET` | `/api/dashboard/metrics` | 대시보드 집계 (summary, recent_jobs, grade_dist, model_benchmarks) |
 
 ---
@@ -154,12 +152,12 @@ API 문서: `http://localhost:8000/docs`
 
 파일 시스템 저장 없음 — 모든 결과물은 Supabase에만 저장됨.
 
-| 단계 | 테이블 | 비고 |
-|------|--------|------|
-| 문서 청크 | `doc_chunks` | content + embedding(1536) + metadata JSONB + document_id 컬럼 |
-| 문서 메타 | `doc_metadata` | domain_profile + h2_h3_master (문서 단위, 1행) |
-| QA 생성 결과 | `qa_gen_results` | qa_list JSONB + stats |
-| QA 평가 결과 | `qa_eval_results` | pipeline_results JSONB + final_score + grade |
+| 단계         | 테이블              | 비고                                                          |
+| ------------ | ------------------- | ------------------------------------------------------------- |
+| 문서 청크    | `doc_chunks`      | content + embedding(1536) + metadata JSONB + document_id 컬럼 |
+| 문서 메타    | `doc_metadata`    | domain_profile + h2_h3_master (문서 단위, 1행)                |
+| QA 생성 결과 | `qa_gen_results`  | qa_list JSONB + stats                                         |
+| QA 평가 결과 | `qa_eval_results` | pipeline_results JSONB + final_score + grade                  |
 
 ### `doc_chunks.metadata` 필드 목록
 
@@ -251,12 +249,12 @@ Pass 3: /apply-granular-tagging
 
 ## 평가 파이프라인 흐름 (4-Layer)
 
-| 레이어 | 모듈 | 역할 | 가중치 |
-| :--- | :--- | :--- | :--- |
-| L1-A Syntax | `syntax_validator.py` | 구문 정확성 (필드 존재, 길이 범위) | 5% |
-| L1-B Stats | `dataset_stats.py` | 데이터셋 통계 (다양성·중복·편향) | 5% |
-| L2 RAG Triad | `rag_triad.py` | 관련성·근거성·맥락성 (LLM Judge) | 65% |
-| L3 Quality | `qa_quality.py` | 완전성 — 질문 분해 기반 커버리지 | 25% |
+| 레이어       | 모듈                    | 역할                               | 가중치 |
+| :----------- | :---------------------- | :--------------------------------- | :----- |
+| L1-A Syntax  | `syntax_validator.py` | 구문 정확성 (필드 존재, 길이 범위) | 5%     |
+| L1-B Stats   | `dataset_stats.py`    | 데이터셋 통계 (다양성·중복·편향) | 5%     |
+| L2 RAG Triad | `rag_triad.py`        | 관련성·근거성·맥락성 (LLM Judge) | 65%    |
+| L3 Quality   | `qa_quality.py`       | 완전성 — 질문 분해 기반 커버리지  | 25%    |
 
 ### 최종 점수 산식
 
@@ -269,11 +267,11 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 ### 상태 판정
 
-| 상태 | 조건 |
-|------|------|
-| Fail | 품질 점수 AND RAG Triad 점수 모두 0.7 미만 |
+| 상태 | 조건                                                          |
+| ---- | ------------------------------------------------------------- |
+| Fail | 품질 점수 AND RAG Triad 점수 모두 0.7 미만                    |
 | Hold | 0.7 미만 지표 1개 이상, 또는 0.7 이상이나 근거 오류/환각 감지 |
-| Pass | 모든 점수 ≥ 0.7, 결함 없음 |
+| Pass | 모든 점수 ≥ 0.7, 결함 없음                                   |
 
 ---
 
@@ -281,28 +279,28 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 ### 생성 모델
 
-| alias | model_id | provider | Workers |
-|-------|----------|----------|---------|
-| `gemini-3.1-flash` | gemini-3-flash-preview | google | 5 |
-| `gpt-5.2` | gpt-5.2-2025-12-11 | openai | 5 |
-| `claude-sonnet` | claude-sonnet-4-6 | anthropic | 2 |
+| alias                | model_id               | provider  | Workers |
+| -------------------- | ---------------------- | --------- | ------- |
+| `gemini-3.1-flash` | gemini-3-flash-preview | google    | 5       |
+| `gpt-5.2`          | gpt-5.2-2025-12-11     | openai    | 5       |
+| `claude-sonnet`    | claude-sonnet-4-6      | anthropic | 2       |
 
 ### 평가 모델 (기본값: `gemini-flash`)
 
-| alias | model_id | provider | Workers |
-|-------|----------|----------|---------|
-| `gemini-flash` | gemini-2.5-flash | google | 10 |
-| `gpt-5.1` | gpt-5.1-2025-11-13 | openai | 8 |
-| `claude-haiku` | claude-haiku-4-5 | anthropic | 2 |
+| alias            | model_id           | provider  | Workers |
+| ---------------- | ------------------ | --------- | ------- |
+| `gemini-flash` | gemini-2.5-flash   | google    | 10      |
+| `gpt-5.1`      | gpt-5.1-2025-11-13 | openai    | 8       |
+| `claude-haiku` | claude-haiku-4-5   | anthropic | 2       |
 
 ### 인제스션 모델
 
-| 용도 | model_id | 비고 |
-|------|----------|------|
-| LLM 청킹 (PDF/DOCX) | gemini-2.5-flash | thinking_budget=0, temperature=0.1 |
-| 임베딩 | gemini-embedding-2-preview | 1536차원, RETRIEVAL_DOCUMENT/QUERY |
-| Hierarchy + domain_profile 생성 | gemini-3-flash-preview | H1/H2/H3 master + domain_profile 동시 생성 |
-| Hierarchy 태깅 | gemini-3-flash-preview | batch=5, parallel=5, temperature=0 |
+| 용도                            | model_id                   | 비고                                       |
+| ------------------------------- | -------------------------- | ------------------------------------------ |
+| LLM 청킹 (PDF/DOCX)             | gemini-2.5-flash           | thinking_budget=0, temperature=0.1         |
+| 임베딩                          | gemini-embedding-2-preview | 1536차원, RETRIEVAL_DOCUMENT/QUERY         |
+| Hierarchy + domain_profile 생성 | gemini-3-flash-preview     | H1/H2/H3 master + domain_profile 동시 생성 |
+| Hierarchy 태깅                  | gemini-3-flash-preview     | batch=5, parallel=5, temperature=0         |
 
 ### domain_profile
 
@@ -322,16 +320,15 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 ## 주요 설계 결정 사항
 
-| 항목 | 결정 | 이유 |
-|------|------|------|
-| DOCX 파싱 | `python-docx` XML 직접 파싱 | `docx2txt` 대비 표 구조 보존, Heading 계층 인식, Fallback 중복 방지 |
-| LLM 청킹 기본 | Gemini 2.5 Flash | 의미 단위 경계 판단, noise_correction 포함 (PDF) |
-| 임베딩 차원 | 1536 | HNSW 인덱스 2000차원 제한 고려 |
-| document_id 저장 | `doc_chunks.document_id` 전용 컬럼 | metadata JSONB 중복 제거, 컬럼 인덱스 활용 |
-| hierarchy-list 이중화 | `filter_for_qa` 파라미터 | QA 드롭다운(MIN_CHUNKS/CHARS 필터)과 표시용 트리(필터 없음) 분리 |
-| 빈 QA 저장 방지 | `total_qa == 0` early return | 컨텍스트 부족 노드 선택 시 빈 레코드 DB 저장 방지 |
-| H2/H3 최소 조건 | `MIN_CHUNKS=2`, `MIN_CONTENT_CHARS=300` | 청크 수와 실제 텍스트 길이를 모두 충족해야 드롭다운 노출 |
-| `ingestion_api.py` 모듈화 | `prompts / tagging / chunker / pipeline` 분리 | 870줄 단일 파일 → 라우터 331줄 + 4개 전담 모듈, 프롬프트/태깅/청킹/파이프라인 독립 테스트 가능 |
-| `generation_api.py` 모듈화 | `prompts / job_manager / worker` 분리 | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거, `config/prompts.py` → `generators/prompts.py` 이동 |
-| `config/prompts.py` 위치 이전 | `generators/prompts.py`로 이동, shim 유지 | generation 전용 프롬프트를 config 레이어에서 generators 레이어로 이동, 기존 코드 호환성 보장 |
-| `evaluation_api.py` 정리 | `TYPE_CHECKING` 제거, `try/except ImportError` → `sys.path.insert` 통일, `_build_export_detail` → `evaluators/pipeline.build_export_detail` 이동 | 418줄 → 321줄, 이중 import 패턴 제거, export 헬퍼 비즈니스 로직을 evaluators 레이어로 귀속 |
+| 항목                            | 결정                                                                                                                                                         | 이유                                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| DOCX 파싱                       | `python-docx` XML 직접 파싱                                                                                                                                | `docx2txt` 대비 표 구조 보존, Heading 계층 인식, Fallback 중복 방지                                                                   |
+| LLM 청킹 기본                   | Gemini 2.5 Flash                                                                                                                                             | 의미 단위 경계 판단, noise_correction 포함 (PDF)                                                                                        |
+| document_id 저장                | `doc_chunks.document_id` 전용 컬럼                                                                                                                         | metadata JSONB 중복 제거, 컬럼 인덱스 활용                                                                                              |
+| hierarchy-list 이중화           | `filter_for_qa` 파라미터                                                                                                                                   | QA 드롭다운(MIN_CHUNKS/CHARS 필터)과 표시용 트리(필터 없음) 분리                                                                        |
+| 빈 QA 저장 방지                 | `total_qa == 0` early return                                                                                                                               | 컨텍스트 부족 노드 선택 시 빈 레코드 DB 저장 방지                                                                                       |
+| H2/H3 최소 조건                 | `MIN_CHUNKS=2`, `MIN_CONTENT_CHARS=300`                                                                                                                  | 청크 수와 실제 텍스트 길이를 모두 충족해야 드롭다운 노출                                                                                |
+| `ingestion_api.py` 모듈화     | `prompts / tagging / chunker / pipeline` 분리                                                                                                              | 870줄 단일 파일 → 라우터 331줄 + 4개 전담 모듈, 프롬프트/태깅/청킹/파이프라인 독립 테스트 가능                                         |
+| `generation_api.py` 모듈화    | `prompts / job_manager / worker` 분리                                                                                                                      | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거,`config/prompts.py` → `generators/prompts.py` 이동 |
+| `config/prompts.py` 제거      | `generators/prompts.py`로 완전 이전, shim 삭제                                                                                                             | generation 전용 프롬프트를 generators 레이어로 귀속, `config/` 불필요 파일 제거                                                        |
+| `evaluation_api.py` 정리      | `TYPE_CHECKING` 제거, `try/except ImportError` → `sys.path.insert` 통일, `_build_export_detail` → `evaluators/pipeline.build_export_detail` 이동 | 418줄 → 321줄, 이중 import 패턴 제거, export 헬퍼 비즈니스 로직을 evaluators 레이어로 귀속                                             |

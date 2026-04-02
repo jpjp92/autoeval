@@ -494,11 +494,11 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             </div>
           </div>
 
-          {/* 계층 범위 선택 */}
+          {/* 카테고리 범위 선택 */}
           <div className="pt-4 border-t border-slate-100 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                <ListTree className="w-3.5 h-3.5" /> 계층 범위 선택
+                <ListTree className="w-3.5 h-3.5" /> 카테고리 범위 선택
               </p>
               <button onClick={loadHierarchyList} disabled={isLoadingHierarchy || isGenerating} className="p-1 text-slate-400 dark:text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-white/10 rounded transition-colors disabled:opacity-50">
                 <RefreshCw className={cn("w-3.5 h-3.5", isLoadingHierarchy && "animate-spin")} />

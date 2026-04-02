@@ -1,24 +1,5 @@
-"""
-Backend Configuration Module
-최상위 main.py와 동기화된 모델, 프롬프트, 상수 정의
-"""
+# config 패키지
+# 각 모듈을 직접 import해서 사용:
+#   from config.models import MODEL_CONFIG
+#   from config.supabase_client import ...
 
-from .models import MODEL_CONFIG, PROMPT_VERSION, INTENT_COLORS
-from .prompts import (
-    SYSTEM_PROMPT_KO_V1,
-    SYSTEM_PROMPT_EN_V1,
-    USER_TEMPLATE_KO_V1,
-    USER_TEMPLATE_EN_V1,
-)
-from .constants import DATA_FILE
-
-__all__ = [
-    "MODEL_CONFIG",
-    "PROMPT_VERSION",
-    "INTENT_COLORS",
-    "SYSTEM_PROMPT_KO_V1",
-    "SYSTEM_PROMPT_EN_V1",
-    "USER_TEMPLATE_KO_V1",
-    "USER_TEMPLATE_EN_V1",
-    "DATA_FILE",
-]

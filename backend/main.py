@@ -1,6 +1,25 @@
 """
-FastAPI Backend — AutoEval
-QA 생성·평가·인제스션 라우터 통합 허브
+AutoEval Backend  —  FastAPI 통합 관리
+
+역할
+  - FastAPI 앱 생성 및 CORS 설정
+  - 3개 API 라우터 등록 (generation / evaluation / ingestion)
+  - 공통 엔드포인트 (health, dashboard/metrics) 등록
+  - 컬러 로깅 설정 (ColoredFormatter, UVICORN_LOG_CONFIG)
+
+라우터 구조
+  api/ingestion_api.py    — POST /api/ingestion/*  (업로드·청킹·hierarchy 분석·태깅)
+  api/generation_api.py   — POST|GET|DELETE /api/generate/*  (QA 생성 job)
+  api/evaluation_api.py   — POST|GET /api/evaluate/*  (4레이어 평가 job)
+
+공통 엔드포인트
+  GET|HEAD /health                  헬스체크
+  GET      /api/dashboard/metrics   대시보드 집계 (Supabase)
+
+환경 변수
+  LOG_LEVEL     로그 레벨 (기본 INFO)
+  CORS_ORIGINS  허용 origin 콤마 구분 (기본 localhost:3000,5173)
+  PORT          서버 포트 (기본 8000)
 """
 
 import os
