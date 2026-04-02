@@ -48,7 +48,6 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [isTagging, setIsTagging] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [selectedH1s, setSelectedH1s] = useState<string[]>([]);
-  const [h2h3Master, setH2h3Master] = useState<Record<string, Record<string, string[]>> | null>(null);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [hierarchyTree, setHierarchyTree] = useState<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null>(null);
@@ -117,7 +116,6 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setHierarchyMessage(null);
     setAnalysis(null);
     setTaggingSamples([]);
-    setH2h3Master(null);
     setHierarchyTree(null);
     try {
       // 1단계: H1/H2/H3 master 한 번에 생성
@@ -138,7 +136,6 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const data: AnalysisResult = await res.json();
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
-      setH2h3Master(data.h2_h3_master);
       if (data.document_id) {
         saveDocumentId(uploadedFilename, data.document_id);
       }
@@ -156,7 +153,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
           document_id: data.document_id,
         }),
       });
-      if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "태깅 실패");
+      if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "카테고리 적용 실패");
       const taggingData = await taggingRes.json();
       setTaggingSamples(taggingData.samples || []);
 
@@ -355,7 +352,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {/* H1 후보 */}
             {analysis && (
               <div className="space-y-2 animate-in fade-in duration-300">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">계층 대분류 후보</p>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">대분류 후보</p>
                 <div className="flex flex-wrap gap-1.5">
                   {analysis.h1_candidates.map(h1 => (
                     <button
@@ -378,7 +375,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {/* 태깅 샘플 미리보기 */}
             {taggingSamples.length > 0 && (
               <div className="space-y-2 animate-in fade-in duration-300">
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">태깅 샘플 미리보기</p>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">분류 결과 미리보기</p>
                 <div className="space-y-1.5">
                   {(() => {
                     const seen = new Set<string>();
@@ -417,7 +414,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                 <div className="space-y-2 animate-in fade-in duration-400">
                   {/* 헤더: 제목 + 레벨 칩 */}
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">계층 구조</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">카테고리 구조</p>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium">
                       <span className="px-2.5 py-0.5 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/30 rounded-full">H1 · {hierarchyTree.h1_list.length}</span>
                       <span className="px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 rounded-full">H2 · {totalH2}</span>
