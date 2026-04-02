@@ -16,6 +16,7 @@ Ingestion API  —  POST /api/ingestion/*
 from __future__ import annotations
 
 import asyncio
+import difflib
 import hashlib
 import json
 import logging
@@ -175,12 +176,9 @@ async def process_and_ingest(
                 normalized_embedding = (embedding_np / norm).tolist() if norm > 0 else emb_data.values
                 chunk_metadata = {
                     **metadata,
-                    "document_id": doc_id,
                     "filename": filename,
                     "content_hash": c["hash"],
                     "section_title": c["section_title"],
-                    "section_path": c.get("section_path", ""),
-                    "section_level": c.get("section_level", 0),
                     "chunk_type": c["chunk_type"],
                     "page": c["page"],
                     "char_length": len(c["raw_text"]),
@@ -192,9 +190,10 @@ async def process_and_ingest(
                     "embedding_model": "gemini-embedding-2-preview",
                 }
                 batch_rows.append({
-                    "content":   c["raw_text"],
-                    "embedding": normalized_embedding,
-                    "metadata":  chunk_metadata,
+                    "content":     c["raw_text"],
+                    "embedding":   normalized_embedding,
+                    "metadata":    chunk_metadata,
+                    "document_id": doc_id,   # 전용 컬럼 직접 설정 (metadata 중복 제거)
                 })
             await save_doc_chunks_batch(batch_rows)
             logger.info(f"[{filename}] Embed batch {batch_num} done ({len(batch)} chunks)")
@@ -320,8 +319,6 @@ async def _ingest_with_llm_chunking(
             "page": chunk.get("page", 1),
             "hash": content_hash,
             "section_title": section_title,
-            "section_path": "",       # hierarchy tagging(Pass 3)에서 부여
-            "section_level": 0,
             "chunk_type": chunk_type,
         })
 
@@ -418,8 +415,6 @@ def _ingest_with_rule_chunking(
                 "page": _resolve_chunk_page(chunk_text, section_text, block_page_offsets, sec["page"]),
                 "hash": content_hash,
                 "section_title": normalized_section_title,
-                "section_path": section_path,
-                "section_level": level,
                 "chunk_type": chunk_type,
             })
 
@@ -563,6 +558,10 @@ Build a complete hierarchical taxonomy (H1/H2/H3) AND extract a domain profile f
 - H1 must NOT be: dates, ordinance numbers, contact info, department names, page headers.
 - Bad H1 examples: "시행일 관리", "담당부서", "고시번호"
 - Good H1 examples: "데이터 연계 기준", "정보시스템 운영", "보안 정책"
+- TEXT QUALITY RULE: The context may contain PDF extraction artifacts such as digits or ASCII
+  letters embedded inside Korean words (e.g. "상호작2용", "상호작acts용", "인터페Ÿ스").
+  You MUST infer and write the correct clean Korean word — never copy corrupted text into
+  any H1/H2/H3 name. All taxonomy labels must consist of natural Korean only.
 </constraints>
 
 <context>
@@ -625,8 +624,11 @@ Return a JSON object with this exact structure (all string values in Korean):
         if not (domain_profile and isinstance(domain_profile, dict)):
             domain_profile = None
 
-        # anchor 청크에서 document_id 추출 (동일 업로드 배치의 첫 청크 기준)
-        document_id = (anchor_chunks[0].get("metadata") or {}).get("document_id") if anchor_chunks else None
+        # anchor 청크에서 document_id 추출 — 전용 컬럼 우선, 구버전 row는 metadata fallback
+        document_id = (
+            anchor_chunks[0].get("document_id")
+            or (anchor_chunks[0].get("metadata") or {}).get("document_id")
+        ) if anchor_chunks else None
 
         # doc_metadata 저장 (document_id 있을 때만)
         if document_id:
@@ -792,10 +794,7 @@ Return ONLY a JSON array — no explanation:
                         "chunk_type": meta.get("chunk_type", "body"),
                         "char_length": meta.get("char_length", len(c["content"])),
                     }
-                    sp = (meta.get("section_path") or "").strip()
                     st = (meta.get("section_title") or "").strip()
-                    if sp:
-                        entry["section_path"] = sp
                     if st:
                         entry["section_title"] = st
                     return entry
@@ -855,11 +854,15 @@ Return ONLY a JSON array — no explanation:
 
 
 @router.get("/hierarchy-list")
-async def get_hierarchy_list_endpoint(filename: str = None):
-    """doc_chunks H1/H2/H3 고유 목록 (프론트엔드 드롭다운용)."""
+async def get_hierarchy_list_endpoint(filename: str = None, filter_for_qa: bool = True):
+    """doc_chunks H1/H2/H3 고유 목록.
+
+    filter_for_qa=true  (기본): QA 생성 드롭다운 — MIN_CHUNKS_FOR_QA + MIN_CONTENT_CHARS 필터 적용
+    filter_for_qa=false        : 표시용 (카테고리 구조 트리) — 태깅된 노드 전부 반환
+    """
     if not is_supabase_available():
         return {"success": False, "h1_list": [], "h2_by_h1": {}, "message": "Supabase not available"}
-    result = await get_hierarchy_list(filename=filename)
+    result = await get_hierarchy_list(filename=filename, filter_for_qa=filter_for_qa)
     return {"success": True, **result}
 
 

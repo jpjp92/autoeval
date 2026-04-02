@@ -157,7 +157,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       const taggingData = await taggingRes.json();
       setTaggingSamples(taggingData.samples || []);
 
-      const treeRes = await getHierarchyList(uploadedFilename);
+      const treeRes = await getHierarchyList(uploadedFilename, false); // 표시용: QA 필터 없이 전체 태깅 결과 반환
       if (treeRes.success) {
         setHierarchyTree(treeRes);
         const expandedH1Init: Record<string, boolean> = {};

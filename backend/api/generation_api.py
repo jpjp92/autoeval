@@ -628,6 +628,13 @@ async def run_qa_generation_real(
         if is_supabase_available():
             # Prepare metadata, hierarchy, and stats
             total_qa = output_data["statistics"]["total_qa"]
+
+            # 빈 QA 저장 방지: 생성된 QA가 없으면 저장 건너뜀
+            if total_qa == 0:
+                msg = "선택한 계층의 컨텍스트가 부족하여 QA를 생성할 수 없습니다."
+                job_manager.update_job(job_id, status=JobStatus.FAILED, progress=0, error=msg, message=msg)
+                logger.warning(f"QA generation produced 0 results — skipping DB save (job_id={job_id})")
+                return
             total_docs = output_data["statistics"]["total_docs"]
             input_tokens = output_data["statistics"].get("total_input_tokens", 0)
             output_tokens = output_data["statistics"].get("total_output_tokens", 0)

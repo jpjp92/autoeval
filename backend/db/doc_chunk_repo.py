@@ -95,14 +95,15 @@ async def save_doc_chunks_batch(chunks: list, retries: int = 3) -> list:
                 if hash_list:
                     existing_res = await asyncio.to_thread(
                         lambda: supabase.table("doc_chunks")
-                            .select("metadata")
+                            .select("document_id, metadata")
                             .in_("metadata->>content_hash", hash_list)
                             .execute()
                     )
                     for r in (existing_res.data or []):
                         meta = r.get("metadata") or {}
                         h = meta.get("content_hash")
-                        d = meta.get("document_id")
+                        # 전용 컬럼 우선, 구버전 row는 metadata fallback
+                        d = r.get("document_id") or meta.get("document_id")
                         if h and d:
                             existing_pairs.add((h, d))
 
@@ -113,7 +114,8 @@ async def save_doc_chunks_batch(chunks: list, retries: int = 3) -> list:
                 for c in chunks:
                     meta = c.get("metadata") or {}
                     content_hash = meta.get("content_hash")
-                    document_id = meta.get("document_id")
+                    # 전용 컬럼 우선, 구버전 row는 metadata fallback
+                    document_id = c.get("document_id") or meta.get("document_id")
                     if content_hash and document_id and (content_hash, document_id) in existing_pairs:
                         logger.debug(f"Skipped duplicate chunk (hash={content_hash[:8]}, doc_id={document_id[:8]})")
                         skipped += 1
@@ -267,11 +269,11 @@ async def get_doc_chunks_by_filter(
     if not supabase:
         return []
     try:
-        query = supabase.table("doc_chunks").select("id, content, metadata")
+        query = supabase.table("doc_chunks").select("id, content, metadata, document_id")
         if filename:
             query = query.eq("metadata->>filename", filename)
         if document_id:
-            query = query.eq("metadata->>document_id", document_id)
+            query = query.eq("document_id", document_id)
         if hierarchy_h1:
             query = query.eq("metadata->>hierarchy_h1", hierarchy_h1)
         if hierarchy_h2:
@@ -316,7 +318,7 @@ async def get_doc_chunks_by_ids(chunk_ids: list) -> list:
     try:
         response = (
             supabase.table("doc_chunks")
-            .select("id, content, metadata")
+            .select("id, content, metadata, document_id")
             .in_("id", chunk_ids)
             .execute()
         )
@@ -340,11 +342,11 @@ async def get_document_chunks(
     try:
         query = (
             supabase.table("doc_chunks")
-            .select("id, content, metadata")
+            .select("id, content, metadata, document_id")
             .eq("metadata->>filename", source_name)
         )
         if document_id:
-            query = query.eq("metadata->>document_id", document_id)
+            query = query.eq("document_id", document_id)
         response = query.order("created_at").limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:

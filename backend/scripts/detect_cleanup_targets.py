@@ -72,14 +72,14 @@ def detect_old_chunk_versions():
     """
     print("\n[1] doc_chunks 구버전 탐지 중...")
 
-    rows = fetch("doc_chunks", "id, metadata, created_at")
+    rows = fetch("doc_chunks", "id, document_id, metadata, created_at")
 
     # filename별로 document_id + 대표 created_at 수집
     file_versions = defaultdict(dict)  # filename -> {document_id: latest_created_at}
     for r in rows:
         meta = r.get("metadata") or {}
         fn = meta.get("filename")
-        doc_id = meta.get("document_id")
+        doc_id = r.get("document_id") or meta.get("document_id")
         created_at = r.get("created_at", "")
         if fn and doc_id:
             if doc_id not in file_versions[fn]:

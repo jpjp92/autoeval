@@ -58,14 +58,17 @@ export async function getDashboardMetrics(): Promise<ApiResponse> {
 
 // ── Ingestion ──────────────────────────────────────────────────────────────
 
-export async function getHierarchyList(filename?: string): Promise<{
+export async function getHierarchyList(filename?: string, filterForQa = true): Promise<{
   h1_list: string[];
   h2_by_h1: Record<string, string[]>;
   h3_by_h1_h2: Record<string, string[]>;
   success: boolean;
 }> {
   try {
-    const params = filename ? `?filename=${encodeURIComponent(filename)}` : '';
+    const qs = new URLSearchParams();
+    if (filename) qs.set('filename', filename);
+    if (!filterForQa) qs.set('filter_for_qa', 'false');
+    const params = qs.toString() ? `?${qs.toString()}` : '';
     const response = await fetch(`${API_BASE}/api/ingestion/hierarchy-list${params}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();

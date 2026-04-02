@@ -13,12 +13,17 @@ logger = logging.getLogger("autoeval.db")
 
 # QA 생성에 필요한 최소 청크 수 — 이 값 미만의 h3/h2는 드롭다운에 노출하지 않음
 MIN_CHUNKS_FOR_QA = 2
+# QA 생성에 필요한 최소 콘텐츠 길이(자) — 노드 내 총 텍스트가 이 값 미만이면 드롭다운에서 제외
+MIN_CONTENT_CHARS = 300
 
 
-async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
+async def get_hierarchy_list(filename: Optional[str] = None, filter_for_qa: bool = True) -> Dict[str, Any]:
     """
     doc_chunks에서 hierarchy_h1, h2, h3 고유값 목록 반환.
     filename 지정 시 해당 문서 청크만 대상으로 조회.
+
+    filter_for_qa=True (기본): QA 생성 드롭다운용 — MIN_CHUNKS_FOR_QA + MIN_CONTENT_CHARS 필터 적용
+    filter_for_qa=False       : 표시용 (Documents 카테고리 구조 트리) — 필터 없이 태깅된 노드 전부 반환
 
     QA 생성에 충분하지 않은 계층(청크 수 < MIN_CHUNKS_FOR_QA)은 제외.
     - h3: 해당 (h1, h2, h3) 조합의 청크 수가 MIN_CHUNKS_FOR_QA 미만이면 제외
@@ -39,7 +44,7 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
         return {"h1_list": [], "h2_by_h1": {}, "h3_by_h1_h2": {}}
 
     try:
-        query = supabase.table("doc_chunks").select("metadata")
+        query = supabase.table("doc_chunks").select("metadata, document_id")
         if filename:
             query = query.eq("metadata->>filename", filename)
         response = query.execute()
@@ -50,7 +55,7 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
         for chunk in chunks:
             meta = chunk.get("metadata", {})
             fn = meta.get("filename", "")
-            did = meta.get("document_id", "")
+            did = chunk.get("document_id") or meta.get("document_id", "")
             iat = meta.get("ingested_at", "")
             if fn and did:
                 prev = latest_doc_ids.get(fn)
@@ -58,16 +63,22 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
                     latest_doc_ids[fn] = (did, iat)
         latest_ids = {v[0] for v in latest_doc_ids.values()}
         if latest_ids:
-            chunks = [c for c in chunks if c.get("metadata", {}).get("document_id") in latest_ids]
+            chunks = [
+                c for c in chunks
+                if (c.get("document_id") or c.get("metadata", {}).get("document_id")) in latest_ids
+            ]
 
-        # 1단계: (h1, h2, h3) / (h1, h2) 단위 청크 수 집계
+        # 1단계: (h1, h2, h3) / (h1, h2) 단위 청크 수 및 콘텐츠 길이 집계
         from collections import defaultdict
         h3_counts: Dict[tuple, int] = defaultdict(int)   # (h1, h2, h3) → count
         h2_counts: Dict[tuple, int] = defaultdict(int)   # (h1, h2)      → count
+        h3_chars:  Dict[tuple, int] = defaultdict(int)   # (h1, h2, h3) → total chars
+        h2_chars:  Dict[tuple, int] = defaultdict(int)   # (h1, h2)      → total chars
         admin_count = 0
 
         for chunk in chunks:
-            meta = chunk.get("metadata", {})
+            meta    = chunk.get("metadata", {})
+            content = chunk.get("content", "") or ""
             h1 = meta.get("hierarchy_h1")
             h2 = meta.get("hierarchy_h2")
             h3 = meta.get("hierarchy_h3")
@@ -78,20 +89,26 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
                 continue
             if h2 and h2 != "__admin__":
                 h2_counts[(h1, h2)] += 1
+                h2_chars[(h1, h2)]  += len(content)
                 if h3 and h3 != "__admin__":
                     h3_counts[(h1, h2, h3)] += 1
+                    h3_chars[(h1, h2, h3)]  += len(content)
 
         if admin_count:
             logger.info(f"Admin chunks excluded from hierarchy list: {admin_count} (filename={filename!r})")
 
-        # 2단계: 청크 수 기준으로 유효한 계층만 수집
-        filtered_h3: Dict[str, int] = defaultdict(int)   # "h1__h2__h3" → count (필터 통과)
+        # 2단계: 계층 수집 (filter_for_qa 여부에 따라 필터 적용/스킵)
         h2_by_h1: Dict[str, set] = {}
         h3_by_h1_h2: Dict[str, set] = {}
+        filtered_h3_total = 0
 
         for (h1, h2, h3), cnt in h3_counts.items():
-            if cnt < MIN_CHUNKS_FOR_QA:
-                logger.debug(f"h3 excluded (chunks={cnt}<{MIN_CHUNKS_FOR_QA}): {h1} > {h2} > {h3}")
+            chars = h3_chars[(h1, h2, h3)]
+            if filter_for_qa and (cnt < MIN_CHUNKS_FOR_QA or chars < MIN_CONTENT_CHARS):
+                logger.debug(
+                    f"h3 excluded (chunks={cnt}, chars={chars}): {h1} > {h2} > {h3}"
+                )
+                filtered_h3_total += 1
                 continue
             if h1 not in h2_by_h1:
                 h2_by_h1[h1] = set()
@@ -101,24 +118,25 @@ async def get_hierarchy_list(filename: Optional[str] = None) -> Dict[str, Any]:
                 h3_by_h1_h2[key] = set()
             h3_by_h1_h2[key].add(h3)
 
-        # h3가 없더라도 h2 레벨 총 청크 수가 충분하면 h2는 유지 (h2 단위 생성 허용)
+        # h3가 없더라도 h2 레벨이 존재하면 h2 유지
+        # filter_for_qa=True: 청크 수·길이 조건 모두 충족해야 노출
+        # filter_for_qa=False: 청크가 1개라도 있으면 노출
         for (h1, h2), cnt in h2_counts.items():
+            chars = h2_chars[(h1, h2)]
             if h1 not in h2_by_h1:
                 h2_by_h1[h1] = set()
-            if cnt >= MIN_CHUNKS_FOR_QA:
+            qa_ok = (cnt >= MIN_CHUNKS_FOR_QA and chars >= MIN_CONTENT_CHARS)
+            if not filter_for_qa or qa_ok:
                 h2_by_h1[h1].add(h2)
-            # cnt < MIN_CHUNKS_FOR_QA 인 h2는 h3도 없고 자체도 부족 → 제외
 
         # h2가 하나도 없는 h1 제거
         h2_by_h1 = {h1: v for h1, v in h2_by_h1.items() if v}
 
-        filtered_h3_total = sum(
-            1 for (h1, h2, h3), cnt in h3_counts.items() if cnt < MIN_CHUNKS_FOR_QA
-        )
-        if filtered_h3_total:
+        if filter_for_qa and filtered_h3_total:
             logger.info(
                 f"Hierarchy filtered: {filtered_h3_total} h3 node(s) excluded "
-                f"(chunk count < {MIN_CHUNKS_FOR_QA}) (filename={filename!r})"
+                f"(chunk count < {MIN_CHUNKS_FOR_QA} or chars < {MIN_CONTENT_CHARS}) "
+                f"(filename={filename!r})"
             )
 
         return {

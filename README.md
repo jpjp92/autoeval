@@ -84,7 +84,7 @@ PDF/DOCX 업로드
 | 답변 스타일       | 메타 표현 시작 금지 ("컨텍스트에 따르면" 등)                                         |
 | context_screening | 목차·연락처·식별자만인 컨텍스트는 즉시 빈 목록 반환                                |
 
-#### STEP 4 — QA 평가 (4-Layer Framework)
+#### STEP 4 — QA 평가
 
 | 레이어                    | 모듈                    | 평가 지표                                        | 가중치 |
 | ------------------------- | ----------------------- | ------------------------------------------------ | ------ |
@@ -149,7 +149,6 @@ final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness
 
 ## 아키텍처
 
-```
 autoeval/
 ├── backend/
 │   ├── Dockerfile                   # Python 3.12-slim + uv, TZ=Asia/Seoul, curl 포함
@@ -204,7 +203,7 @@ autoeval/
 │           │   ├── StatsCards.tsx         # 통계 카드 (accent border + glass)
 │           │   └── ActivityChart.tsx      # 점수 추이 차트
 │           ├── standardization/
-│           │   └── DataStandardizationPanel.tsx  # 업로드 + 3-Pass 태깅 UI
+│           │   └── DataStandardizationPanel.tsx  # 업로드 + 게층 태깅
 │           ├── generation/
 │           │   └── QAGenerationPanel.tsx         # H1/H2 드롭다운 + 생성 설정 UI
 │           ├── evaluation/
@@ -219,7 +218,6 @@ autoeval/
 ├── docker-compose.dev.yml           # 개발 오버라이드: 소스 볼륨 마운트 + Vite HMR
 ├── .env.example                     # 환경 변수 템플릿 (ANTHROPIC / GOOGLE / OPENAI / SUPABASE)
 └── README.md
-```
 
 ---
 
@@ -246,13 +244,12 @@ autoeval/
 | LLM 청킹                        | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 배치 단위, thinking OFF (`thinking_budget=0`) |
 | Embedding                       | Gemini Embedding 2 (`gemini-embedding-exp-03-07`) | 1536차원, RPM 3,000                             |
 | Hierarchy + domain_profile 분석 | Gemini 3 Flash (`gemini-3-flash-preview`)         | anchor 30청크 → 1회 호출                       |
-| 계층 태깅 (Pass 3)              | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
+| 계층 태깅                      | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
 
 ### QA 생성 모델
 
 | 모델                                        | RPM   | TPM  | Workers |
 | ------------------------------------------- | ----- | ---- | ------- |
-| GPT-5.1 (`gpt-5.1-2025-11-13`)            | 500   | 500K | 5       |
 | GPT-5.2 (`gpt-5.2-2025-12-11`)            | 500   | 500K | 5       |
 | Gemini 3 Flash (`gemini-3-flash-preview`) | 1,000 | 2M   | 5       |
 | Claude Sonnet 4.6 (`claude-sonnet-4-6`)   | 50    | 30K  | 2       |
@@ -425,7 +422,7 @@ docker compose up -d --build
 | `POST` | `/api/ingestion/upload`                  | PDF/DOCX 업로드 → LLM/rule 청킹 → 임베딩 → doc_chunks 저장                  |
 | `POST` | `/api/ingestion/analyze-hierarchy`       | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장 |
 | `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)            |
-| `POST` | `/api/ingestion/apply-granular-tagging`  | Pass 3 — 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환)        |
+| `POST` | `/api/ingestion/apply-granular-tagging`  | 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환)                  |
 | `GET`  | `/api/ingestion/hierarchy-list`          | H1/H2/H3 고유 목록 (드롭다운용)                                                |
 
 ### Generation
