@@ -164,6 +164,9 @@ Use Chain of Thought reasoning to evaluate systematically.
 <constraints>
 - Use FLEXIBLE MATCHING (NOT exact string matching) when finding evidence
 - Return ONLY the final integer score (0-10) on the last line
+- Calculated values (difference, sum, ratio) derived from two numbers that BOTH appear in the context
+  are considered FULLY GROUNDED — treat them as Strong evidence, NOT as hallucination.
+  e.g., if context has A=71B and B=58B, an answer stating "difference is 13B" is grounded at Strong level.
 </constraints>
 
 <context>
@@ -177,8 +180,9 @@ Use Chain of Thought reasoning to evaluate systematically.
 <task>
 Step 1: IDENTIFY KEY CLAIMS — list the main factual claims in the answer
 Step 2: FIND SUPPORTING EVIDENCE — search context per claim using flexible matching
+         For calculated values (diff/sum/ratio): verify BOTH source numbers exist in context
 Step 3: ASSESS ALIGNMENT per claim:
-  - Strong (0.9-1.0): Direct quote or clear paraphrase
+  - Strong (0.9-1.0): Direct quote, clear paraphrase, OR calculation from two context-present values
   - Medium (0.7-0.8): Multiple elements logically combined
   - Weak  (0.5-0.6): Inference supported by context
   - None  (0.0):     Not in context
