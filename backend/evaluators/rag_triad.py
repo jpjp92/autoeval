@@ -124,25 +124,31 @@ class RAGTriadEvaluator:
         if not self.judge_model or not question or not answer:
             return 0.7
         try:
-            ctx_block = f"\n<context_excerpt>{context[:2000]}</context_excerpt>\n" if context else ""
+            ctx_block = f"\n<context>{context[:6000]}</context>\n" if context else ""
             prompt = f"""<role>
 You are a strict QA evaluator. Assess how relevant the answer is to the question
-in the context of the provided domain material.
+based ONLY on the provided context — do NOT use outside knowledge.
 </role>
 
 <constraints>
 - Score 0-10 (integer only)
-- Return ONLY the final integer on the last line, no explanation
+- Relevance must be judged against what the CONTEXT establishes, not general domain knowledge
+- If the answer addresses the question using information outside the context, reduce the score
+- Return ONLY the final integer on the last line
 </constraints>
 {ctx_block}
 <question>{question}</question>
 <answer>{answer}</answer>
 
 <task>
-Rate relevance considering:
-- Does the answer address what the question is asking?
-- Is the answer relevant within the domain established by the context?
-0 = completely irrelevant, 10 = perfectly relevant to both question and domain.
+Step 1: Identify what the question is asking for (key requirements).
+Step 2: Check whether the answer addresses each requirement.
+Step 3: Verify that the answer stays within the scope established by the context.
+Step 4: Rate relevance:
+  - 10: Answer fully addresses the question within context scope
+  - 7-9: Mostly relevant, minor gaps or slight scope drift
+  - 4-6: Partially relevant or noticeably outside context scope
+  - 0-3: Irrelevant or entirely outside context scope
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
@@ -183,9 +189,9 @@ Step 2: FIND SUPPORTING EVIDENCE — search context per claim using flexible mat
          For calculated values (diff/sum/ratio): verify BOTH source numbers exist in context
 Step 3: ASSESS ALIGNMENT per claim:
   - Strong (0.9-1.0): Direct quote, clear paraphrase, OR calculation from two context-present values
-  - Medium (0.7-0.8): Multiple elements logically combined
-  - Weak  (0.5-0.6): Inference supported by context
-  - None  (0.0):     Not in context
+  - Medium (0.7-0.8): Multiple elements from context logically combined (ALL source elements must be in context)
+  - Weak  (0.5-0.6): Claim is a restatement of context with minor structural change — context must explicitly support it; pure logical inference NOT allowed here
+  - None  (0.0):     Not in context, or derived by reasoning beyond what context states
 Step 4: DETERMINE GROUNDING LEVEL:
   - 10: All strong / 7-9: Mostly supported / 5-6: Partial / 0-4: Mostly hallucinated
 </task>"""
@@ -216,11 +222,14 @@ information to answer the question.
 
 <task>
 Rate context relevance on a 0-10 scale:
-- Does the context contain the specific information needed to answer the question?
-- 10: Context directly and completely contains the answer
+- Does the context contain the SPECIFIC information needed to answer the question?
+- Pay special attention to date/period granularity: if the question asks for "January 2023" data
+  but the context only has "January 2024" data, treat this as missing information (score 0-3).
+  Data with the same field name but a different year/quarter/month is NOT the same data.
+- 10: Context directly and completely contains all required information
 - 7-9: Context mostly contains the needed information, minor gaps
 - 4-6: Context is related but missing key specifics to fully answer
-- 0-3: Context does not contain enough information; the question cannot be answered from this context alone
+- 0-3: Context does not contain the required information (including wrong date/period)
 </task>"""
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)

@@ -176,7 +176,7 @@ Return ONLY valid JSON:
         clean_ctx = clean_markdown(context)
         intent_tag = f"\n<intent_type>{intent}</intent_type>" if intent else ""
         prompt = f"""<context>
-{clean_ctx[:3500]}
+{clean_ctx[:7000]}
 </context>
 
 <question>{question}</question>
@@ -194,9 +194,11 @@ Recommended logic: Final Score = 0.7 * (Coverage * 10) + 0.3 * (Quality/Clarity 
 
 <task>
 1. Break the question into atomic sub-questions.
-2. Check which sub-questions are answered based on the provided answer and context.
+2. For each sub-question, check BOTH:
+   a. Is it addressed in the answer?
+   b. Is the answer's claim supported by the context? (Claims outside the context do NOT count as answered)
 3. Identify any missing aspects or unaddressed requirements.
-4. Calculate coverage (ratio of answered sub-questions).
+4. Calculate coverage (ratio of sub-questions answered WITH context support).
 5. Determine the final completeness score (0-10).
 
 Return ONLY valid JSON:
