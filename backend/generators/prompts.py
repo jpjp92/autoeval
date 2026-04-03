@@ -16,23 +16,23 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 - 전화번호·담당부서·주소 등 연락처 목록만 있는 경우
 - 목차·제목만 있고 본문 내용이 없는 경우
   (예: "목차 서론 1. 개요 1.1 배경 1.2 범위 2. 분석 2.1 ..." 형태의 섹션 번호 나열)
-- 날짜·코드·번호만 나열된 표
-판별 기준: 컨텍스트에 완성된 서술 문장(주어+서술어 구조)이 없고 항목 나열만 있으면 빈 목록 반환.
+- 의미 있는 정보 관계(Entity-Value-Condition)가 없는 단순 숫자 나열 표
+판별 기준: 컨텍스트에 정보 간의 유의미한 연결(대상-수치-날짜-조건 등)이 전혀 없고, 단순 식별자만 나열되어 학습 가치가 없으면 빈 목록 반환. (주의: 문장 형태가 아니더라도 표/불렛에 추출 가능한 정보 관계가 있으면 차단하지 마십시오.)
 </context_screening>
 
 <principles>
 1. 근거성(Groundedness): 모든 질문은 반드시 제공된 컨텍스트 내에서 명확한 답변이 가능해야 합니다.
 2. 관련성(Relevance): 질문과 답변이 주제적으로 일치해야 합니다.
 3. 단일성(Single-scope): 질문 하나는 하나의 질문 차원(What/Why/How/조건/비교)만 다룹니다.
-   서로 다른 질문 차원을 한 질문에 혼합하는 것은 금지합니다.
+   서로 다른 질문 차원을 한 질문에 혼합하는 것은 엄격히 금지합니다.
    - 금지(차원 혼합): "이 제도의 적용 대상 범위와 도입된 목적은 무엇입니까?" ← What(범위) + Why(목적) 혼합 — 각각은 유효한 질문이지만 차원이 다른 두 질문을 하나로 결합
    - 허용(단일 차원 + 복수 항목): "단백질이 세포 내에서 수행하는 기능은 무엇입니까?" ← What(기능) 차원 하나, 항목(효소 촉매·구조 지지·신호 전달 등) 여러 개 가능
    - 허용(비교형): "A와 B의 역할은 어떻게 구분됩니까?" ← '비교'라는 단일 차원 안에서 두 대상을 다루는 것은 단일성 위반이 아님
    단, 같은 차원 안에서 컨텍스트에 여러 항목이 있으면 그 항목들을 모두 묻고 답변에서도 모두 서술해야 합니다.
 4. 명확성: 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
-5. 깊이(Depth): 단순 값 1개 반환 질문 금지. 요건·범위·조건·이유 중 최소 2가지를 연결하세요.
-   - 금지: "시행일은 언제입니까?" / "담당 기관은 어디입니까?"
-   - 권장: "전자적 시스템 연계를 요청할 수 있는 기관의 범위는 무엇입니까?"
+5. 깊이(Depth): 단순 값 1개 조회를 넘어, **동일 질문 차원 내**의 최소 2가지 요소(요건, 범위, 조건, 항목 등)를 연결하세요.
+   - 금지: "라면 수출액 1위 국가는 어디입니까?" / "시행일은 언제입니까?"
+   - 권장: "2023년 기준 라면 수출액이 5천만 달러를 상회하면서 동시에 전년 대비 감소세를 보인 국가는 어디입니까?"
 </principles>
 
 <intent_types>
@@ -101,7 +101,9 @@ If the context contains ONLY the following, immediately return {"qa_list": []}:
 - Lists of identifiers only (effective dates, ordinance numbers, decree numbers)
 - Contact information only (phone numbers, department names, addresses)
 - Table of contents or headings with no body content
-- Tables containing only dates, codes, or numbers
+- Tables with only numbers/codes lacking meaningful information relationships
+Criterion: Return empty if there is no meaningful connection between data elements (Entity-Value-Condition).
+(Note: Do NOT screen out tables/bullets if relationship can be extracted, even if not in full sentences.)
 </context_screening>
 
 <principles>
@@ -114,90 +116,68 @@ If the context contains ONLY the following, immediately return {"qa_list": []}:
    - Allowed (comparison): "How do methods A and B differ in role?" ← 'comparison' is a single dimension; two subjects within one comparative frame do NOT violate single-scope
    Within a single dimension, if the context contains multiple items, the question must ask about ALL of them and the answer must cover ALL of them.
 4. Clarity: Avoid vague pronouns or overly broad scope. Answer boundary must be clear.
-5. Depth: No single-value lookup questions. Connect at least 2 requirements, conditions, or effects.
+5. Depth: Go beyond single-value lookup. Connect at least 2 elements (requirements, conditions, or effects) **within the same question dimension**.
    - Forbidden: "When did this take effect?" / "Which department handles this?"
-   - Recommended: "What is the scope of institutions that may request electronic system linkage?"
+   - Recommended: "What is the scope of institutions that may request electronic system linkage and what requirements must they meet?"
 </principles>
 
 <intent_types>
 Select only types supported by the context — 6 types available:
 
-  - fact (사실형):       Facts about applicability, requirements, effects, or scope
-                        (Forbidden: sole lookup of dates, ID numbers, contact info)
-                        Example Q: "이 기능을 사용할 수 있는 대상의 범위는 무엇입니까?"
-
+  - fact (fact형):       Facts about applicability, requirements, effects, or scope
   - purpose (원인형):    Purpose, reason, or background of a concept, feature, or policy
-                        (Explicitly stated or clearly inferable from its effect)
-                        Example Q: "이 기능이 도입된 목적은 무엇입니까?"
-
-  - how (방법형):        Concrete method, standard, or procedure for an action (steps if ordered)
-                        Example Q: "요청 처리 시 포함해야 할 구체적 사항은 무엇입니까?"
-
+  - how (방법형):        Concrete method, standard, or procedure for an action
   - condition (조건형):  Conditional branches, exceptions, or restrictions
-                        (Conditional statements, exception clauses, prohibitions/limits)
-                        Example Q: "대체 방법을 활용할 수 있는 조건은 무엇입니까?"
-
   - comparison (비교형): Comparison of two or more subjects, roles, conditions, or methods
-                        (Only when two comparable subjects are explicitly present in context)
-                        Example Q: "두 방식의 역할은 어떻게 구분됩니까?"
-
-  - list (열거형):       Enumeration of multiple items, types, or requirements (unordered, max 1 per chunk)
-                        Example Q: "이 과정에서 결정해야 하는 사항을 모두 나열하면 무엇입니까?"
+  - list (열거형):       Enumeration of multiple items, types, or requirements (max 1 per chunk)
 </intent_types>
 
 <diversity_rules>
 1. fact + list combined must NOT exceed 40% of total QA
-2. Include at least 1 condition or comparison (required when conditional/comparative evidence present)
-3. fact: max 2 per chunk; list: max 1 per chunk
-4. Total QA count: 2~6 based on context density (0 allowed if content is insufficient)
+2. Include at least 1 condition or comparison if evidence is present
+3. Total QA count: 2~6 based on context density
 </diversity_rules>
 
 <constraints>
-- Skip intent types lacking context evidence; substitute with a supported type
-- Do NOT generate "unanswerable" or "N/A" responses
 - Language: Write all questions and answers in Korean (한국어)
+- Tone: Use formal interrogative endings for questions (~입니까?) and formal declarative for answers (~입니다.).
 
-[Tone / Sentence Endings]
-- Questions: Formal interrogative endings only
-  (e.g., "~입니까?", "~합니까?", "~됩니까?", "~있습니까?")
-- Answers: Formal declarative endings only
-  (e.g., "~입니다.", "~합니다.", "~됩니다.", "~있습니다.")
-- Forbidden: "~인가요?", "~할까요?", "~이에요", "~해요" (informal speech)
-
-[Answer Style]
-- Do NOT start with "According to the context,", "컨텍스트에 따르면," or similar meta-expressions
-- Start directly with a factual statement
+[Answer Completeness — MANDATORY]
+- If the question implies multiple items ("What are the...", "List all...", "scope"), the answer MUST include ALL relevant items found in the context.
+- Do NOT generate incomplete answers that cover only M out of N items.
 </constraints>"""
 
 USER_TEMPLATE_KO_V1 = """<generation_guide>
+<plan_before_generate>
+QA를 생성하기 전, 컨텍스트에서 유의미한 정보(수치, 조건, 절차, 원인 등)를 추출하고 어떤 intent 조합으로 질문을 구성할지 내부적으로 계획을 먼저 수립하세요.
+</plan_before_generate>
+
 <intent_examples>
-  - fact (사실형):       "이 기능을 사용할 수 있는 대상의 범위는 무엇입니까?"
-  - purpose (원인형):    "이 정책이 도입된 목적은 무엇입니까?"
-  - how (방법형):        "요청 처리 시 포함해야 할 구체적 사항은 무엇입니까?"
-  - condition (조건형):  "대체 방법을 활용할 수 있는 조건은 무엇입니까?" ← 예외·조건 있을 때만
-  - comparison (비교형): "두 방식의 역할은 어떻게 구분됩니까?" ← 비교 대상 명시된 경우만
-  - list (열거형):       "이 과정에서 결정해야 하는 사항을 모두 나열하면 무엇입니까?" ← 청크당 최대 1개
+  - fact (사실형):       "2023년 수출액이 전년 대비 100% 이상 급증한 국가는 어디입니까?" (단측 조회 금지)
+  - purpose (원인형):    "이 정책이 도입된 구체적인 배경과 목적은 무엇입니까?"
+  - how (방법형):        "요청 처리 시 반드시 거쳐야 할 단계별 절차와 포함 사항은 무엇입니까?"
+  - condition (조건형):  "대체 방법을 활용할 수 있는 특정 조건과 제한 사항은 무엇입니까?"
+  - comparison (비교형): "네덜란드와 일본의 수출 실적 추이는 어떻게 구분됩니까?"
+  - list (열거형):       "이 과정에서 결정해야 하는 항목을 모두 나열하면 무엇입니까?"
 </intent_examples>
 
 <selection_rule>
 컨텍스트를 먼저 분석하여 근거가 있는 유형만 선택하세요.
 - fact + list 합산 40% 초과 금지
-- condition 또는 comparison 중 1개 이상 포함 권장 ("다만"/비교 근거 있으면 필수)
+- condition 또는 comparison 중 1개 이상 포함 권장
 - fact 최대 2개, list 최대 1개
 - 전체 QA 수: 컨텍스트 밀도 기반 2~6개 (내용 부족 시 0개 허용)
-- 단순 값 1개만 반환하는 질문(날짜·번호·명칭) 생성 금지
+- **Depth**: 동일 차원 내 2개 이상의 정보 요소를 결합하세요.
 </selection_rule>
 
 <groundedness_check>
 - 모든 답변에 컨텍스트에서 명시된 사실·근거를 직접 서술할 것
-- 답변 시작 금지: "컨텍스트에 따르면", "문서에 의하면" 등 메타 표현
 - 질문은 컨텍스트에 명시적으로 서술된 내용만 근거로 생성 (유추 금지)
 </groundedness_check>
 
 <tone_rule>
-- 질문 어미: 격식체 의문형만 허용 (예: "~입니까?", "~합니까?", "~됩니까?")
-- 답변 어미: 격식체 평서형만 허용 (예: "~입니다.", "~합니다.", "~됩니다.")
-- 금지: "~인가요?", "~할까요?", "~이에요", "~해요" 등 비격식체
+- 질문 어미: 격식체 의문형만 허용 (예: "~입니까?", "~합니까?")
+- 답변 어미: 격식체 평서형만 허용 (예: "~입니다.", "~합니다.")
 </tone_rule>
 </generation_guide>
 
@@ -209,7 +189,7 @@ USER_TEMPLATE_KO_V1 = """<generation_guide>
 
 <task>
 위 컨텍스트에서 근거가 있는 intent 유형을 선택하여 QA를 생성하세요.
-각 QA에 reasoning(2단계 추론 근거)을 포함하세요.
+각 QA에 reasoning(증거 매핑 및 구성 방식)을 포함하세요.
 마크다운 코드블록 없이 순수 JSON만 출력하세요:
 {{
   "qa_list": [
@@ -217,7 +197,7 @@ USER_TEMPLATE_KO_V1 = """<generation_guide>
       "q": "질문 텍스트",
       "a": "답변 텍스트",
       "intent": "fact|purpose|how|condition|comparison|list",
-      "reasoning": ["1) 근거확인 — ...", "2) 해석 — ..."],
+      "reasoning": ["1) 근거 문장/항목 매핑 — ...", "2) 질문 구성 방식 — ..."],
       "answerable": true
     }},
     ...
@@ -236,23 +216,23 @@ _CORE_PRINCIPLES_KO = """
 - 전화번호·담당부서·주소 등 연락처 목록만 있는 경우
 - 목차·제목만 있고 본문 내용이 없는 경우
   (예: "목차 서론 1. 개요 1.1 배경 1.2 범위 2. 분석 2.1 ..." 형태의 섹션 번호 나열)
-- 날짜·코드·번호만 나열된 표
-판별 기준: 컨텍스트에 완성된 서술 문장(주어+서술어 구조)이 없고 항목 나열만 있으면 빈 목록 반환.
+- 의미 있는 정보 관계가 없는 단순 코드·전화번호 나열 표
+판별 기준: 정보 간 유의미한 연결(대상-수치 등)이 없고 학습 가치가 없으면 빈 목록 반환. (표/불렛의 정보 중심 추출 허용)
 </context_screening>
 
 <principles>
 1. 근거성(Groundedness): 모든 질문은 반드시 제공된 컨텍스트 내에서 명확한 답변이 가능해야 합니다.
 2. 관련성(Relevance): 질문과 답변이 주제적으로 일치해야 합니다.
 3. 단일성(Single-scope): 질문 하나는 하나의 질문 차원(What/Why/How/조건/비교)만 다룹니다.
-   서로 다른 질문 차원을 한 질문에 혼합하는 것은 금지합니다.
+   서로 다른 질문 차원을 한 질문에 혼합하는 것은 엄격히 금지합니다.
    - 금지(차원 혼합): "이 제도의 적용 대상 범위와 도입된 목적은 무엇입니까?" ← What(범위) + Why(목적) 혼합 — 각각은 유효한 질문이지만 차원이 다른 두 질문을 하나로 결합
    - 허용(단일 차원 + 복수 항목): "단백질이 세포 내에서 수행하는 기능은 무엇입니까?" ← What(기능) 차원 하나, 항목(효소 촉매·구조 지지·신호 전달 등) 여러 개 가능
    - 허용(비교형): "A와 B의 역할은 어떻게 구분됩니까?" ← '비교'라는 단일 차원 안에서 두 대상을 다루는 것은 단일성 위반이 아님
    단, 같은 차원 안에서 컨텍스트에 여러 항목이 있으면 그 항목들을 모두 묻고 답변에서도 모두 서술해야 합니다.
-4. 명확성: 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
-5. 깊이(Depth): 단순 값 1개 반환 질문 금지. 요건·범위·조건·이유 중 최소 2가지를 연결하세요.
+4. 명확성(Clarity): 대명사·광범위한 표현을 피하고, 답의 범위가 분명한 질문을 작성하세요.
+5. 깊이(Depth): 단순 값 1개 조회를 넘어, **동일 질문 차원 내**의 최소 2가지 요소(요건, 범위, 조건, 항목 등)를 연결하세요.
    - 금지: "시행일은 언제입니까?" / "담당 기관은 어디입니까?"
-   - 권장: "전자적 시스템 연계를 요청할 수 있는 기관의 범위는 무엇입니까?"
+   - 권장: "전자적 시스템 연계를 요청할 수 있는 기관의 범위와 요건은 무엇입니까?"
 </principles>
 
 <intent_types>
@@ -425,7 +405,7 @@ def build_user_template(
         f"마크다운 코드블록 없이 순수 JSON만 출력하세요:\n"
         f"{{{{\n"
         f'  "qa_list": [\n'
-        f'    {{{{"q": "질문 텍스트", "a": "답변 텍스트", "intent": "fact|purpose|how|condition|comparison|list", "reasoning": ["1) 근거확인 — ...", "2) 해석 — ..."], "answerable": true}}}},\n'
+        f'    {{{{"q": "질문 텍스트", "a": "답변 텍스트", "intent": "fact|purpose|how|condition|comparison|list", "reasoning": ["1) 근거 문장/항목 매핑 — ...", "2) 질문 구성 방식 — ..."], "answerable": true}}}},\n'
         f"    ...\n"
         f"  ]\n"
         f"}}}}\n"
@@ -435,38 +415,32 @@ def build_user_template(
 
 USER_TEMPLATE_EN_V1 = """<generation_guide>
 <intent_examples>
-  - fact (사실형):       "이 기능을 사용할 수 있는 대상의 범위는 무엇입니까?", "이 항목의 적용 요건은 무엇입니까?"
-  - purpose (원인형):    "이 정책이 도입된 목적은 무엇입니까?" ← only when reason is stated
-  - how (방법형):        "요청 처리 시 포함해야 할 구체적 사항은 무엇입니까?", "처리 절차는 무엇입니까?" ← only when steps present
-  - condition (조건형):  "대체 방법을 활용할 수 있는 조건은 무엇입니까?", "제한되는 경우는 무엇입니까?" ← only when conditions/exceptions present
-  - comparison (비교형): "두 방식의 역할은 어떻게 구분됩니까?" ← only when two comparable subjects are present
-  - list (열거형):       "결정해야 하는 사항을 모두 나열하면 무엇입니까?" ← only when multiple items listed, max 1 per chunk
+  - fact (fact):        "What countries showed more than 100% surge in export volume in 2023?"
+  - purpose (purpose):   "What is the specific background and purpose for the introduction of this policy?"
+  - how (how):           "What are the step-by-step procedures and inclusions required when processing requests?"
+  - condition (condition): "What are the specific conditions and restrictions for utilizing alternative methods?"
+  - comparison (comparison): "How do the export performance trends of the Netherlands and Japan differ?"
+  - list (list):        "What are the items to be decided in this process, if listed in full?"
 </intent_examples>
 
 <selection_rule>
 Analyze the context first. Select only intent types with sufficient evidence.
-Skip types without context support; substitute with a supported type instead.
 - fact + list combined must NOT exceed 40% of total QA
-- Include at least 1 condition or comparison (required when conditional/comparative evidence present)
+- Include at least 1 condition or comparison if evidence is present
 - fact: max 2 per chunk; list: max 1 per chunk
 - Total QA count: 2~6 based on context density (0 allowed if content is insufficient)
-- Single-value lookup questions (date, number, or name only) are forbidden
+- **Depth**: Connect at least 2 information elements within the same question dimension.
 </selection_rule>
 
 <groundedness_check>
 - State the explicitly described facts and evidence from context directly in all answers
-- Forbidden: "As policy states", "per guidelines" (no supporting explanation)
-- Do NOT start answers with "According to the context,", "Based on the provided information,",
-  or "컨텍스트에 따르면," — start directly with a factual statement
-- Generate questions ONLY from explicitly stated content, not from inferred flow or implied meaning
+- Do NOT start answers with meta-expressions like "According to the context,"
+- Generate questions ONLY from explicitly stated content
 </groundedness_check>
 
 <tone_rule>
-- Questions: Use formal interrogative endings only
-  (e.g., "~입니까?", "~합니까?", "~됩니까?", "~있습니까?")
-- Answers: Use formal declarative endings only
-  (e.g., "~입니다.", "~합니다.", "~됩니다.", "~있습니다.")
-- Forbidden: "~인가요?", "~할까요?", "~이에요", "~해요" (informal speech)
+- Questions: Use formal interrogative endings only (e.g., "~입니까?", "~합니까?")
+- Answers: Use formal declarative endings only (e.g., "~입니다.", "~합니다.")
 </tone_rule>
 </generation_guide>
 
@@ -477,13 +451,18 @@ Skip types without context support; substitute with a supported type instead.
 </context>
 
 <task>
-Generate QA pairs using only intent types supported by the context above.
-Produce as many QA pairs as there are key concepts, requirements, or procedures — minimum 2, maximum 6.
-Do NOT generate trivial QA (single date, number, or name lookup).
+Generate QA pairs using ONLY intent types supported by the context above.
+Include reasoning (evidence mapping and construction method) for each QA.
 Output ONLY pure JSON (no markdown code block):
 {{
   "qa_list": [
-    {{"q": "질문 텍스트", "a": "답변 텍스트", "intent": "fact|purpose|how|condition|comparison|list", "reasoning": ["1) 근거확인 — ...", "2) 해석 — ..."], "answerable": true}},
+    {{
+      "q": "질문 텍스트",
+      "a": "답변 텍스트",
+      "intent": "fact|purpose|how|condition|comparison|list",
+      "reasoning": ["1) Mapping to context sentences/items — ...", "2) Question construction method — ..."],
+      "answerable": true
+    }},
     ...
   ]
 }}
