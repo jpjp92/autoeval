@@ -92,9 +92,18 @@ SYSTEM_PROMPT_KO_V1 = """<role>
   요약 문장만으로 답변을 종결하지 말고 세부 문장의 정보까지 포함하십시오.
   예) "수입은 독일 차량을 선호"(요약) + "중형·대형·친환경 → 독일, 소형 → 네덜란드·프랑스"(세부)가 있을 때,
       차종별 선호국을 묻는 질문에는 세부 문장까지 반드시 포함.
+- condition/how 타입 질문의 답변은 전제 조건과 분기 항목 전체를 열거하십시오.
+  예) "지구 몇 바퀴를 도는지 계산하기 위한 전제 조건"을 묻는 질문에는
+      한 봉지당 면발 길이·연간 생산량·지구 둘레 등 계산에 사용된 모든 전제를 포함하십시오.
+- purpose 타입 질문의 답변은 컨텍스트에 서술된 배경·원인 항목을 전부 포함하십시오.
+  경제적 요인, 사회적 요인, 문화적 요인 등 복수의 배경이 컨텍스트에 있으면 모두 서술하십시오.
+  예) 수요 증가 배경을 묻는 질문에 컨텍스트에 "가격 경쟁력", "문화 확산", "소셜미디어 트렌드"가 있으면 셋 모두 포함.
 - 답변에 "역대 최대", "급증", "강세", "호조", "최고" 등 정성적 표현을 사용할 때,
   컨텍스트에 이를 뒷받침하는 수치 데이터가 있으면 반드시 함께 제시하십시오.
   예) "하이브리드차는 역대 최대 실적"이라고 답할 때, 컨텍스트에 분기별 수치가 있으면 해당 수치 포함.
+- 컨텍스트에 수치가 있는 경우, 정도 부사("대폭", "뚜렷한", "현저히", "급격한", "상당한", "다소" 등) 없이
+  수치로 직접 서술하십시오. 수치가 없는 경우 방향("증가", "감소")만 서술하십시오.
+  예) "수출이 대폭 증가했습니다" → "수출이 24.4% 증가했습니다"
 
 [계산형 파생 정보 — 필수]
 - 컨텍스트에 두 수치가 모두 명시되어 있고, 질문이 그 차이·합산·비율을 요구하면
@@ -158,6 +167,11 @@ Select only types supported by the context — 6 types available:
 [Answer Completeness — MANDATORY]
 - If the question implies multiple items ("What are the...", "List all...", "scope"), the answer MUST include ALL relevant items found in the context.
 - Do NOT generate incomplete answers that cover only M out of N items.
+- For condition/how type questions, the answer MUST enumerate ALL prerequisite conditions and branching items.
+  e.g., a question asking "what are the prerequisites for calculating how many times the noodles circle the earth" must include every value used in the calculation (length per pack, annual production, earth circumference).
+- For purpose type questions, the answer MUST include ALL background and causal factors described in the context.
+  If the context lists multiple factors (economic, social, cultural, etc.), include all of them.
+  e.g., a question asking "why has demand increased" when the context mentions "price competitiveness", "cultural spread", and "social media trends" must include all three.
 - If the context contains both a summary sentence AND a detail sentence, and the question asks for specific details,
   do NOT terminate the answer at the summary level — include the detail sentence as well.
   e.g., context has "imports favor German vehicles"(summary) + "mid/large/eco → Germany, compact → Netherlands·France"(detail):
@@ -165,6 +179,10 @@ Select only types supported by the context — 6 types available:
 - When the answer uses qualitative expressions ("record high", "surge", "strong", "robust"), include the
   supporting numeric data from the context.
   e.g., answering "hybrid vehicles recorded all-time high exports" must include the specific quarterly figure if present.
+- When numeric data is available in the context, state the number directly instead of using degree adverbs
+  ("significantly", "sharply", "considerably", "markedly", "slightly" etc.).
+  If no numeric data exists, describe direction only ("increased", "decreased") without degree adverbs.
+  e.g., "exports increased significantly" → "exports increased by 24.4%"
 
 [Derived Calculations — MANDATORY]
 - If the context contains both numeric values AND the question asks for their difference, sum, or ratio,
@@ -176,13 +194,24 @@ Select only types supported by the context — 6 types available:
 USER_TEMPLATE_KO_V1 = """<generation_guide>
 <plan_before_generate>
 QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
-1. 컨텍스트에서 직접 추출 가능한 정보 요소(수치, 조건, 절차, 원인 등)를 목록화합니다.
+1. 컨텍스트에서 직접 추출 가능한 정보 요소를 아래 유형별로 목록화합니다.
+   - 수치·통계: 금액, 비율, 증감률, 순위, 개수 등
+   - 조건·절차: 조건 분기, 단서 조항, 처리 순서 등
+   - 원인·목적: 도입 배경, 정책 목적, 추진 이유 등
+   - 서술적 배경: 사회적 맥락, 시장 환경, 문화적 요인, 트렌드 설명 등 정성적 서술 정보
+   (purpose/condition형 질문은 서술적 배경 정보가 핵심 답변 요소임)
 2. 각 질문 후보의 구성 요소별로 컨텍스트 문장에 매핑 가능한지 확인합니다.
    - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.
      예) 컨텍스트에 "2024년 1월" 수치만 있으면 "2023년 1월"을 묻는 요소는 매핑 불가로 처리.
    - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.
+   - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.
+     예) "밑줄 표시된 수치가 역대 최대"라는 기준이 있어도, 어느 수치에 밑줄이 있는지는 확인 불가.
 3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.
 4. 모든 요소가 컨텍스트에 근거가 있는 질문만 최종 확정합니다.
+5. 이미 확정된 질문들과 핵심 수치·팩트가 1개라도 겹치면 중복으로 처리하고 생성하지 마십시오.
+   - intent 유형(fact/comparison 등)이 달라도 동일 수치를 참조하면 중복입니다.
+   - 예) 이미 "중국 22.6%, 미국 13.3%"를 묻는 질문이 있으면, 같은 수치로 비교를 묻는 질문도 금지.
+   - 각 질문은 고유한 수치·팩트 조합을 가져야 합니다.
 </plan_before_generate>
 
 <intent_examples>
@@ -418,12 +447,22 @@ def build_user_template(
         f"<generation_guide>\n"
         f"<plan_before_generate>\n"
         f"QA 생성 전, 아래 4단계를 내부적으로 수행하세요:\n"
-        f"1. 컨텍스트에서 직접 추출 가능한 정보 요소(수치, 조건, 절차, 원인 등)를 목록화합니다.\n"
+        f"1. 컨텍스트에서 직접 추출 가능한 정보 요소를 아래 유형별로 목록화합니다.\n"
+        f"   - 수치·통계: 금액, 비율, 증감률, 순위, 개수 등\n"
+        f"   - 조건·절차: 조건 분기, 단서 조항, 처리 순서 등\n"
+        f"   - 원인·목적: 도입 배경, 정책 목적, 추진 이유 등\n"
+        f"   - 서술적 배경: 사회적 맥락, 시장 환경, 문화적 요인, 트렌드 설명 등 정성적 서술 정보\n"
+        f"   (purpose/condition형 질문은 서술적 배경 정보가 핵심 답변 요소임)\n"
         f"2. 각 질문 후보의 구성 요소별로 컨텍스트 문장에 매핑 가능한지 확인합니다.\n"
         f"   - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.\n"
         f"   - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.\n"
+        f"   - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.\n"
         f"3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.\n"
         f"4. 모든 요소가 컨텍스트에 근거가 있는 질문만 최종 확정합니다.\n"
+        f"5. 이미 확정된 질문들과 핵심 수치·팩트가 1개라도 겹치면 중복으로 처리하고 생성하지 마십시오.\n"
+        f"   - intent 유형(fact/comparison 등)이 달라도 동일 수치를 참조하면 중복입니다.\n"
+        f"   - 예) 이미 \"중국 22.6%, 미국 13.3%\"를 묻는 질문이 있으면, 같은 수치로 비교를 묻는 질문도 금지.\n"
+        f"   - 각 질문은 고유한 수치·팩트 조합을 가져야 합니다.\n"
         f"</plan_before_generate>\n"
         f"{intent_examples}\n"
         f"{emphasis}"

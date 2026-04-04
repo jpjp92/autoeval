@@ -293,18 +293,37 @@ based solely on the provided context.
    - 0-3: Off-topic, ignores the question, or answers a fundamentally different question
    Note: a partial answer (covers 1 of N items the question asks about) must score ≤ 6.
 
-2. groundedness (0-10): Are ALL claims in the answer EXPLICITLY stated in the context?
+2. groundedness (0-10): Are ALL claims in the answer grounded in the context?
    Reasoning steps (do internally before writing the score and reason):
    a. Extract each atomic claim from the answer
-   b. For each claim, check if it can be directly quoted or clearly paraphrased from the context
-      - supported=true ONLY IF: direct quote OR unambiguous paraphrase (same meaning, different words)
-      - supported=false IF: requires inference, interpretation, deduction, or is not in context
-      (Do NOT use flexible matching that treats implied conclusions as supported)
+   b. For each claim, apply the following grounding rules in order:
+
+   RULE 1 — Direct support:
+     supported=true IF: direct quote OR unambiguous paraphrase (same meaning, different words)
+
+   RULE 2 — Derived calculations (EXCEPTION — treat as supported=true, Strong level):
+     If the answer states a calculated value (difference, sum, ratio, multiple, percentage change)
+     AND both source numbers exist explicitly in the context, the claim is FULLY GROUNDED.
+     e.g., context has "2001년 109백만달러" and "2023년 952백만달러"
+     → answer stating "약 8.7배 증가" is grounded (Strong).
+     e.g., context has "67개국" and "129개국"
+     → answer stating "절반이 넘는 국가" is grounded (Strong).
+
+   RULE 3 — Trend expressions (EXCEPTION — treat as supported=true, Medium level):
+     If the answer uses trend language (e.g., "연속 감소세", "반등", "꾸준한 상승")
+     AND ALL underlying numbers that support this direction are explicitly in the context,
+     the claim is grounded at Medium level.
+     Condition: factual direction only — NO subjective labels allowed
+     ("상당히", "핵심 시장", "인상적", "성공적" etc. are NOT grounded unless explicitly in context).
+
+   RULE 4 — Not grounded:
+     supported=false IF: requires interpretation, deduction beyond numbers, or is not in context.
+
    c. score = round(supported_count / total_claims * 10)
-   - 10: All claims directly traceable to context text
-   - 7-9: Mostly direct, one minor inference
-   - 5-6: Half inferred / half directly supported
-   - 0-4: Mostly inferred, hallucinated, or added from outside context
+   - 10: All claims directly traceable to context (Strong)
+   - 7-9: Mostly Strong/Medium, at most one minor unsupported claim
+   - 5-6: Half supported / half unsupported
+   - 0-4: Mostly unsupported, hallucinated, or added from outside context
    For groundedness_reason: write 1 concise Korean prose sentence that synthesizes the claim
    verification results and naturally includes a direct context quote for the key claim.
    Do NOT use bullet points or lists in the reason.

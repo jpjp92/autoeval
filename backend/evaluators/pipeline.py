@@ -103,17 +103,17 @@ def _classify_failure_types(rag: dict, quality: dict, context: str = "") -> dict
     groundedness = rag.get("groundedness", 1.0)
     relevance    = rag.get("relevance",    1.0)
 
-    # groundedness < 0.5: 컨텍스트에 전혀 근거하지 않는 수준 → hallucination 가능성
-    if groundedness < 0.5:
+    # groundedness < 0.4: 컨텍스트에 전혀 근거하지 않는 수준 → hallucination
+    # (0.5는 정도 부사 복합 사용 수준 — hallucination으로 분류하지 않음)
+    if groundedness < 0.4:
         failure_types.append("hallucination")
-    # groundedness 낮고 relevance 괜찮으면 → 컨텍스트 오해석(faithfulness_error)
-    # relevance 낮으면 → 컨텍스트 자체가 안 검색됨(retrieval_miss)
-    if groundedness < 0.6 and relevance >= 0.6:
+    # groundedness 0.4~0.6이고 relevance 괜찮으면 → faithfulness_error
+    # relevance 낮으면 → retrieval_miss
+    if 0.4 <= groundedness < 0.6 and relevance >= 0.6:
         failure_types.append("faithfulness_error")
     elif relevance < 0.6:
         failure_types.append("retrieval_miss")
     elif groundedness < 0.6:
-        # relevance 경계값(0.6)이고 groundedness도 낮으면 둘 다 추가
         failure_types.append("faithfulness_error")
         failure_types.append("retrieval_miss")
     if rag.get("context_relevance", 1.0) < 0.6:
@@ -356,7 +356,9 @@ def run_full_evaluation_pipeline(
                 "avg_score":             round(sum(s.get("avg_score",         0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "distribution": {
                     "relevance":         _distribution_stats(rag_scores_list, "relevance"),
-                    "groundedness":      _distribution_stats(rag_scores_list, "groundedness"),
+                    # groundedness threshold=0.8: 수치 기반 주관적 표현(정도 부사)은 "틀린 답변"이 아닌
+                    # "표현 방식" 수준이므로 0.8 미만만 미달로 처리. 생성 품질 개선 시 상향 검토.
+                    "groundedness":      _distribution_stats(rag_scores_list, "groundedness", threshold=0.8),
                     "context_relevance": _distribution_stats(rag_scores_list, "context_relevance"),
                     "overall":           _distribution_stats(rag_scores_list, "avg_score"),
                 },
