@@ -140,7 +140,10 @@ API 문서: `http://localhost:8000/docs`
   "filename":        "document.pdf",
   "document_id":     "<doc_chunks.document_id>",
   "hierarchy_h1":    "대분류",
-  "hierarchy_h2":    "중분류"
+  "hierarchy_h2":    "중분류",
+  "hierarchy_h3":    "소분류",
+  "retrieval_query": null,
+  "qa_per_doc":      null
 }
 ```
 
@@ -278,13 +281,14 @@ Pass 3: /apply-granular-tagging
 ### 최종 점수 산식
 
 ```
-unified     = (rag_avg × 3 + quality_avg) / 4
 final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness×0.25)
 ```
 
 **등급**: A+(≥0.95) / A(≥0.85) / B+(≥0.75) / B(≥0.65) / C(≥0.50) / F(<0.50)
 
-### 상태 판정
+### 상태 판정 (프론트엔드에서 수행)
+
+> 백엔드는 QA별 `pass: bool` + `failure_types: list`만 반환. Pass/Hold/Fail 3단계 분류는 프론트엔드 `evalScoreUtils.ts`의 `getQAStatus()`에서 수행.
 
 | 상태 | 조건                                                          |
 | ---- | ------------------------------------------------------------- |

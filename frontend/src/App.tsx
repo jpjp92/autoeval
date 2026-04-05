@@ -3,7 +3,6 @@ import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "luci
 import { Sidebar } from "./components/layout/Sidebar";
 import { Header, type Notification } from "./components/layout/Header";
 import { DashboardOverview } from "./components/dashboard/DashboardOverview";
-import { ChatPlayground } from "./components/playground/ChatPlayground";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { QAEvaluationDashboard } from "./components/evaluation/QAEvaluationDashboard";
 import { QAGenerationPanel } from "./components/generation/QAGenerationPanel";
@@ -129,10 +128,6 @@ function App() {
               initialEvalDbId={lastEvalDbId} 
               setActiveTab={setActiveTab}
             />
-          </div>
-
-          <div className={activeTab === "playground" ? "max-w-7xl mx-auto" : "hidden"}>
-            <ChatPlayground />
           </div>
 
           <div className={activeTab === "settings" ? "h-full" : "hidden"}>

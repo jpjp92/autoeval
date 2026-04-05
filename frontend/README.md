@@ -15,7 +15,8 @@ frontend/
 │   │   ├── exportUtils.ts               # XLSX / HTML / JSON / ZIP 내보내기 (차트 SVG 인라인)
 │   │   ├── evalScoreUtils.ts            # 점수 판정 함수 (SCORE_THRESHOLDS, getScoreColor, getQAStatus)
 │   │   ├── evalChartUtils.ts            # 차트 데이터 변환 (formatKST, buildChartData, buildChartDataFromHistory)
-│   │   └── utils.ts                     # cn() 등 유틸리티
+│   │   ├── utils.ts                     # cn() 등 유틸리티
+│   │   └── image/                       # 이미지 리소스
 │   ├── types/
 │   │   └── evaluation.ts                # 평가 타입 + 상수 (QAPreviewItem, EvalReport, INTENT_KR 등)
 │   └── components/
@@ -31,7 +32,7 @@ frontend/
 │       ├── generation/
 │       │   └── QAGenerationPanel.tsx    # QA 생성 UI (H1/H2 드롭다운 + 진행상황)
 │       ├── evaluation/
-│       │   ├── QAEvaluationDashboard.tsx # 평가 결과 메인 (state + fetch + layout, 766줄)
+│       │   ├── QAEvaluationDashboard.tsx # 평가 결과 메인 (state + fetch + layout)
 │       │   ├── QADetailView.tsx         # QA 개별 상세 뷰 (Q/A/Context + 평가 결과)
 │       │   ├── HistoryDropdown.tsx      # 평가 히스토리 드롭다운
 │       │   ├── shared.tsx               # 공통 UI (TooltipCard, ChartInfoTooltip)
@@ -39,14 +40,15 @@ frontend/
 │       │       ├── MetricRadialGauge.tsx # SVG 원형 게이지 (다양성/중복성/편향성/충족성)
 │       │       ├── IntentTreemap.tsx     # Recharts Treemap + 커스텀 셀/툴팁
 │       │       └── QualityScoreChart.tsx # 품질 점수 인터랙티브 바 차트
-│       ├── playground/
-│       │   └── ChatPlayground.tsx       # 채팅 플레이그라운드 (미구현)
+│       ├── agents/
+│       │   └── AgentTable.tsx           # 에이전트 테이블
+│       ├── analytics/
+│       │   └── AnalyticsDashboard.tsx   # 분석 대시보드
 │       └── settings/
 │           ├── SettingsPanel.tsx        # 설정 패널 — Profile / API Keys / Pipeline
 │           └── PipelineFlow.tsx         # ReactFlow 5-스텝 파이프라인 시각화
 ├── index.html
 ├── vite.config.ts
-├── tailwind.config.js
 └── package.json
 ```
 
@@ -90,6 +92,7 @@ frontend/
 | `taggingVersion` | `number` | 태깅 완료 시 증가 — Generation hierarchy 재로드 트리거 |
 | `taggingTreeData` | `HierarchyTree \| null` | 태깅 완료 시점 tree 데이터 — Generation API 중복 호출 방지 |
 | `settingsSection` | `string \| undefined` | Settings 탭 진입 시 초기 섹션 지정 |
+| `theme` | `'light' \| 'dark'` | 다크/라이트 모드 (localStorage 연동) |
 | `notifications` | `Notification[]` | 헤더 알림 목록 |
 
 ---
@@ -103,6 +106,8 @@ frontend/
 | `generation` | `QAGenerationPanel` | 구현됨 — QA Pipeline |
 | `evaluation` | `QAEvaluationDashboard` | 구현됨 — Evaluation |
 | `settings` | `SettingsPanel` | 구현됨 — 사이드바 하단 Settings 버튼으로 접근 |
+
+> Sidebar에 노출되지 않는 숨겨진 탭은 없음 (playground 탭 제거됨)
 
 ---
 
@@ -119,7 +124,7 @@ frontend/
 | `getEvalExport(jobId)` | `GET /api/evaluate/{jobId}/export` | 세션 job 상세 내보내기 |
 | `getEvalExportById(evalId)` | `GET /api/evaluate/export-by-id/{evalId}` | Supabase eval_id 기반 내보내기 |
 
-`VITE_API_URL` 환경변수로 백엔드 주소 지정 (기본값: `http://localhost:8000`)
+백엔드 주소는 `api.ts` 내 `API_BASE` 상수로 지정 (로컬 개발 시 `''` — Vite 프록시 활용, 배포 시 `vercel.json` rewrites 처리)
 
 ---
 
@@ -140,6 +145,7 @@ frontend/
 | `currentFilename` | `string \| null` | 현재 문서 파일명 |
 | `taggingVersion` | `number` | 변경 시 hierarchy 재로드 트리거 |
 | `taggingTreeData` | `HierarchyTree \| null` | 태깅 완료 시점 데이터 — API 중복 호출 방지 |
+| `onGenerationComplete` | `() => void` | 생성 완료 시 App에 알림 콜백 |
 | `onEvalComplete` | `(evalJobId: string) => void` | 평가 완료 시 App에 job_id 전달 |
 | `onGoToEvaluation` | `() => void` | 평가 탭으로 자동 이동 |
 
@@ -158,6 +164,7 @@ frontend/
 | `setActiveTab` | `(tab: string) => void` | Quick Actions / 평가 탭 이동 |
 | `onEvalSelect` | `(eval_id: string) => void` | 파이프라인 로그 행 클릭 시 평가 ID 전달 |
 | `isActive` | `boolean` | overview 탭 활성 시 API 재요청 트리거 |
+| `onPipelineClick` | `() => void` | Pipeline 카드 클릭 시 Settings 패널 pipeline 섹션으로 이동 |
 
 ---
 
@@ -166,16 +173,10 @@ frontend/
 ```bash
 cd frontend
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:3000  (--port=3000 고정)
 npm run build    # 프로덕션 빌드
-```
-
-### 환경변수 (`.env`)
-
-```
-VITE_API_URL=http://localhost:8000
 ```
 
 ---
 
-**Last Updated**: 2026-04-02 | **Branch**: main
+**Last Updated**: 2026-04-05 | **Branch**: main

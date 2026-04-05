@@ -207,15 +207,21 @@ autoeval/
 │ ├── dashboard/
 │ │ ├── DashboardOverview.tsx # 실시간 대시보드 (Supabase 집계 데이터)
 │ │ ├── StatsCards.tsx # 통계 카드 (accent border + glass)
-│ │ └── ActivityChart.tsx # 점수 추이 차트
+│ │ └── ActivityChart.tsx # 점수 추이 차트 (주석 처리)
 │ ├── standardization/
-│ │ └── DataStandardizationPanel.tsx # 업로드 + 게층 태깅
+│ │ └── DataStandardizationPanel.tsx # 업로드 + 계층 태깅
 │ ├── generation/
 │ │ └── QAGenerationPanel.tsx # H1/H2 드롭다운 + 생성 설정 UI
 │ ├── evaluation/
-│ │ └── QAEvaluationDashboard.tsx # 평가 결과 + 레이어별 점수 UI
-│ ├── playground/
-│ │ └── ChatPlayground.tsx # LLM 채팅 플레이그라운드
+│ │ ├── QAEvaluationDashboard.tsx # 평가 결과 + 레이어별 점수 UI
+│ │ ├── QADetailView.tsx # QA 개별 상세 뷰
+│ │ ├── HistoryDropdown.tsx # 평가 히스토리 드롭다운
+│ │ ├── shared.tsx # 공통 UI
+│ │ └── charts/ # 차트 컴포넌트 (MetricRadialGauge, IntentTreemap, QualityScoreChart)
+│ ├── agents/
+│ │ └── AgentTable.tsx # 에이전트 테이블
+│ ├── analytics/
+│ │ └── AnalyticsDashboard.tsx # 분석 대시보드
 │ └── settings/
 │ ├── SettingsPanel.tsx # 시스템 설정 (Profile / API Keys / Pipeline)
 │ └── PipelineFlow.tsx # ReactFlow 5-스텝 파이프라인 시각화
@@ -224,7 +230,7 @@ autoeval/
 ├── docker-compose.dev.yml # 개발 오버라이드: 소스 볼륨 마운트 + Vite HMR
 ├── .env.example # 환경 변수 템플릿 (ANTHROPIC / GOOGLE / OPENAI / SUPABASE)
 └── README.md
-
+```
 ---
 
 ## 기술 스택
@@ -301,13 +307,12 @@ doc_chunks.id
 
 ### 최종 등급 체계
 
-```
 
 final_score = syntax×0.05 + stats×0.05 + rag×0.65 + quality×0.25
 
 A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 
-````
+
 
 ---
 
@@ -493,4 +498,4 @@ Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~2
 
 ---
 
-**Last Updated**: 2026-04-02 | **Branch**: main
+**Last Updated**: 2026-04-05 | **Branch**: main
