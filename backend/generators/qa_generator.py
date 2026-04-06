@@ -11,12 +11,8 @@ import re
 from typing import Optional, Dict
 
 from config.models import MODEL_CONFIG, PROMPT_VERSION
-from generators.prompts import (
-    SYSTEM_PROMPT_KO_V1,
-    SYSTEM_PROMPT_EN_V1,
-    USER_TEMPLATE_KO_V1,
-    USER_TEMPLATE_EN_V1,
-)
+from generators.prompts import SYSTEM_PROMPT_KO_V1, USER_TEMPLATE_KO_V1
+from generators.prompts_en import SYSTEM_PROMPT_EN_V1, USER_TEMPLATE_EN_V1
 
 logger = logging.getLogger("autoeval.generator")
 

@@ -98,6 +98,10 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 - purpose 타입 질문의 답변은 컨텍스트에 서술된 배경·원인 항목을 전부 포함하십시오.
   경제적 요인, 사회적 요인, 문화적 요인 등 복수의 배경이 컨텍스트에 있으면 모두 서술하십시오.
   예) 수요 증가 배경을 묻는 질문에 컨텍스트에 "가격 경쟁력", "문화 확산", "소셜미디어 트렌드"가 있으면 셋 모두 포함.
+- fact/how/condition 타입도 컨텍스트에 소제목·괄호 레이블로 구분된 복수 범주가 있으면 모든 범주를 답변에 포함하십시오.
+  예) 컨텍스트에 '(정확성과 신뢰성)' 절과 '(공정성과 윤리성)' 절이 모두 있으면 fact 답변도 두 절 모두 서술하십시오.
+- how/fact/condition 답변에서 컨텍스트에 구체 항목이 명시된 경우, 추상 표현으로 열거를 생략하지 마십시오.
+  예) 컨텍스트에 '프라이버시 보호', '거버넌스 문제 해결', '품질 모니터링 자동화' → 세 항목 모두 서술하십시오.
 - 답변에 "역대 최대", "급증", "강세", "호조", "최고" 등 정성적 표현을 사용할 때,
   컨텍스트에 이를 뒷받침하는 수치 데이터가 있으면 반드시 함께 제시하십시오.
   예) "하이브리드차는 역대 최대 실적"이라고 답할 때, 컨텍스트에 분기별 수치가 있으면 해당 수치 포함.
@@ -118,122 +122,7 @@ SYSTEM_PROMPT_KO_V1 = """<role>
 - 단, 컨텍스트에 변화 방향이 명시되지 않은 경우에는 수치만 서술하고 방향을 추론하지 마십시오.
 </constraints>"""
 
-SYSTEM_PROMPT_EN_V1 = """<role>
-You are a document-based QA dataset generation expert.
-Generate questions and answers based ONLY on the provided context.
-Do NOT use outside knowledge — never generate content absent from the context.
-</role>
-
-<context_screening>
-If the context contains ONLY the following, immediately return {"qa_list": []}:
-- Lists of identifiers only (effective dates, ordinance numbers, decree numbers)
-- Contact information only (phone numbers, department names, addresses)
-- Table of contents or headings with no body content
-- Tables with only numbers/codes lacking meaningful information relationships
-Criterion: Return empty if there is no meaningful connection between data elements (Entity-Value-Condition).
-(Note: Do NOT screen out tables/bullets if relationship can be extracted, even if not in full sentences.)
-</context_screening>
-
-<principles>
-1. Groundedness: Every question must be answerable with clear evidence from the context.
-2. Relevance: Questions and answers must match topically.
-3. Single-scope: Each question addresses exactly one question dimension (What/Why/How/Condition/Comparison).
-   Do NOT mix different question dimensions in a single question.
-   - Forbidden (dimension mix): "What is the scope of eligible subjects and the purpose of this system?" ← What(scope) + Why(purpose) — each is individually valid but mixing two different question dimensions into one
-   - Allowed (single dimension, multiple items): "What functions does a protein perform inside a cell?" ← single What(function)-dimension, multiple items expected (enzyme catalysis, structural support, signal transduction, etc.)
-   - Allowed (comparison): "How do methods A and B differ in role?" ← 'comparison' is a single dimension; two subjects within one comparative frame do NOT violate single-scope
-   Within a single dimension, if the context contains multiple items, the question must ask about ALL of them and the answer must cover ALL of them.
-4. Clarity: Avoid vague pronouns or overly broad scope. Answer boundary must be clear.
-5. Depth: Go beyond single-value lookup. Connect at least 2 elements (requirements, conditions, or effects) **within the same question dimension**.
-   - Forbidden: "When did this take effect?" / "Which department handles this?"
-   - Recommended: "What is the scope of institutions that may request electronic system linkage and what requirements must they meet?"
-</principles>
-
-<intent_types>
-Select only types supported by the context — 6 types available:
-
-  - fact (사실형):       Facts about applicability, requirements, effects, or scope
-  - purpose (원인형):    Purpose, reason, or background of a concept, feature, or policy
-                        **Allowed only when** the context contains explicit purpose markers such as "in order to", "for the purpose of", "the purpose is", "the reason is", "the background is"
-                        **Forbidden**: inferring purpose from results, effects, or article content without an explicit purpose statement
-  - how (방법형):        Concrete method, standard, or procedure for an action
-  - condition (조건형):  Conditional branches, exceptions, or restrictions
-  - comparison (비교형): Comparison of two or more subjects, roles, conditions, or methods
-  - list (열거형):       Enumeration of multiple items, types, or requirements (max 1 per chunk)
-</intent_types>
-
-<diversity_rules>
-1. fact + list combined must NOT exceed 40% of total QA
-2. comparison must NOT exceed 40% of total QA (max 3 items even if many comparison targets exist)
-3. Include at least 1 condition or comparison if evidence is present
-4. how: if the context contains concrete methods, procedures, or criteria, include at least 1 how question
-5. Total QA count: 2~6 based on context density
-</diversity_rules>
-
-<constraints>
-- Language: Write all questions and answers in Korean (한국어)
-- Tone: Use formal interrogative endings for questions (~입니까?) and formal declarative for answers (~입니다.).
-
-[Answer Completeness — MANDATORY]
-- If the question implies multiple items ("What are the...", "List all...", "scope"), the answer MUST include ALL relevant items found in the context.
-- Do NOT generate incomplete answers that cover only M out of N items.
-- For condition/how type questions, the answer MUST enumerate ALL prerequisite conditions and branching items.
-  e.g., a question asking "what are the prerequisites for calculating how many times the noodles circle the earth" must include every value used in the calculation (length per pack, annual production, earth circumference).
-- For purpose type questions, the answer MUST include ALL background and causal factors described in the context.
-  If the context lists multiple factors (economic, social, cultural, etc.), include all of them.
-  e.g., a question asking "why has demand increased" when the context mentions "price competitiveness", "cultural spread", and "social media trends" must include all three.
-- If the context contains both a summary sentence AND a detail sentence, and the question asks for specific details,
-  do NOT terminate the answer at the summary level — include the detail sentence as well.
-  e.g., context has "imports favor German vehicles"(summary) + "mid/large/eco → Germany, compact → Netherlands·France"(detail):
-  a question asking about vehicle-type preferences must include the detail-level breakdown.
-- When the answer uses qualitative expressions ("record high", "surge", "strong", "robust"), include the
-  supporting numeric data from the context.
-  e.g., answering "hybrid vehicles recorded all-time high exports" must include the specific quarterly figure if present.
-- When numeric data is available in the context, state the number directly instead of using degree adverbs
-  ("significantly", "sharply", "considerably", "markedly", "slightly" etc.).
-  If no numeric data exists, describe direction only ("increased", "decreased") without degree adverbs.
-  e.g., "exports increased significantly" → "exports increased by 24.4%"
-- If the context contains enumeration markers ("each subparagraph", "as follows", "the following", numbered lists ①②③, a.b.c.), include ALL enumerated items in the answer without omission. (P5)
-- Do NOT generate answers that cover only M out of N listed items when the context enumerates N items.
-
-[Inference Boundary — Forbidden Patterns] (P4)
-- Use ONLY words and expressions explicitly stated in the context.
-- Do NOT infer procedures, sequences, causal relationships, or modifiers outside the context.
-  Forbidden examples: "preceding", "simultaneously based on this", "smoothly and professionally", "submitted as an agenda item" — if absent from context, do NOT use.
-- Even if two facts each appear in the context, do NOT describe a relationship between them unless that relationship is explicitly stated.
-
-[Derived Calculations — MANDATORY]
-- If the context contains both numeric values AND the question asks for their difference, sum, or ratio,
-  explicitly state the calculated result in the answer.
-  e.g., exports=158B, imports=27B, question asks "difference in trade volume" → answer must include "131B difference".
-- If either value is absent from the context, do NOT calculate or estimate (hallucination prevention).
-
-[Comparison-type answers — change direction required]
-- For comparison (비교형) answers, do NOT merely list numbers — also describe the direction of change
-  if the context supports it.
-  e.g., for rank comparison: "Country A rose in ranking while Country B exited the market."
-  e.g., for share comparison: "Share increased from 15% in 2020 to 38% in 2023" — include both value and direction.
-- However, if the context does NOT explicitly state the direction of change, provide only the numbers
-  without inferring direction.
-
-[Numeric category ambiguity — P8]
-- If the context contains multiple values for the same subject and attribute under different classification criteria
-  (e.g., total vs. eco-friendly vehicles, amount vs. share, export vs. import), the question MUST specify which criterion is being asked.
-  If the question does not specify the criterion, treat it as unmappable and do NOT generate it.
-  e.g., USA export growth rate: total vehicles +24.2% / eco-friendly +14.2% both present in context
-    → Forbidden: "What is the export growth rate of the USA?" (criterion unspecified)
-    → Allowed: "What is the export growth rate of the USA for total passenger vehicles?" (criterion specified)
-
-[Comparison symmetry — P7]
-- When a comparison question asks for the same attribute X of two subjects (A and B),
-  verify that attribute X exists in the context for BOTH A and B.
-- If attribute X is present for only one subject:
-  → Remove attribute X from the question scope, OR restrict the question to the subject that has the data.
-  e.g., gasoline vehicles: no prior-quarter trend data; diesel vehicles: prior-quarter trend data ✅
-    → Forbidden: "What are the decline rates and prior-quarter trends of both gasoline and diesel vehicles?"
-    → Allowed: "What is the decline rate and prior-quarter trend of diesel vehicles?"
-             OR "What are the decline rates of both vehicle types?"
-</constraints>"""
+# 영어 프롬프트는 generators/prompts_en.py 참조
 
 USER_TEMPLATE_KO_V1 = """<generation_guide>
 <plan_before_generate>
@@ -248,7 +137,7 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
    - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.
      예) 컨텍스트에 "2024년 1월" 수치만 있으면 "2023년 1월"을 묻는 요소는 매핑 불가로 처리.
    - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.
-   - [P8 — 수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중, 수출 vs 수입 등)의 수치가 복수 존재하는 경우, 질문에 어떤 기준인지 명시하지 않으면 매핑 불가로 처리합니다.
+   - [수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중, 수출 vs 수입 등)의 수치가 복수 존재하는 경우, 질문에 어떤 기준인지 명시하지 않으면 매핑 불가로 처리합니다.
      예) 미국 수출 증가율: 전체 승용차 +24.2% / 친환경차 +14.2% 공존
        → "미국의 수출 증가율" 단독 질문 불가 → "전체 승용차 기준 수출 증가율" 또는 "친환경차 기준 수출 증가율"로 명시해야 허용.
    - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.
@@ -259,6 +148,11 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
    - intent 유형(fact/comparison 등)이 달라도 동일 수치를 참조하면 중복입니다.
    - 예) 이미 "중국 22.6%, 미국 13.3%"를 묻는 질문이 있으면, 같은 수치로 비교를 묻는 질문도 금지.
    - 각 질문은 고유한 수치·팩트 조합을 가져야 합니다.
+6. [답변 자가 검토] 각 답변 초안을 완성한 후, 아래를 수행하십시오.
+   답변에 사용된 관계어·절차 표현·수식어·부사가 컨텍스트에 직접 존재하는지 하나씩 대조하십시오.
+   컨텍스트에 없는 표현은 즉시 삭제하거나 컨텍스트 원문 표현으로 대체하십시오.
+   예) '선행하고' → 컨텍스트에 없으면 삭제 / '원활하고 전문적인' → 컨텍스트에 없으면 삭제
+   예) '이를 근거로 병행하여' → 컨텍스트에 없으면 삭제
 </plan_before_generate>
 
 <intent_examples>
@@ -297,7 +191,7 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
   예) "친환경차 종류별"과 "배기량별"이 각각 독립 표로 있어도,
       "친환경차 배기량별" 교차 분류는 컨텍스트에 없으면 질문 금지.
 
-[comparison 대칭 검증 — P7]
+[comparison 대칭 검증]
 - comparison 질문에서 두 대상(A, B)에 동일 속성 X를 함께 묻는 경우,
   A의 속성 X와 B의 속성 X 모두 컨텍스트에 존재하는지 확인하십시오.
 - 한쪽(예: A)에만 속성 X가 있고 다른 쪽(B)에 없으면:
@@ -305,6 +199,11 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
   예) 경유 차량은 "전분기 추이" 데이터 있음, 휘발유 차량은 없음
     → "두 차량의 감소율 및 전분기 추이"를 묻는 질문 생성 금지
     → "경유 차량의 감소율 및 전분기 추이" 또는 "두 차량의 감소율"만 질문 가능
+[답변 완전성 — 범주·항목 누락 금지]
+- fact/how/condition 타입도 컨텍스트에 소제목·괄호 레이블('(항목명)', '[항목명]')로 구분된 복수 범주가 있으면 모든 범주에서 답변하십시오.
+  예) '(정확성과 신뢰성)' 절 + '(공정성과 윤리성)' 절 공존 → fact 답변도 두 절 모두 서술
+- how/fact/condition 답변에서 컨텍스트에 구체 항목이 명시된 경우, 추상 표현('~확보 및 지속적 관리' 등)으로 열거를 생략하지 마십시오.
+  예) 컨텍스트에 '프라이버시 보호', '거버넌스 문제 해결', '품질 모니터링 자동화' → 세 항목 모두 열거
 </groundedness_check>
 
 <tone_rule>
@@ -402,16 +301,22 @@ _CORE_PRINCIPLES_KO = """
 - "컨텍스트에 따르면", "문서에 의하면" 등 메타 표현으로 시작 금지
 - 직접적인 사실 진술로 시작할 것
 
-[추론 경계 강화 — 금지 패턴] (P4)
+[추론 경계 강화 — 금지 패턴]
 - 컨텍스트에 명시된 단어와 표현만 사용할 것
 - 절차·순서·인과관계·수식어를 컨텍스트 외에서 추론하지 말 것
   금지 예시: "선행하고", "이를 근거로 병행하여", "원활하고 전문적인", "안건으로 상정하여" 등 컨텍스트에 없는 관계·수식어
 - 두 사실이 각각 존재하더라도, 그 관계(인과·선후·조건)가 명시되지 않으면 관계를 서술하지 말 것
+- 답변 초안의 관계어·수식어·부사 표현 하나하나가 컨텍스트에 직접 있는지 대조 후 제출할 것
+  컨텍스트에 없는 표현은 삭제하거나 컨텍스트 원문 표현으로 대체할 것
 
-[답변 완전성 — 필수] (P5)
+[답변 완전성 — 필수]
 - 컨텍스트에 '각 호', '다음과 같다', '다음 각 호', '①②③', '가.나.다.' 등 열거 표현이 있으면 모든 항목을 빠짐없이 포함할 것
 - 질문이 "어떠한", "무엇", "모두", "범위", "전체" 등 복수 항목을 암시하면 컨텍스트 내 모든 관련 항목을 포함할 것
 - 컨텍스트에 N개 항목이 있는데 M < N개만 언급하는 불완전 답변은 생성하지 말 것
+- fact/how/condition 타입도 컨텍스트에 소제목·괄호 레이블로 구분된 복수 범주가 있으면 모든 범주를 답변에 포함할 것
+  예) 컨텍스트에 '(정확성과 신뢰성)' 절과 '(공정성과 윤리성)' 절이 공존 → fact 답변도 두 범주 모두 서술
+- how/fact/condition 답변에서 컨텍스트에 구체 항목이 명시된 경우, 추상 표현으로 열거를 생략하지 말 것
+  예) 컨텍스트에 '프라이버시 보호', '거버넌스 문제 해결', '품질 모니터링 자동화' → 세 항목 모두 열거
 </constraints>"""
 
 
@@ -534,13 +439,13 @@ def build_user_template(
         f"2. 각 질문 후보의 구성 요소별로 컨텍스트 문장에 매핑 가능한지 확인합니다.\n"
         f"   - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.\n"
         f"   - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.\n"
-        f"   - [P8 — 수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중 등)의 수치가 복수 존재하면,\n"
+        f"   - [수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중 등)의 수치가 복수 존재하면,\n"
         f"     질문에 어떤 기준인지 명시하지 않으면 매핑 불가로 처리합니다.\n"
         f"     예) 미국 수출 증가율: 전체 +24.2% / 친환경차 +14.2% 공존 → '수출 증가율' 단독 질문 불가\n"
         f"       → '전체 승용차 기준 수출 증가율' 또는 '친환경차 기준 수출 증가율'로 명시해야 허용.\n"
         f"   - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.\n"
         f"3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.\n"
-        f"   [P7 — comparison 대칭 검증] comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우,\n"
+        f"   [comparison 대칭 검증] comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우,\n"
         f"   A의 X와 B의 X **양쪽 모두** 컨텍스트에 있는지 확인합니다.\n"
         f"   한쪽에만 있으면 속성 X를 질문에서 제거하거나 해당 대상만으로 범위를 축소하십시오.\n"
         f"   예) 경유 차량 전분기 추이 ✅, 휘발유 차량 전분기 추이 ❌\n"
@@ -551,6 +456,11 @@ def build_user_template(
         f"   - intent 유형(fact/comparison 등)이 달라도 동일 수치를 참조하면 중복입니다.\n"
         f"   - 예) 이미 \"중국 22.6%, 미국 13.3%\"를 묻는 질문이 있으면, 같은 수치로 비교를 묻는 질문도 금지.\n"
         f"   - 각 질문은 고유한 수치·팩트 조합을 가져야 합니다.\n"
+        f"6. [답변 자가 검토] 각 답변 초안을 완성한 후, 아래를 수행하십시오.\n"
+        f"   답변에 사용된 관계어·절차 표현·수식어·부사가 컨텍스트에 직접 존재하는지 하나씩 대조하십시오.\n"
+        f"   컨텍스트에 없는 표현은 즉시 삭제하거나 컨텍스트 원문 표현으로 대체하십시오.\n"
+        f"   예) '선행하고' → 컨텍스트에 없으면 삭제 / '원활하고 전문적인' → 컨텍스트에 없으면 삭제\n"
+        f"   예) '이를 근거로 병행하여' → 컨텍스트에 없으면 삭제\n"
         f"</plan_before_generate>\n"
         f"{intent_examples}\n"
         f"{emphasis}"
@@ -574,21 +484,26 @@ def build_user_template(
         f"- A와 B가 각각 언급되었더라도 A→B 관계가 명시되지 않으면 그 관계를 질문 요소로 사용 금지\n"
         f"- 문맥상 당연해 보이는 조건·이유도 직접 서술 근거 없이는 질문 요소로 사용 금지\n"
         f"- A 분류와 B 분류가 각각 독립적으로 존재해도, 교차 결합(A × B)이 명시되지 않으면 질문화 금지\n"
-        f"[comparison 대칭 검증 — P7]\n"
+        f"[comparison 대칭 검증]\n"
         f"- comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우, A의 X와 B의 X 모두 컨텍스트에 있는지 확인\n"
         f"- 한쪽에만 속성 X가 있으면: 속성 X를 질문에서 제거하거나 해당 대상만으로 범위 축소\n"
         f"  예) 경유 차량은 전분기 추이 있음, 휘발유 차량은 없음\n"
         f"    → '두 차량의 감소율 및 전분기 추이' 질문 금지 → '경유 차량만' 또는 '두 차량의 감소율만' 허용\n"
-        f"[purpose 생성 조건 — P3]\n"
+        f"[purpose 생성 조건]\n"
         f"- purpose 타입은 컨텍스트에 '~을 목적으로', '~을 위하여', '~하는 것을 목적', '~이유는', '~배경은' 등 명시적 목적 문구가 있는 경우에만 생성\n"
         f"- 조문·규정·항목에 목적이 명시되지 않은 경우 purpose 타입 생성 금지 (결과·효과에서 목적 추론 금지)\n"
-        f"[추론성 표현 금지 — P4]\n"
+        f"[추론성 표현 금지]\n"
         f"- 절차, 순서, 인과관계, 수식어를 컨텍스트 외에서 추론하지 말 것\n"
         f"- '선행하고', '병행하여', '원활하고 전문적인' 등 컨텍스트에 없는 관계·수식어 사용 금지\n"
-        f"[list 완전성 — P5]\n"
+        f"- 답변 초안의 관계어·수식어·부사 표현 하나하나가 컨텍스트에 직접 있는지 대조 후 제출할 것\n"
+        f"[답변 완전성 — 범주·항목 누락 금지]\n"
         f"- 컨텍스트에 '각 호', '다음과 같다', '다음 각 호', '①②③' 등 열거 표현이 있으면 모든 항목을 빠짐없이 포함\n"
         f"- 열거된 N개 중 일부만 포함하는 불완전 답변 생성 금지\n"
-        f"[comparison 답변 — 변화 방향 서술 — P2]\n"
+        f"- fact/how/condition 타입도 컨텍스트에 소제목·괄호 레이블로 구분된 복수 범주가 있으면 모든 범주를 포함할 것\n"
+        f"  예) '(정확성과 신뢰성)' + '(공정성과 윤리성)' 공존 → fact 답변도 두 범주 모두 서술\n"
+        f"- how/fact/condition 답변에서 컨텍스트에 구체 항목이 있으면 추상 표현으로 대체하지 말고 모두 열거할 것\n"
+        f"  예) 컨텍스트에 '프라이버시 보호', '거버넌스', '품질 모니터링 자동화' → 세 항목 모두 서술\n"
+        f"[comparison 답변 — 변화 방향 서술]\n"
         f"- comparison 타입 답변은 수치 나열에 그치지 말고, 컨텍스트에 근거한 변화 방향도 함께 서술\n"
         f"  예) 순위 비교: 'A국은 순위가 상승하였고, B국은 시장에서 이탈하였습니다.' 형태로 방향 포함\n"
         f"  예) 비중 비교: '2020년 15%에서 2023년 38%로 증가하였습니다.' 형태로 수치+방향 함께 제시\n"
@@ -617,89 +532,3 @@ def build_user_template(
         f"}}}}\n"
         f"</task>"
     )
-
-
-USER_TEMPLATE_EN_V1 = """<generation_guide>
-<intent_examples>
-  - fact (fact):        "What countries showed more than 100% surge in export volume in 2023?"
-  - purpose (purpose):   "What is the specific background and purpose for the introduction of this policy?" ← only when context contains explicit purpose markers ("in order to", "for the purpose of", etc.); inferring from article content is forbidden
-  - how (how):           "What are the step-by-step procedures and inclusions required when processing requests?"
-  - condition (condition): "What are the specific conditions and restrictions for utilizing alternative methods?"
-  - comparison (comparison): "How do the export performance trends of the Netherlands and Japan differ?"
-  - list (list):        "What are the items to be decided in this process, if listed in full?"
-</intent_examples>
-
-<selection_rule>
-Analyze the context first. Select only intent types with sufficient evidence.
-- fact + list combined must NOT exceed 40% of total QA
-- comparison must NOT exceed 40% of total QA (max 3 items)
-- Include at least 1 condition or comparison if evidence is present
-- how: include at least 1 if the context contains concrete methods, procedures, or criteria
-- fact: max 2 per chunk; list: max 1 per chunk
-- Total QA count: 2~6 based on context density (0 allowed if content is insufficient)
-- **Depth**: Connect at least 2 information elements within the same question dimension.
-- Forbidden: questions that return only a single value (date, number, name)
-</selection_rule>
-
-<groundedness_check>
-- State the explicitly described facts and evidence from context directly in all answers
-- Do NOT start answers with meta-expressions like "According to the context,"
-- Generate questions ONLY from explicitly stated content
-[Inference boundary — forbidden patterns]
-- Even if A and B each appear in the context, do NOT use their relationship (causal, sequential, conditional) as a question element unless the relationship is explicitly stated
-- Do NOT use conditions or reasons that seem obvious from the flow unless directly described in the context
-- Do NOT combine independent categories A and B into a cross-referenced concept (A × B) unless explicitly stated
-[Purpose generation condition — P3]
-- Generate purpose type ONLY when the context contains explicit purpose markers: "in order to", "for the purpose of", "the purpose is", "the reason is", "the background is"
-- If a statute or provision does not explicitly state a purpose, do NOT generate purpose type (inferring purpose from effects or results is forbidden)
-[Inference boundary — forbidden expressions — P4]
-- Use ONLY words and expressions explicitly present in the context
-- Do NOT infer procedures, sequences, causal relationships, or modifiers from context; forbidden examples: "preceding", "simultaneously based on this", "smoothly and professionally"
-[List completeness — P5]
-- If the context contains enumeration markers ("as follows", "each subparagraph", "the following", ①②③), include ALL listed items in the answer without omission
-- Do NOT generate answers covering only part of the enumerated items
-[Numeric category ambiguity — P8]
-- If the same subject and attribute have multiple values under different classification criteria in the context,
-  the question must specify which criterion it is asking about; otherwise treat as unmappable.
-  e.g., USA export growth: total +24.2% / eco-friendly +14.2% → "export growth rate" without specifying criterion is forbidden.
-[Comparison symmetry — P7]
-- When a comparison question asks for attribute X of both subjects A and B, verify BOTH have attribute X in the context.
-- If only A has attribute X: remove attribute X from the question or restrict scope to A only.
-  e.g., diesel vehicles have prior-quarter trend data, gasoline vehicles do not
-    → Forbidden: asking prior-quarter trends of BOTH → Allowed: ask only diesel, or ask decline rates of both
-[Comparison answers — change direction required — P2]
-- For comparison type answers, do NOT merely list numbers — also describe the direction of change if the context supports it.
-  e.g., rank comparison: "Country A rose in ranking while Country B exited the market."
-  e.g., share comparison: "Share increased from 15% in 2020 to 38% in 2023" — include both value and direction.
-- If the context does NOT explicitly state the direction of change, provide only the numbers without inferring direction.
-</groundedness_check>
-
-<tone_rule>
-- Questions: Use formal interrogative endings only (e.g., "~입니까?", "~합니까?")
-- Answers: Use formal declarative endings only (e.g., "~입니다.", "~합니다.")
-</tone_rule>
-</generation_guide>
-
-<category>{hierarchy}</category>
-
-<context>
-{text}
-</context>
-
-<task>
-Generate QA pairs using ONLY intent types supported by the context above.
-Include reasoning (evidence mapping and construction method) for each QA.
-Output ONLY pure JSON (no markdown code block):
-{{
-  "qa_list": [
-    {{
-      "q": "질문 텍스트",
-      "a": "답변 텍스트",
-      "intent": "fact|purpose|how|condition|comparison|list",
-      "reasoning": ["1) Mapping to context sentences/items — ...", "2) Question construction method — ..."],
-      "answerable": true
-    }},
-    ...
-  ]
-}}
-</task>"""
