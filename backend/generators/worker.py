@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Optional
@@ -99,6 +101,34 @@ def run_qa_generation(
             error=error_msg,
             message="Generation failed",
         )
+
+
+# ── 청크 간 중복 제거 ──────────────────────────────────────────────────────────
+
+def _dedup_across_chunks(results: list, sim_threshold: float = 0.75) -> tuple:
+    """병렬 생성된 청크 간 near-duplicate QA 제거.
+    반환: (수정된 results, 제거 건수)
+    """
+    def _normalize(text: str) -> str:
+        return re.sub(r'\s+', '', text).lower()
+
+    def _sim(a: str, b: str) -> float:
+        return SequenceMatcher(None, a, b).ratio()
+
+    seen: list = []
+    removed = 0
+    for result in results:
+        qa_list = result.get("qa_list", [])
+        kept = []
+        for qa in qa_list:
+            q_norm = _normalize(qa.get("q", ""))
+            if any(_sim(q_norm, s) >= sim_threshold for s in seen):
+                removed += 1
+            else:
+                seen.append(q_norm)
+                kept.append(qa)
+        result["qa_list"] = kept
+    return results, removed
 
 
 # ── 실제 생성 로직 ──────────────────────────────────────────────────────────────
@@ -351,7 +381,7 @@ async def run_qa_generation_real(
         try:
             chunk_type = item.get("metadata", {}).get("chunk_type", "body")
             sys_prompt = build_system_prompt(domain_profile, lang)
-            usr_template = build_user_template(domain_profile, chunk_type)
+            usr_template = build_user_template(domain_profile, chunk_type, total_chunks=len(items))
             result = _generate_qa(
                 item,
                 current_model,
@@ -380,7 +410,7 @@ async def run_qa_generation_real(
                     try:
                         chunk_type = item.get("metadata", {}).get("chunk_type", "body")
                         sys_prompt = build_system_prompt(domain_profile, lang)
-                        usr_template = build_user_template(domain_profile, chunk_type)
+                        usr_template = build_user_template(domain_profile, chunk_type, total_chunks=len(items))
                         result = _generate_qa(
                             item,
                             fallback,
@@ -449,6 +479,11 @@ async def run_qa_generation_real(
 
     if not results:
         raise Exception("No QA pairs were generated")
+
+    # ── 청크 간 near-duplicate 제거 ────────────────────────────────────────────
+    results, dedup_removed = _dedup_across_chunks(results)
+    if dedup_removed > 0:
+        logger.info(f"[{job_id}] 청크 간 중복 QA 제거: {dedup_removed}개")
 
     job_manager.update_job(job_id, progress=92, message="Saving results...")
 

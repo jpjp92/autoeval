@@ -7,6 +7,7 @@ generate_qa 핵심 함수 및 프로바이더별 API 호출 로직
 import os
 import json
 import logging
+import re
 from typing import Optional, Dict
 
 from config.models import MODEL_CONFIG, PROMPT_VERSION
@@ -20,6 +21,37 @@ from generators.prompts import (
 logger = logging.getLogger("autoeval.generator")
 
 _clients = {}
+
+
+def _extract_qa_list(raw: str) -> list:
+    """응답 텍스트에서 qa_list를 추출. 전문(前文) 설명이 포함된 경우에도 처리."""
+    text = raw.strip()
+
+    # 1) ```json ... ``` 또는 ``` ... ``` 블록 추출
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+    # 2) 직접 파싱 시도
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed.get("qa_list", [])
+        if isinstance(parsed, list):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # 3) 텍스트 안에 포함된 JSON 객체 추출 (Claude 전문 포함 대응)
+    match = re.search(r'\{[\s\S]*"qa_list"[\s\S]*\}', text)
+    if match:
+        try:
+            parsed = json.loads(match.group())
+            return parsed.get("qa_list", [])
+        except json.JSONDecodeError:
+            pass
+
+    logger.warning("JSON 파싱 실패 — 응답 앞 200자: %s", raw[:200])
+    return []
 
 
 def get_client(provider: str):
@@ -56,7 +88,7 @@ def generate_qa_anthropic(model_id: str, system_prompt: str, user_prompt: str) -
     try:
         response = client.messages.create(
             model=model_id,
-            max_tokens=2048,
+            max_tokens=8192,
             messages=[{"role": "user", "content": user_prompt}],
             system=system_prompt,
         )
@@ -65,14 +97,11 @@ def generate_qa_anthropic(model_id: str, system_prompt: str, user_prompt: str) -
     except _anthropic.AuthenticationError as e:
         raise APIAuthError(f"Anthropic API 키 인증 실패. ANTHROPIC_API_KEY를 확인하세요. ({e})")
 
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if response.stop_reason == "max_tokens":
+        logger.warning("Anthropic 응답이 max_tokens 한도로 잘림 — 파싱 실패 가능성 있음 (output_tokens=%d)", response.usage.output_tokens)
 
-    try:
-        qa_list = json.loads(raw).get("qa_list", [])
-    except json.JSONDecodeError:
-        qa_list = []
+    raw = response.content[0].text.strip()
+    qa_list = _extract_qa_list(raw)
 
     return {
         "raw": raw,
@@ -101,13 +130,7 @@ def generate_qa_google(model_id: str, system_prompt: str, user_prompt: str) -> D
         raise
 
     raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-
-    try:
-        qa_list = json.loads(raw).get("qa_list", [])
-    except json.JSONDecodeError:
-        qa_list = []
+    qa_list = _extract_qa_list(raw)
 
     return {
         "raw": raw,
@@ -138,13 +161,7 @@ def generate_qa_openai(model_id: str, system_prompt: str, user_prompt: str) -> D
         raise APIAuthError(f"OpenAI API 키 인증 실패. OPENAI_API_KEY를 확인하세요. ({e})")
 
     raw = response.choices[0].message.content.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-
-    try:
-        qa_list = json.loads(raw).get("qa_list", [])
-    except json.JSONDecodeError:
-        qa_list = []
+    qa_list = _extract_qa_list(raw)
 
     return {
         "raw": raw,

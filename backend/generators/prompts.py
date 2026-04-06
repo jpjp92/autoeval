@@ -110,6 +110,12 @@ SYSTEM_PROMPT_KO_V1 = """<role>
   계산 결과를 답변에 명시적으로 포함하십시오.
   예) 수출 158억, 수입 27억이 있고 "교역 금액의 차이"를 묻는 질문 → "131억 달러 차이"를 답변에 포함.
 - 단, 수치 중 하나라도 컨텍스트에 없으면 계산 결과를 생성하지 마십시오 (할루시네이션 방지).
+
+[comparison형 답변 — 변화 방향 서술 필수]
+- comparison 유형 답변은 수치 나열에 그치지 말고, 컨텍스트에 근거한 변화 방향도 함께 서술하십시오.
+  예) 순위 비교 시: "A국은 순위가 상승하였고, B국은 시장에서 이탈하였습니다."처럼 방향 변화를 포함.
+  예) 비중 비교 시: "2020년 15%에서 2023년 38%로 증가하였습니다."처럼 수치와 방향을 함께 제시.
+- 단, 컨텍스트에 변화 방향이 명시되지 않은 경우에는 수치만 서술하고 방향을 추론하지 마십시오.
 </constraints>"""
 
 SYSTEM_PROMPT_EN_V1 = """<role>
@@ -148,6 +154,8 @@ Select only types supported by the context — 6 types available:
 
   - fact (사실형):       Facts about applicability, requirements, effects, or scope
   - purpose (원인형):    Purpose, reason, or background of a concept, feature, or policy
+                        **Allowed only when** the context contains explicit purpose markers such as "in order to", "for the purpose of", "the purpose is", "the reason is", "the background is"
+                        **Forbidden**: inferring purpose from results, effects, or article content without an explicit purpose statement
   - how (방법형):        Concrete method, standard, or procedure for an action
   - condition (조건형):  Conditional branches, exceptions, or restrictions
   - comparison (비교형): Comparison of two or more subjects, roles, conditions, or methods
@@ -156,8 +164,10 @@ Select only types supported by the context — 6 types available:
 
 <diversity_rules>
 1. fact + list combined must NOT exceed 40% of total QA
-2. Include at least 1 condition or comparison if evidence is present
-3. Total QA count: 2~6 based on context density
+2. comparison must NOT exceed 40% of total QA (max 3 items even if many comparison targets exist)
+3. Include at least 1 condition or comparison if evidence is present
+4. how: if the context contains concrete methods, procedures, or criteria, include at least 1 how question
+5. Total QA count: 2~6 based on context density
 </diversity_rules>
 
 <constraints>
@@ -183,12 +193,28 @@ Select only types supported by the context — 6 types available:
   ("significantly", "sharply", "considerably", "markedly", "slightly" etc.).
   If no numeric data exists, describe direction only ("increased", "decreased") without degree adverbs.
   e.g., "exports increased significantly" → "exports increased by 24.4%"
+- If the context contains enumeration markers ("each subparagraph", "as follows", "the following", numbered lists ①②③, a.b.c.), include ALL enumerated items in the answer without omission. (P5)
+- Do NOT generate answers that cover only M out of N listed items when the context enumerates N items.
+
+[Inference Boundary — Forbidden Patterns] (P4)
+- Use ONLY words and expressions explicitly stated in the context.
+- Do NOT infer procedures, sequences, causal relationships, or modifiers outside the context.
+  Forbidden examples: "preceding", "simultaneously based on this", "smoothly and professionally", "submitted as an agenda item" — if absent from context, do NOT use.
+- Even if two facts each appear in the context, do NOT describe a relationship between them unless that relationship is explicitly stated.
 
 [Derived Calculations — MANDATORY]
 - If the context contains both numeric values AND the question asks for their difference, sum, or ratio,
   explicitly state the calculated result in the answer.
   e.g., exports=158B, imports=27B, question asks "difference in trade volume" → answer must include "131B difference".
 - If either value is absent from the context, do NOT calculate or estimate (hallucination prevention).
+
+[Comparison-type answers — change direction required]
+- For comparison (비교형) answers, do NOT merely list numbers — also describe the direction of change
+  if the context supports it.
+  e.g., for rank comparison: "Country A rose in ranking while Country B exited the market."
+  e.g., for share comparison: "Share increased from 15% in 2020 to 38% in 2023" — include both value and direction.
+- However, if the context does NOT explicitly state the direction of change, provide only the numbers
+  without inferring direction.
 </constraints>"""
 
 USER_TEMPLATE_KO_V1 = """<generation_guide>
@@ -226,7 +252,9 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
 <selection_rule>
 컨텍스트를 먼저 분석하여 근거가 있는 유형만 선택하세요.
 - fact + list 합산 40% 초과 금지
+- comparison 40% 초과 금지 (최대 3개)
 - condition 또는 comparison 중 1개 이상 포함 권장
+- how: 컨텍스트에 구체적 방법·절차·기준이 있으면 1개 이상 포함 권장
 - fact 최대 2개, list 최대 1개
 - 전체 QA 수: 컨텍스트 밀도 기반 2~6개 (내용 부족 시 0개 허용)
 - **Depth**: 동일 차원 내 2개 이상의 정보 요소를 결합하세요.
@@ -315,7 +343,8 @@ _CORE_PRINCIPLES_KO = """
   - fact (사실형):       대상·요건·효과·범위에 관한 사실 확인
                         (금지: 날짜·식별번호·연락처 단독 조회)
   - purpose (원인형):    어떤 개념·기능·정책의 목적·이유·배경
-                        (명시되었거나 효과로부터 유추 가능한 경우)
+                        **허용 조건**: 컨텍스트에 '~을 목적으로', '~을 위하여', '~하는 것을 목적', '~이유는', '~배경은' 등 명시적 목적 문구가 있는 경우에만 허용
+                        **금지**: 결과·효과·조문 내용에서 목적을 추론하는 것은 엄격히 금지
   - how (방법형):        특정 행위의 구체적 방법·기준·절차 (순서 있으면 단계 포함)
   - condition (조건형):  조건 분기·예외 처리·제한 사항 (조건문, 예외 규정, 금지·제한 포함)
   - comparison (비교형): 두 개 이상의 대상·역할·조건·방법을 비교 (비교 대상이 명시된 경우만)
@@ -342,6 +371,17 @@ _CORE_PRINCIPLES_KO = """
 [답변 스타일]
 - "컨텍스트에 따르면", "문서에 의하면" 등 메타 표현으로 시작 금지
 - 직접적인 사실 진술로 시작할 것
+
+[추론 경계 강화 — 금지 패턴] (P4)
+- 컨텍스트에 명시된 단어와 표현만 사용할 것
+- 절차·순서·인과관계·수식어를 컨텍스트 외에서 추론하지 말 것
+  금지 예시: "선행하고", "이를 근거로 병행하여", "원활하고 전문적인", "안건으로 상정하여" 등 컨텍스트에 없는 관계·수식어
+- 두 사실이 각각 존재하더라도, 그 관계(인과·선후·조건)가 명시되지 않으면 관계를 서술하지 말 것
+
+[답변 완전성 — 필수] (P5)
+- 컨텍스트에 '각 호', '다음과 같다', '다음 각 호', '①②③', '가.나.다.' 등 열거 표현이 있으면 모든 항목을 빠짐없이 포함할 것
+- 질문이 "어떠한", "무엇", "모두", "범위", "전체" 등 복수 항목을 암시하면 컨텍스트 내 모든 관련 항목을 포함할 것
+- 컨텍스트에 N개 항목이 있는데 M < N개만 언급하는 불완전 답변은 생성하지 말 것
 </constraints>"""
 
 
@@ -416,7 +456,7 @@ def _generate_intent_examples(domain_profile: dict) -> str:
     return (
         f"<intent_examples domain=\"{domain_short}\">\n"
         f'  - fact (사실형):       "{t0}의 적용 요건은 무엇입니까?", "{t0}을 사용할 수 있는 대상의 범위는 무엇입니까?"\n'
-        f'  - purpose (원인형):    "{t0}이 도입된 목적은 무엇입니까?", "왜 {t1}이 필요합니까?" ← 이유 명시된 경우만\n'
+        f'  - purpose (원인형):    "{t0}이 도입된 목적은 무엇입니까?", "왜 {t1}이 필요합니까?" ← 컨텍스트에 \'~을 목적으로\', \'~을 위하여\' 등 명시적 목적 문구가 있는 경우만 허용; 조문·항목 내용에서 추론 금지\n'
         f'  - how (방법형):        "{t1}를 처리하는 절차는 무엇입니까?", "{t0}을 적용하는 방법은 무엇입니까?" ← 절차 있을 때만\n'
         f'  - condition (조건형):  "{t0}을 사용할 수 있는 예외 조건은 무엇입니까?", "{t1}이 제한되는 경우는 무엇입니까?" ← 조건·예외 있을 때만\n'
         f'  - comparison (비교형): "두 {t0}의 역할은 어떻게 구분됩니까?", "{t0}과 {t1}의 차이는 무엇입니까?" ← 비교 대상 명시된 경우만\n'
@@ -426,10 +466,17 @@ def _generate_intent_examples(domain_profile: dict) -> str:
 
 
 def build_user_template(
-    domain_profile: dict, chunk_type: str = "body", n_qa: int = 8, min_qa: int = 4
+    domain_profile: dict, chunk_type: str = "body", total_chunks: int = 10
 ) -> str:
     """chunk_type에 따라 intent 가중치를 조정한 유저 템플릿 반환.
     반환값은 .format(hierarchy=..., text=...)으로 채워서 사용."""
+    # 청크 수가 적을수록 상한 축소 — 청크 간 내용 중복 방지
+    if total_chunks <= 3:
+        n_qa, min_qa = 3, 2
+    elif total_chunks <= 7:
+        n_qa, min_qa = 4, 2
+    else:
+        n_qa, min_qa = 6, 2
     intent_hints = domain_profile.get("intent_hints", {})
     recommended = intent_hints.get(chunk_type, ["fact", "purpose", "how"])
 
@@ -470,9 +517,11 @@ def build_user_template(
         f"컨텍스트를 먼저 분석하여 근거가 있는 유형만 선택하세요.\n"
         f"근거가 없는 유형은 건너뛰고, 근거 있는 다른 유형으로 대체합니다.\n"
         f"- fact + list 합산 40% 초과 금지\n"
+        f"- comparison 40% 초과 금지 (최대 3개)\n"
         f"- condition 또는 comparison 중 1개 이상 포함 권장 (조건·비교 근거 있으면 필수)\n"
+        f"- how: 컨텍스트에 구체적 방법·절차·기준이 있으면 1개 이상 포함 권장\n"
         f"- fact 최대 2개, list 최대 1개\n"
-        f"- 전체 QA 수: 컨텍스트 밀도 기반 2~6개 (내용 부족 시 0개 허용)\n"
+        f"- 전체 QA 수: 컨텍스트 밀도 기반 {min_qa}~{n_qa}개 (내용 부족 시 0개 허용)\n"
         f"- 단순 값 1개만 반환하는 질문(날짜·번호·명칭) 생성 금지\n"
         f"</selection_rule>\n"
         f"<groundedness_check>\n"
@@ -484,6 +533,20 @@ def build_user_template(
         f"- A와 B가 각각 언급되었더라도 A→B 관계가 명시되지 않으면 그 관계를 질문 요소로 사용 금지\n"
         f"- 문맥상 당연해 보이는 조건·이유도 직접 서술 근거 없이는 질문 요소로 사용 금지\n"
         f"- A 분류와 B 분류가 각각 독립적으로 존재해도, 교차 결합(A × B)이 명시되지 않으면 질문화 금지\n"
+        f"[purpose 생성 조건 — P3]\n"
+        f"- purpose 타입은 컨텍스트에 '~을 목적으로', '~을 위하여', '~하는 것을 목적', '~이유는', '~배경은' 등 명시적 목적 문구가 있는 경우에만 생성\n"
+        f"- 조문·규정·항목에 목적이 명시되지 않은 경우 purpose 타입 생성 금지 (결과·효과에서 목적 추론 금지)\n"
+        f"[추론성 표현 금지 — P4]\n"
+        f"- 절차, 순서, 인과관계, 수식어를 컨텍스트 외에서 추론하지 말 것\n"
+        f"- '선행하고', '병행하여', '원활하고 전문적인' 등 컨텍스트에 없는 관계·수식어 사용 금지\n"
+        f"[list 완전성 — P5]\n"
+        f"- 컨텍스트에 '각 호', '다음과 같다', '다음 각 호', '①②③' 등 열거 표현이 있으면 모든 항목을 빠짐없이 포함\n"
+        f"- 열거된 N개 중 일부만 포함하는 불완전 답변 생성 금지\n"
+        f"[comparison 답변 — 변화 방향 서술 — P2]\n"
+        f"- comparison 타입 답변은 수치 나열에 그치지 말고, 컨텍스트에 근거한 변화 방향도 함께 서술\n"
+        f"  예) 순위 비교: 'A국은 순위가 상승하였고, B국은 시장에서 이탈하였습니다.' 형태로 방향 포함\n"
+        f"  예) 비중 비교: '2020년 15%에서 2023년 38%로 증가하였습니다.' 형태로 수치+방향 함께 제시\n"
+        f"- 단, 컨텍스트에 변화 방향이 명시되지 않은 경우 수치만 서술하고 방향 추론 금지\n"
         f"</groundedness_check>\n"
         f"<tone_rule>\n"
         f'- 질문 어미: 격식체 의문형만 허용 (예: "~입니까?", "~합니까?", "~됩니까?", "~있습니까?")\n'
@@ -513,7 +576,7 @@ def build_user_template(
 USER_TEMPLATE_EN_V1 = """<generation_guide>
 <intent_examples>
   - fact (fact):        "What countries showed more than 100% surge in export volume in 2023?"
-  - purpose (purpose):   "What is the specific background and purpose for the introduction of this policy?"
+  - purpose (purpose):   "What is the specific background and purpose for the introduction of this policy?" ← only when context contains explicit purpose markers ("in order to", "for the purpose of", etc.); inferring from article content is forbidden
   - how (how):           "What are the step-by-step procedures and inclusions required when processing requests?"
   - condition (condition): "What are the specific conditions and restrictions for utilizing alternative methods?"
   - comparison (comparison): "How do the export performance trends of the Netherlands and Japan differ?"
@@ -523,16 +586,37 @@ USER_TEMPLATE_EN_V1 = """<generation_guide>
 <selection_rule>
 Analyze the context first. Select only intent types with sufficient evidence.
 - fact + list combined must NOT exceed 40% of total QA
+- comparison must NOT exceed 40% of total QA (max 3 items)
 - Include at least 1 condition or comparison if evidence is present
+- how: include at least 1 if the context contains concrete methods, procedures, or criteria
 - fact: max 2 per chunk; list: max 1 per chunk
 - Total QA count: 2~6 based on context density (0 allowed if content is insufficient)
 - **Depth**: Connect at least 2 information elements within the same question dimension.
+- Forbidden: questions that return only a single value (date, number, name)
 </selection_rule>
 
 <groundedness_check>
 - State the explicitly described facts and evidence from context directly in all answers
 - Do NOT start answers with meta-expressions like "According to the context,"
 - Generate questions ONLY from explicitly stated content
+[Inference boundary — forbidden patterns]
+- Even if A and B each appear in the context, do NOT use their relationship (causal, sequential, conditional) as a question element unless the relationship is explicitly stated
+- Do NOT use conditions or reasons that seem obvious from the flow unless directly described in the context
+- Do NOT combine independent categories A and B into a cross-referenced concept (A × B) unless explicitly stated
+[Purpose generation condition — P3]
+- Generate purpose type ONLY when the context contains explicit purpose markers: "in order to", "for the purpose of", "the purpose is", "the reason is", "the background is"
+- If a statute or provision does not explicitly state a purpose, do NOT generate purpose type (inferring purpose from effects or results is forbidden)
+[Inference boundary — forbidden expressions — P4]
+- Use ONLY words and expressions explicitly present in the context
+- Do NOT infer procedures, sequences, causal relationships, or modifiers from context; forbidden examples: "preceding", "simultaneously based on this", "smoothly and professionally"
+[List completeness — P5]
+- If the context contains enumeration markers ("as follows", "each subparagraph", "the following", ①②③), include ALL listed items in the answer without omission
+- Do NOT generate answers covering only part of the enumerated items
+[Comparison answers — change direction required — P2]
+- For comparison type answers, do NOT merely list numbers — also describe the direction of change if the context supports it.
+  e.g., rank comparison: "Country A rose in ranking while Country B exited the market."
+  e.g., share comparison: "Share increased from 15% in 2020 to 38% in 2023" — include both value and direction.
+- If the context does NOT explicitly state the direction of change, provide only the numbers without inferring direction.
 </groundedness_check>
 
 <tone_rule>

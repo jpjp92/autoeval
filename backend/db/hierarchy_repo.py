@@ -12,7 +12,8 @@ logger = logging.getLogger("autoeval.db")
 
 
 # QA 생성에 필요한 최소 청크 수 — 이 값 미만의 h3/h2는 드롭다운에 노출하지 않음
-MIN_CHUNKS_FOR_QA = 2
+# 법률 문서처럼 조문 단위 청크(1개/조문)가 많은 문서도 카테고리 표시 가능하도록 1로 설정
+MIN_CHUNKS_FOR_QA = 1
 # QA 생성에 필요한 최소 콘텐츠 길이(자) — 노드 내 총 텍스트가 이 값 미만이면 드롭다운에서 제외
 MIN_CONTENT_CHARS = 300
 
