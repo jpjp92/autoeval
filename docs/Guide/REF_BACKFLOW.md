@@ -1,3 +1,8 @@
+<!--
+파일: REF_BACKFLOW.md
+설명: FastAPI 백엔드 진입점(main.py)부터 Ingestion·Generation·Evaluation API 라우팅 흐름 정리. 각 엔드포인트 요청/응답 구조 및 주요 처리 단계 포함.
+업데이트: 2026-04-06
+-->
 # Backend Flow
 
 > 마지막 업데이트: 2026-04-06

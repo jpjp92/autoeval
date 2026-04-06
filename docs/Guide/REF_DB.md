@@ -1,3 +1,8 @@
+<!--
+파일: REF_DB.md
+설명: Supabase(PostgreSQL + pgvector) DB 스키마 정의. 테이블 구조(doc_metadata·doc_chunks·qa_generation_results·qa_evaluation_scores), FK 관계, 인덱스, RPC 함수 목록 포함.
+업데이트: 2026-04-06
+-->
 # DB Schema
 
 > **최종 업데이트**: 2026-04-06 — Option B FK 마이그레이션 완료 / 스키마 정확도 검증

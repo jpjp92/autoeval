@@ -1,3 +1,8 @@
+<!--
+파일: REF_DEPLOYUSE.md
+설명: Render(FastAPI 백엔드) + Vercel(React 프론트엔드) 프로덕션 배포 환경 설정 가이드. 환경변수, Dockerfile 경로, 빌드 명령, Supabase 연동 설정 포함.
+업데이트: 2026-04-06
+-->
 # 배포 가이드 (Render + Vercel)
 
 ## 구성 개요

@@ -1,3 +1,8 @@
+<!--
+파일: REF_RAG.md
+설명: 문서 인제스션(PDF/DOCX 추출 → LLM/Rule 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색) → 평가 파이프라인 전체 흐름 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함.
+업데이트: 2026-04-06
+-->
 # AutoEval RAG Pipeline
 
 > 문서 업로드부터 벡터 검색 기반 QA 생성·평가까지의 전체 흐름 정리
@@ -127,7 +132,17 @@
 | 프롬프트      | `SYSTEM_PROMPT` (noise_correction 포함) | `DOCX_SYSTEM_PROMPT` (noise_correction 제거) |
 | 파라미터 기준 | 페이지 수 (`recommend_params`)          | 블록 수 (`recommend_params_docx`)            |
 
-#### 배치 티어 정책 (DOCX 기준)
+#### 배치 티어 정책 (PDF 기준 — `recommend_params`)
+
+| 티어 | 페이지 수  | batch_size | parallel | overlap | max_output_tokens |
+| ---- | ---------- | ---------- | -------- | ------- | ----------------- |
+| S    | ≤ 20      | 30         | 3        | 3       | 8192              |
+| M    | 21–50     | 30         | 3        | 3       | 8192              |
+| L    | 51–100    | 40         | 5        | 3       | 12288             |
+| XL   | 101–200   | 50         | 5        | 5       | 16384             |
+| XXL  | 200+       | 50         | 5        | 5       | 16384             |
+
+#### 배치 티어 정책 (DOCX 기준 — `recommend_params_docx`)
 
 | 티어 | 블록 수  | batch_size | parallel | overlap |
 | ---- | -------- | ---------- | -------- | ------- |
@@ -170,6 +185,10 @@ SHA-1 content_hash      # 완전 중복 → 제거
 실제 청크 내용 ...
 ```
 
+> **경로별 context_prefix 차이**:
+> - **Rule 청킹** (`ingest_with_rule_chunking`): `build_context_prefix()` 호출 → `text = prefix + raw_text`, `raw_text` 별도 보존. 임베딩 입력에 prefix 포함.
+> - **LLM 청킹** (`ingest_with_llm_chunking`): context_prefix **미부착** → `text == raw_text`. 임베딩은 원문 그대로 저장.
+
 ---
 
 ## Stage 4 — 임베딩 & 벡터 저장
@@ -208,15 +227,12 @@ doc_chunks (
 
 ```json
 {
-  "document_id":    "uuid",
   "filename":       "문서명.pdf",
   "page":           3,
   "chunk_index":    12,
   "total_chunks":   45,
   "chunk_type":     "paragraph | table | heading | ...",
   "section_title":  "1.2 시스템 구성",
-  "section_path":   "1. 개요 > 1.2 시스템 구성",
-  "section_level":  2,
   "char_length":    412,
   "content_hash":   "sha1hex",
   "hierarchy_h1":   "AI 기본법",
@@ -228,6 +244,9 @@ doc_chunks (
   "source":         "pdf | docx"
 }
 ```
+
+> **주의**: `document_id`는 metadata jsonb가 아닌 `doc_chunks.document_id` 별도 컬럼으로 저장.
+> `section_path`, `section_level`은 현재 코드에서 생성하지 않음.
 
 ---
 
@@ -249,16 +268,36 @@ POST /api/ingestion/apply-granular-tagging
   └─ 전체 청크 metadata.hierarchy_h1/h2/h3 일괄 업데이트
 ```
 
+### 재인제스션 시 구버전 처리
+
+`get_hierarchy_list()` 조회 시 동일 filename의 **최신 `document_id`만 사용**. 재인제스션 후 구버전 청크의 H1이 드롭다운에 누적되는 현상 방지.
+
+```python
+# hierarchy_repo.py 내 로직
+# filename → (document_id, ingested_at) 매핑에서 ingested_at 최신 것만 유지
+latest_doc_ids: dict[str, tuple[str, str]] = {}
+for chunk in chunks:
+    if fn and did:
+        prev = latest_doc_ids.get(fn)
+        if prev is None or iat > prev[1]:
+            latest_doc_ids[fn] = (did, iat)
+```
+
 ### 드롭다운 노출 필터 (`hierarchy_repo.py`)
 
 계층 선택 UI에서 QA 생성 불가 노드 사전 제거:
 
 ```python
-MIN_CHUNKS_FOR_QA = 2     # 청크 수 < 2 → 제외
+MIN_CHUNKS_FOR_QA = 1     # 법률 문서 조문 단위(1개/조문) 허용을 위해 1로 설정
 MIN_CONTENT_CHARS = 300   # 총 텍스트 < 300자 → 제외
 ```
 
-두 조건 모두 충족해야 드롭다운 노출.
+**필터 조건 (h2/h3 계층별 상이)**:
+- h3: 청크 수 < MIN_CHUNKS_FOR_QA **AND** 총 chars < MIN_CONTENT_CHARS → 둘 다 미달일 때만 제외
+- h2 (독립 존재 시): 청크 수 >= MIN_CHUNKS_FOR_QA **OR** chars >= MIN_CONTENT_CHARS → 하나만 충족해도 노출
+- h1: 유효한 h2가 하나도 없으면 제외
+
+→ 단순히 청크 1개라도 있거나 텍스트가 충분하면 노출. 통계 문서처럼 표 데이터 위주(짧지만 의미 있는) 청크도 포함.
 
 ---
 
@@ -349,8 +388,12 @@ backend/
 │   ├── ingestion_api.py       # 업로드·계층 분석 엔드포인트
 │   └── generation_api.py      # QA 생성·벡터 검색
 ├── ingestion/
-│   ├── parsers.py             # PDF/DOCX 추출, 전처리, rule 청킹
-│   └── llm_chunker.py         # Gemini 기반 LLM 청킹 (PDF/DOCX 분기)
+│   ├── pipeline.py            # 청킹 → 임베딩 → Supabase 저장 오케스트레이터
+│   ├── chunker.py             # LLM/Rule 청킹 경로 분기, 공통 필터 적용
+│   ├── parsers.py             # PDF/DOCX 추출, 전처리, rule 청킹 유틸
+│   ├── llm_chunker.py         # Gemini 기반 LLM 청킹 (PDF/DOCX 분기)
+│   ├── tagging.py             # 청크 hierarchy 태깅 핵심 로직 (run_tagging)
+│   └── prompts.py             # 계층 분석·태깅용 LLM 프롬프트
 ├── evaluators/
 │   ├── pipeline.py            # 4-Layer 평가 오케스트레이터
 │   ├── rag_triad.py           # RAG Triad 평가

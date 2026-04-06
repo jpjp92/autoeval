@@ -1,3 +1,8 @@
+<!--
+파일: REF_DOCKERUSE.md
+설명: Docker Compose 기반 로컬/프로덕션 개발환경 구성 가이드. docker-compose.yml·dev 차이, 백엔드·프론트엔드 Dockerfile 구조, nginx 프록시 설정, 환경변수 관리 포함.
+업데이트: 2026-04-06
+-->
 # Docker 구성
 
 ## 파일 구조
