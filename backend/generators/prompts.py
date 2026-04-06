@@ -216,6 +216,14 @@ Select only types supported by the context — 6 types available:
 - However, if the context does NOT explicitly state the direction of change, provide only the numbers
   without inferring direction.
 
+[Numeric category ambiguity — P8]
+- If the context contains multiple values for the same subject and attribute under different classification criteria
+  (e.g., total vs. eco-friendly vehicles, amount vs. share, export vs. import), the question MUST specify which criterion is being asked.
+  If the question does not specify the criterion, treat it as unmappable and do NOT generate it.
+  e.g., USA export growth rate: total vehicles +24.2% / eco-friendly +14.2% both present in context
+    → Forbidden: "What is the export growth rate of the USA?" (criterion unspecified)
+    → Allowed: "What is the export growth rate of the USA for total passenger vehicles?" (criterion specified)
+
 [Comparison symmetry — P7]
 - When a comparison question asks for the same attribute X of two subjects (A and B),
   verify that attribute X exists in the context for BOTH A and B.
@@ -240,6 +248,9 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
    - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.
      예) 컨텍스트에 "2024년 1월" 수치만 있으면 "2023년 1월"을 묻는 요소는 매핑 불가로 처리.
    - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.
+   - [P8 — 수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중, 수출 vs 수입 등)의 수치가 복수 존재하는 경우, 질문에 어떤 기준인지 명시하지 않으면 매핑 불가로 처리합니다.
+     예) 미국 수출 증가율: 전체 승용차 +24.2% / 친환경차 +14.2% 공존
+       → "미국의 수출 증가율" 단독 질문 불가 → "전체 승용차 기준 수출 증가율" 또는 "친환경차 기준 수출 증가율"로 명시해야 허용.
    - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.
      예) "밑줄 표시된 수치가 역대 최대"라는 기준이 있어도, 어느 수치에 밑줄이 있는지는 확인 불가.
 3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.
@@ -490,12 +501,13 @@ def build_user_template(
     """chunk_type에 따라 intent 가중치를 조정한 유저 템플릿 반환.
     반환값은 .format(hierarchy=..., text=...)으로 채워서 사용."""
     # 청크 수가 적을수록 상한 축소 — 청크 간 내용 중복 방지
+    # 통계 문서처럼 배기량 구간별 유사 청크가 많은 경우 near_duplicate 억제를 위해 한 단계 낮춤
     if total_chunks <= 3:
-        n_qa, min_qa = 3, 2
+        n_qa, min_qa = 2, 1
     elif total_chunks <= 7:
-        n_qa, min_qa = 4, 2
+        n_qa, min_qa = 3, 2
     else:
-        n_qa, min_qa = 6, 2
+        n_qa, min_qa = 5, 2
     intent_hints = domain_profile.get("intent_hints", {})
     recommended = intent_hints.get(chunk_type, ["fact", "purpose", "how"])
 
@@ -522,6 +534,10 @@ def build_user_template(
         f"2. 각 질문 후보의 구성 요소별로 컨텍스트 문장에 매핑 가능한지 확인합니다.\n"
         f"   - 날짜가 포함된 요소는 연도·분기·월 단위까지 정확히 일치하는 데이터가 있는지 확인하십시오.\n"
         f"   - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.\n"
+        f"   - [P8 — 수치 카테고리 중의성] 동일 대상·동일 속성에 대해 서로 다른 분류 기준(전체 vs 친환경차, 금액 vs 비중 등)의 수치가 복수 존재하면,\n"
+        f"     질문에 어떤 기준인지 명시하지 않으면 매핑 불가로 처리합니다.\n"
+        f"     예) 미국 수출 증가율: 전체 +24.2% / 친환경차 +14.2% 공존 → '수출 증가율' 단독 질문 불가\n"
+        f"       → '전체 승용차 기준 수출 증가율' 또는 '친환경차 기준 수출 증가율'로 명시해야 허용.\n"
         f"   - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.\n"
         f"3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.\n"
         f"   [P7 — comparison 대칭 검증] comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우,\n"
@@ -642,6 +658,10 @@ Analyze the context first. Select only intent types with sufficient evidence.
 [List completeness — P5]
 - If the context contains enumeration markers ("as follows", "each subparagraph", "the following", ①②③), include ALL listed items in the answer without omission
 - Do NOT generate answers covering only part of the enumerated items
+[Numeric category ambiguity — P8]
+- If the same subject and attribute have multiple values under different classification criteria in the context,
+  the question must specify which criterion it is asking about; otherwise treat as unmappable.
+  e.g., USA export growth: total +24.2% / eco-friendly +14.2% → "export growth rate" without specifying criterion is forbidden.
 [Comparison symmetry — P7]
 - When a comparison question asks for attribute X of both subjects A and B, verify BOTH have attribute X in the context.
 - If only A has attribute X: remove attribute X from the question or restrict scope to A only.
