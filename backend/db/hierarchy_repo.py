@@ -26,13 +26,11 @@ async def get_hierarchy_list(filename: Optional[str] = None, filter_for_qa: bool
     filter_for_qa=True (기본): QA 생성 드롭다운용 — MIN_CHUNKS_FOR_QA + MIN_CONTENT_CHARS 필터 적용
     filter_for_qa=False       : 표시용 (Documents 카테고리 구조 트리) — 필터 없이 태깅된 노드 전부 반환
 
-    QA 생성에 충분하지 않은 계층(청크 수 < MIN_CHUNKS_FOR_QA)은 제외.
-    - h3: 해당 (h1, h2, h3) 조합의 청크 수가 MIN_CHUNKS_FOR_QA 미만이면 제외
-    - h2: 유효한 h3가 없고 (h1, h2) 조합의 총 청크 수도 MIN_CHUNKS_FOR_QA 미만이면 제외
+    QA 생성에 충분하지 않은 계층은 제외 (청크 수 AND 길이 둘 다 미달인 경우에만).
+    - h3: 청크 수 < MIN_CHUNKS_FOR_QA AND 총 chars < MIN_CONTENT_CHARS 일 때 제외
+    - h2: h3 없이 독립 존재하는 경우, 청크 수 >= MIN_CHUNKS_FOR_QA OR chars >= MIN_CONTENT_CHARS 이면 유지
     - h1: 유효한 h2가 하나도 없으면 제외
-
-    MIN_CHUNKS_FOR_QA=2: 1청크 단독 노드는 제외하되, 소규모 문서(13청크/4H1 등)도
-    대부분의 계층이 표시될 수 있도록 임계값을 낮게 유지.
+    - 통계 문서처럼 표 데이터 위주 청크(짧지만 의미 있는)도 노드가 1개 이상이면 노출.
 
     Returns:
         {
@@ -105,7 +103,7 @@ async def get_hierarchy_list(filename: Optional[str] = None, filter_for_qa: bool
 
         for (h1, h2, h3), cnt in h3_counts.items():
             chars = h3_chars[(h1, h2, h3)]
-            if filter_for_qa and (cnt < MIN_CHUNKS_FOR_QA or chars < MIN_CONTENT_CHARS):
+            if filter_for_qa and (cnt < MIN_CHUNKS_FOR_QA and chars < MIN_CONTENT_CHARS):
                 logger.debug(
                     f"h3 excluded (chunks={cnt}, chars={chars}): {h1} > {h2} > {h3}"
                 )
@@ -126,7 +124,7 @@ async def get_hierarchy_list(filename: Optional[str] = None, filter_for_qa: bool
             chars = h2_chars[(h1, h2)]
             if h1 not in h2_by_h1:
                 h2_by_h1[h1] = set()
-            qa_ok = (cnt >= MIN_CHUNKS_FOR_QA and chars >= MIN_CONTENT_CHARS)
+            qa_ok = (cnt >= MIN_CHUNKS_FOR_QA or chars >= MIN_CONTENT_CHARS)
             if not filter_for_qa or qa_ok:
                 h2_by_h1[h1].add(h2)
 
@@ -136,7 +134,7 @@ async def get_hierarchy_list(filename: Optional[str] = None, filter_for_qa: bool
         if filter_for_qa and filtered_h3_total:
             logger.info(
                 f"Hierarchy filtered: {filtered_h3_total} h3 node(s) excluded "
-                f"(chunk count < {MIN_CHUNKS_FOR_QA} or chars < {MIN_CONTENT_CHARS}) "
+                f"(chunk count < {MIN_CHUNKS_FOR_QA} and chars < {MIN_CONTENT_CHARS}) "
                 f"(filename={filename!r})"
             )
 

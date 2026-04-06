@@ -1,7 +1,7 @@
 """
 QA Generation Prompts
 System prompts와 User templates 정의
-(config/prompts.py에서 이동 — generators 패키지 소속)
+(generators 모듈 소속)
 """
 
 SYSTEM_PROMPT_KO_V1 = """<role>
@@ -215,6 +215,16 @@ Select only types supported by the context — 6 types available:
   e.g., for share comparison: "Share increased from 15% in 2020 to 38% in 2023" — include both value and direction.
 - However, if the context does NOT explicitly state the direction of change, provide only the numbers
   without inferring direction.
+
+[Comparison symmetry — P7]
+- When a comparison question asks for the same attribute X of two subjects (A and B),
+  verify that attribute X exists in the context for BOTH A and B.
+- If attribute X is present for only one subject:
+  → Remove attribute X from the question scope, OR restrict the question to the subject that has the data.
+  e.g., gasoline vehicles: no prior-quarter trend data; diesel vehicles: prior-quarter trend data ✅
+    → Forbidden: "What are the decline rates and prior-quarter trends of both gasoline and diesel vehicles?"
+    → Allowed: "What is the decline rate and prior-quarter trend of diesel vehicles?"
+             OR "What are the decline rates of both vehicle types?"
 </constraints>"""
 
 USER_TEMPLATE_KO_V1 = """<generation_guide>
@@ -275,6 +285,15 @@ QA 생성 전, 아래 4단계를 내부적으로 수행하세요:
   컨텍스트에 명시되지 않으면 그 교집합을 질문화하지 마십시오.
   예) "친환경차 종류별"과 "배기량별"이 각각 독립 표로 있어도,
       "친환경차 배기량별" 교차 분류는 컨텍스트에 없으면 질문 금지.
+
+[comparison 대칭 검증 — P7]
+- comparison 질문에서 두 대상(A, B)에 동일 속성 X를 함께 묻는 경우,
+  A의 속성 X와 B의 속성 X 모두 컨텍스트에 존재하는지 확인하십시오.
+- 한쪽(예: A)에만 속성 X가 있고 다른 쪽(B)에 없으면:
+  → 속성 X를 질문에서 제거하거나, B를 제외하고 A만으로 범위를 축소하십시오.
+  예) 경유 차량은 "전분기 추이" 데이터 있음, 휘발유 차량은 없음
+    → "두 차량의 감소율 및 전분기 추이"를 묻는 질문 생성 금지
+    → "경유 차량의 감소율 및 전분기 추이" 또는 "두 차량의 감소율"만 질문 가능
 </groundedness_check>
 
 <tone_rule>
@@ -505,6 +524,12 @@ def build_user_template(
         f"   - 필드명이 같더라도 날짜·기간이 다르면 별개의 데이터로 취급합니다.\n"
         f"   - 시각적 포맷(밑줄, 볼드, 색상, 기호 등)에 의존하는 정보는 텍스트 변환 후 소실되므로 매핑 불가로 처리합니다.\n"
         f"3. 매핑 불가 요소가 포함된 질문은 해당 요소를 제거하거나 질문 전체를 폐기합니다.\n"
+        f"   [P7 — comparison 대칭 검증] comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우,\n"
+        f"   A의 X와 B의 X **양쪽 모두** 컨텍스트에 있는지 확인합니다.\n"
+        f"   한쪽에만 있으면 속성 X를 질문에서 제거하거나 해당 대상만으로 범위를 축소하십시오.\n"
+        f"   예) 경유 차량 전분기 추이 ✅, 휘발유 차량 전분기 추이 ❌\n"
+        f"     → '두 차량의 감소율 및 전분기 추이' 질문 금지\n"
+        f"     → '경유 차량의 감소율 및 전분기 추이' 또는 '두 차량의 감소율' 로 축소 허용\n"
         f"4. 모든 요소가 컨텍스트에 근거가 있는 질문만 최종 확정합니다.\n"
         f"5. 이미 확정된 질문들과 핵심 수치·팩트가 1개라도 겹치면 중복으로 처리하고 생성하지 마십시오.\n"
         f"   - intent 유형(fact/comparison 등)이 달라도 동일 수치를 참조하면 중복입니다.\n"
@@ -533,6 +558,11 @@ def build_user_template(
         f"- A와 B가 각각 언급되었더라도 A→B 관계가 명시되지 않으면 그 관계를 질문 요소로 사용 금지\n"
         f"- 문맥상 당연해 보이는 조건·이유도 직접 서술 근거 없이는 질문 요소로 사용 금지\n"
         f"- A 분류와 B 분류가 각각 독립적으로 존재해도, 교차 결합(A × B)이 명시되지 않으면 질문화 금지\n"
+        f"[comparison 대칭 검증 — P7]\n"
+        f"- comparison 질문에서 두 대상(A, B)에 동일 속성 X를 묻는 경우, A의 X와 B의 X 모두 컨텍스트에 있는지 확인\n"
+        f"- 한쪽에만 속성 X가 있으면: 속성 X를 질문에서 제거하거나 해당 대상만으로 범위 축소\n"
+        f"  예) 경유 차량은 전분기 추이 있음, 휘발유 차량은 없음\n"
+        f"    → '두 차량의 감소율 및 전분기 추이' 질문 금지 → '경유 차량만' 또는 '두 차량의 감소율만' 허용\n"
         f"[purpose 생성 조건 — P3]\n"
         f"- purpose 타입은 컨텍스트에 '~을 목적으로', '~을 위하여', '~하는 것을 목적', '~이유는', '~배경은' 등 명시적 목적 문구가 있는 경우에만 생성\n"
         f"- 조문·규정·항목에 목적이 명시되지 않은 경우 purpose 타입 생성 금지 (결과·효과에서 목적 추론 금지)\n"
@@ -612,6 +642,11 @@ Analyze the context first. Select only intent types with sufficient evidence.
 [List completeness — P5]
 - If the context contains enumeration markers ("as follows", "each subparagraph", "the following", ①②③), include ALL listed items in the answer without omission
 - Do NOT generate answers covering only part of the enumerated items
+[Comparison symmetry — P7]
+- When a comparison question asks for attribute X of both subjects A and B, verify BOTH have attribute X in the context.
+- If only A has attribute X: remove attribute X from the question or restrict scope to A only.
+  e.g., diesel vehicles have prior-quarter trend data, gasoline vehicles do not
+    → Forbidden: asking prior-quarter trends of BOTH → Allowed: ask only diesel, or ask decline rates of both
 [Comparison answers — change direction required — P2]
 - For comparison type answers, do NOT merely list numbers — also describe the direction of change if the context supports it.
   e.g., rank comparison: "Country A rose in ranking while Country B exited the market."
