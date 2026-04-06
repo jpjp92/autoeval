@@ -1,29 +1,30 @@
 # PROMPTS.md — 백엔드 프롬프트 목록
 
-> 마지막 업데이트: 2026-03-31
+> 마지막 업데이트: 2026-04-06
 > 백엔드에서 LLM을 호출하는 모든 프롬프트를 파이프라인 단계 순서로 정리.
+> P1~P8 패치 적용 현황 포함 — 파일 하단 "패치 현황" 섹션 참고.
 
 ---
 
 ## 목차
 
-| # | 단계 | 파일 | 모델 |
-|---|------|------|------|
-| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile) | `ingestion_api.py` | Gemini 3 Flash |
-| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 3 Flash |
-| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 3 Flash |
-| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | 설정 모델 (기본 GPT) |
-| 5 | QA 생성 — System Prompt (Static KO v1) | `prompts.py` | 생성 모델 |
-| 6 | QA 생성 — System Prompt (Static EN v1) | `prompts.py` | 생성 모델 |
-| 7 | QA 생성 — System Prompt (Adaptive, Domain-Aware) | `prompts.py` | 생성 모델 |
-| 8 | QA 생성 — User Template (Static KO v1) | `prompts.py` | 생성 모델 |
-| 9 | QA 생성 — User Template (Static EN v1) | `prompts.py` | 생성 모델 |
-| 10 | QA 생성 — User Template (Adaptive) | `prompts.py` | 생성 모델 |
-| 11 | 평가 Layer 2 — RAG Triad (통합, 권장 경로) | `rag_triad.py` | 평가 모델 (기본 Gemini Flash) |
-| 12 | 평가 Layer 2 — Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 |
-| 13 | 평가 Layer 2 — Groundedness (단독, CoT, fallback) | `rag_triad.py` | 평가 모델 |
-| 14 | 평가 Layer 2 — Context Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 |
-| 15 | 평가 Layer 3 — QA Quality (Completeness 단일 지표) | `qa_quality.py` | 평가 모델 |
+| # | 단계 | 파일 | 모델 | 경로 |
+|---|------|------|------|------|
+| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile) | `ingestion_api.py` | Gemini 3 Flash | — |
+| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 3 Flash | — |
+| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 3 Flash | fallback |
+| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | 설정 모델 (기본 GPT) | fallback |
+| 5 | QA 생성 — System Prompt (Static KO v1) | `prompts.py` | 생성 모델 | **fallback** |
+| 6 | QA 생성 — System Prompt (Static EN v1) | `prompts.py` | 생성 모델 | **fallback** |
+| 7 | QA 생성 — System Prompt (Adaptive, Domain-Aware) | `prompts.py` | 생성 모델 | **주 경로** |
+| 8 | QA 생성 — User Template (Static KO v1) | `prompts.py` | 생성 모델 | **fallback** |
+| 9 | QA 생성 — User Template (Static EN v1) | `prompts.py` | 생성 모델 | **fallback** |
+| 10 | QA 생성 — User Template (Adaptive) | `prompts.py` | 생성 모델 | **주 경로** |
+| 11 | 평가 Layer 2 — RAG Triad (통합, 권장 경로) | `rag_triad.py` | 평가 모델 (기본 Gemini Flash) | — |
+| 12 | 평가 Layer 2 — Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
+| 13 | 평가 Layer 2 — Groundedness (단독, CoT, fallback) | `rag_triad.py` | 평가 모델 | fallback |
+| 14 | 평가 Layer 2 — Context Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
+| 15 | 평가 Layer 3 — QA Quality (Completeness 단일 지표) | `qa_quality.py` | 평가 모델 | — |
 
 ---
 
@@ -33,6 +34,7 @@
 **모델**: `gemini-3-flash-preview`
 **입력**: anchor 청크 30개 (content[:600]씩, 최대 18,000자)
 **출력**: `domain_profile`, `h2_h3_master` (→ `h1_candidates`는 서버에서 `list(h2_h3_master.keys())`로 도출)
+**임베딩**: Gemini Embedding 2, `output_dimensionality=1536` (L2 정규화)
 
 > Pass1(H1) + Pass2(H2/H3) + domain_profile을 단일 LLM 호출로 동시 생성.
 > 결과는 `doc_metadata` 테이블에 upsert. QA 생성 시 LLM 재호출 없이 캐시 사용.
@@ -182,9 +184,12 @@ Analyze the samples above and return:
 
 ## 5. QA 생성 — System Prompt (Static KO v1)
 
-**파일**: `backend/config/prompts.py` — `SYSTEM_PROMPT_KO_V1`
-**용도**: domain_profile 없거나 lang=ko 기본 경로
+**파일**: `backend/generators/prompts.py` — `SYSTEM_PROMPT_KO_V1`
+**용도**: ⚠️ **Fallback 경로** — `qa_generator.py`에서 `system_prompt=None`일 때 기본값으로 사용
 **모델**: 생성 모델 (Gemini Flash / Claude Sonnet / GPT 등)
+
+> 정상 경로에서는 `build_system_prompt()` (#7)가 주입되므로 이 프롬프트는 사용되지 않음.
+> **패치 미반영**: P3(purpose 추론 허용 잔존) / P4(추론 금지 없음) / P5(답변 완전성 미흡) / P7 / P8
 
 **핵심 규칙:**
 
@@ -193,27 +198,32 @@ Analyze the samples above and return:
 | context_screening | 목차·연락처·식별자만인 컨텍스트 → 즉시 `{"qa_list": []}` 반환 |
 | 원칙 | 근거성 / 관련성 / 단일성(차원 혼합 금지) / 명확성 / 깊이(단순 값 1개 조회 금지) |
 | Intent 6종 | `fact`, `purpose`, `how`, `condition`, `comparison`, `list` |
-| 다양성 | fact + list 합산 ≤ 40%, condition 또는 comparison 1개 이상 권장 |
+| purpose | ⚠️ "명시되었거나 효과로부터 **유추 가능한 경우**" — P3 미반영, 추론 허용 |
+| 다양성 | fact + list 합산 ≤ 40%, comparison ≤ 40%, condition 또는 comparison 1개 이상 권장 |
 | 수량 | 컨텍스트 밀도 기반 **2~6개** (내용 없으면 0개 허용) |
-| 답변 완전성 | 복수 항목 질문 시 컨텍스트에 명시된 모든 항목 필수 서술 |
+| 답변 완전성 | 복수 항목 암시 시 일부 포함 권장 (P5 미반영 — 전 항목 의무화 아님) |
 | 답변 스타일 | "컨텍스트에 따르면", "문서에 의하면" 등 메타 표현 시작 금지 |
 
 ---
 
 ## 6. QA 생성 — System Prompt (Static EN v1)
 
-**파일**: `backend/config/prompts.py` — `SYSTEM_PROMPT_EN_V1`
-**용도**: lang=en일 때 사용
-**내용**: KO v1과 동일한 규칙, 영문 버전. 최종 출력은 한국어(`Write all Q&A in Korean`)
+**파일**: `backend/generators/prompts.py` — `SYSTEM_PROMPT_EN_V1`
+**용도**: ⚠️ **Fallback 경로** — lang=en이고 `system_prompt=None`일 때 기본값
+**내용**: KO v1 동일 구조, 영문 버전. 최종 출력은 한국어(`Write all Q&A in Korean`)
+**패치 적용**: P1(comparison 40%, how 1개 권장) / P2(변화 방향) / P3(purpose 조건) / P4(추론 금지) / P5(완전성) / P7(대칭 검증) / P8(카테고리 중의성) — ✅ 전체 적용
+
+> KO Fallback (#5)과 달리 EN Fallback은 P1~P8 전체 반영 완료.
 
 ---
 
 ## 7. QA 생성 — System Prompt (Adaptive, Domain-Aware)
 
-**파일**: `backend/config/prompts.py` — `build_system_prompt(domain_profile, lang)`
-**용도**: domain_profile 존재 시 우선 사용 (현재 기본 경로)
+**파일**: `backend/generators/prompts.py` — `build_system_prompt(domain_profile, lang)`
+**용도**: ✅ **주 경로** — `worker.py`가 domain_profile 기반으로 동적 생성 후 `qa_generator.py`에 주입
+**패치 적용**: P1~P8 전체 적용 (`_CORE_PRINCIPLES_KO` 포함)
 
-**구성**: `<role>` (domain-aware) + `_CORE_PRINCIPLES_KO` (static과 동일 원칙)
+**구성**: `<role>` (domain-aware) + `_CORE_PRINCIPLES_KO` 블록
 
 ```
 <role>
@@ -223,8 +233,22 @@ Analyze the samples above and return:
 문체: {tone}
 외부 지식 사용 금지 — 컨텍스트에 없는 내용은 생성하지 않습니다.
 </role>
-+ context_screening + principles + intent_types + diversity_rules + constraints
++ _CORE_PRINCIPLES_KO:
+  <context_screening> + <principles> + <intent_types> (P3 purpose 조건)
+  + <diversity_rules> (P1: comparison ≤40%, how 권장)
+  + <constraints> (P4 추론 금지 / P5 완전성 / P7 대칭 검증)
 ```
+
+**`_CORE_PRINCIPLES_KO` 주요 패치 내용:**
+
+| 패치 | 위치 | 내용 |
+|------|------|------|
+| P1 | `<diversity_rules>` | comparison ≤ 40%, how 1개 이상 권장 |
+| P2 | `<constraints>` | comparison 답변에 수치 변화 방향 필수 |
+| P3 | `<intent_types>` | purpose: 명시적 목적 문구 조건, 효과 추론 금지 |
+| P4 | `<constraints>` | 절차·인과·수식어 추론 금지 |
+| P5 | `<constraints>` | 열거 마커(각 호, ①②③) 감지 시 전 항목 포함 의무 |
+| P7 | `<constraints>` | comparison 대칭 검증 — 비대칭 속성 질문 금지 |
 
 > domain 유형별 intent 우선순위 힌트(`<domain_intent_priority>`)도 포함:
 > 예) "계약" → condition/comparison/list 우선, "매뉴얼" → how/condition/list 우선
@@ -233,9 +257,11 @@ Analyze the samples above and return:
 
 ## 8. QA 생성 — User Template (Static KO v1)
 
-**파일**: `backend/config/prompts.py` — `USER_TEMPLATE_KO_V1`
+**파일**: `backend/generators/prompts.py` — `USER_TEMPLATE_KO_V1`
+**용도**: ⚠️ **Fallback 경로** — `user_template=None`일 때 기본값
 **변수**: `{hierarchy}`, `{text}`
 **출력**: `{ "qa_list": [{ "q", "a", "intent", "reasoning", "answerable" }, ...] }`
+**패치 미반영**: P3 / P4 / P5 / P7 / P8 — groundedness_check 블록 없음, plan_before_generate 없음
 
 ```
 <generation_guide>
@@ -266,19 +292,32 @@ Analyze the samples above and return:
 
 ## 9. QA 생성 — User Template (Static EN v1)
 
-**파일**: `backend/config/prompts.py` — `USER_TEMPLATE_EN_V1`
+**파일**: `backend/generators/prompts.py` — `USER_TEMPLATE_EN_V1`
+**용도**: ⚠️ **Fallback 경로** — lang=en이고 user_template=None일 때 기본값
 **내용**: KO v1과 동일 구조, intent_examples 영문 혼용. 수량 min=2/max=6. 출력은 한국어 강제.
+**패치 적용**: P1(selection_rule) / P2(groundedness_check) / P3 / P4 / P5 / P7 / P8 — ✅ 전체 반영
 
 ---
 
 ## 10. QA 생성 — User Template (Adaptive)
 
-**파일**: `backend/config/prompts.py` — `build_user_template(domain_profile, chunk_type, n_qa, min_qa)`
-**용도**: domain_profile + chunk_type 기반 동적 생성 (현재 기본 경로)
+**파일**: `backend/generators/prompts.py` — `build_user_template(domain_profile, chunk_type, total_chunks)`
+**용도**: ✅ **주 경로** — `worker.py`가 청크 수·도메인 기반 동적 생성 후 주입
+**패치 적용**: P1~P8 전체 적용
 
-**static과의 차이점:**
+**청크 수 기반 QA 상한 (near_duplicate 억제):**
+
+| 청크 수 | max QA | min QA |
+|:-------:|:------:|:------:|
+| ≤ 3 | 2 | 1 |
+| 4 ~ 7 | 3 | 2 |
+| ≥ 8 | 5 | 2 |
+
+**주 경로와 fallback의 차이점:**
+- `<groundedness_check>` 블록에 P2/P3/P4/P5/P7/P8 자가 검증 단계 포함
+- `<plan_before_generate>` 블록: 날짜 일치 확인(step2) + P8 수치 카테고리 중의성(step2) + P7 comparison 대칭(step3)
 - `intent_examples`에 `domain_profile.key_terms` 반영 (도메인 특화 예시 문구)
-- `<chunk_type_hint>` 추가 — chunk_type별 권장 intent 명시
+- `<chunk_type_hint>` — chunk_type별 권장 intent:
   - `table` → `["numeric", "list", "condition"]`
   - `list` → `["how", "list", "condition"]`
   - `body` → `["fact", "purpose", "how"]`
@@ -461,3 +500,21 @@ rag_avg = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
 | `bad_chunk` | 불량청크 | context 길이 < 100자 |
 | `evaluation_error` | 평가오류 | LLM 평가 예외 발생 |
 | `low_quality` | 품질미달 | failure_types 없음 AND avg_quality < 0.70 |
+
+---
+
+## 프롬프트 패치 현황 (P1~P8)
+
+> 경로별 적용 상태. ✅ = 반영 / ❌ = 미반영 / ⚠️ = 부분
+
+| 패치 | 내용 요약 | `_CORE_PRINCIPLES_KO` (#7) | `build_user_template` (#10) | `SYSTEM_PROMPT_KO_V1` (#5) | `USER_TEMPLATE_KO_V1` (#8) | `SYSTEM_PROMPT_EN_V1` (#6) | `USER_TEMPLATE_EN_V1` (#9) |
+|------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|
+| P1 | comparison ≤ 40%, how 권장 | ✅ | ✅ | ⚠️ | ⚠️ | ✅ | ✅ |
+| P2 | comparison 변화 방향 필수 | ✅ | ✅ | ✅ | ⚠️ | ✅ | ✅ |
+| P3 | purpose 명시 목적 문구 조건 | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| P4 | 추론성 표현·수식어 금지 | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| P5 | 열거 전 항목 포함 의무 | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| P7 | comparison 대칭 검증 | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| P8 | 수치 카테고리 중의성 방지 | — | ✅ | — | ✅ | ✅ | ✅ |
+
+> **#5 / #8 (KO Fallback)** 동기화 미완료 — 정상 경로(#7/#10)와 품질 차이 발생 가능. 차후 반영 예정.

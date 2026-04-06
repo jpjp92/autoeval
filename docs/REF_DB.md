@@ -1,6 +1,6 @@
 # DB Schema
 
-> **최종 업데이트**: 2026-03-31 — Option B FK 마이그레이션 완료
+> **최종 업데이트**: 2026-04-06 — Option B FK 마이그레이션 완료 / 스키마 정확도 검증
 
 ---
 
@@ -13,7 +13,7 @@
 | `id` | uuid PK | `gen_random_uuid()` |
 | `document_id` | text UNIQUE NOT NULL | 인제스션 시 생성된 UUID (논리 키) |
 | `filename` | text NOT NULL | 원본 파일명 |
-| `domain_profile` | jsonb | `{ domain, domain_short, target_audience, key_terms, tone }` |
+| `domain_profile` | jsonb | `{ domain, domain_short, target_audience, key_terms, tone, intent_hints }` |
 | `h2_h3_master` | jsonb | `{ "H1명": { "H2명": ["H3", ...] } }` |
 | `created_at` | timestamptz | `now()` |
 | `updated_at` | timestamptz | `now()` (트리거 자동 갱신) |
@@ -35,7 +35,7 @@
 | `id` | uuid PK | `gen_random_uuid()` |
 | `content` | text NOT NULL | 청크 텍스트 |
 | `metadata` | jsonb DEFAULT '{}' | 구조 메타데이터 (아래 참고) |
-| `embedding` | vector(1536) | Gemini Embedding 2 벡터 |
+| `embedding` | vector(1536) | Gemini Embedding 2 벡터 (`output_dimensionality=1536`) |
 | `created_at` | timestamptz | `now()` |
 | `document_id` | text FK | → `doc_metadata.document_id` (ON DELETE SET NULL) |
 
@@ -148,10 +148,19 @@
 ```json
 {
   "syntax":  { "pass_rate": 100.0 },
-  "stats":   { "quality_score": 8.04, "diversity": {}, "duplication_rate": {} },
-  "rag":     { "avg_relevance": 0.85, "avg_groundedness": 0.92, "avg_context_relevance": 0.88, "avg_score": 0.88 },
-  "quality": { "avg_completeness": 0.90 }
+  "stats":   { "quality_score": 8.04, "diversity": {}, "duplication_rate": {}, "near_duplicate_rate": 0.0 },
+  "rag":     {
+    "avg_relevance": 0.85,
+    "avg_groundedness": 0.92,
+    "avg_context_relevance": 0.88,
+    "avg_score": 0.89
+  },
+  "quality": { "avg_completeness": 0.90, "avg_quality": 0.90, "pass_rate": 100.0 }
 }
+```
+
+> `rag.avg_score` = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
+> Layer 3는 completeness 단일 지표 (구 4차원 factuality/specificity/conciseness 제거됨)
 ```
 
 **인덱스**
