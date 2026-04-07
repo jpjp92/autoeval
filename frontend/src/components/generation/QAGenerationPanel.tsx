@@ -11,7 +11,7 @@ import {
   AlertCircle, X, RefreshCw, Check, BarChart2,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { generateQA, getHierarchyList, mapErrorToMessage, API_BASE } from "@/src/lib/api";
+import { generateQA, getGenStatus, getGenPreview, getEvalStatus, evaluateQA, getHierarchyList, mapErrorToMessage } from "@/src/lib/api";
 
 interface GenerationStatus {
   job_id: string;
@@ -260,9 +260,9 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     if (!isGenerating || !jobId) return;
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/generate/${jobId}/status`);
-        if (!response.ok) throw new Error("Status check failed");
-        const data: GenerationStatus = await response.json();
+        const res = await getGenStatus(jobId);
+        if (!res.success) throw new Error(res.error);
+        const data = res as any as GenerationStatus;
 
         setProgress(data.progress || 0);
         setStatusMessage(data.message || "");
@@ -275,8 +275,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
           // QA Preview 조회
           try {
-            const previewRes = await fetch(`${API_BASE}/api/generate/${jobId}/preview?limit=3`);
-            const previewData = await previewRes.json();
+            const previewData = await getGenPreview(jobId, 3) as any;
             if (previewData.success) {
               setQaPreview(previewData.preview ?? []);
               setQaPreviewTotal(previewData.total ?? 0);
@@ -309,9 +308,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     if (!evalJobId) return;
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/evaluate/${evalJobId}/status`);
-        if (!response.ok) throw new Error("Status check failed");
-        const data = await response.json();
+        const data = await getEvalStatus(evalJobId) as any;
 
         setProgress(data.progress || 0);
         setStatusMessage(data.message || "");
@@ -342,17 +339,11 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
   const startEvaluation = async (resultFile: string, genId?: string) => {
     try {
-      const evalResponse = await fetch(`${API_BASE}/api/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          result_filename: resultFile,
-          evaluator_model: formValues.evaluatorModel,
-          generation_id: genId,
-        }),
-      });
-      if (!evalResponse.ok) throw new Error("Failed to start evaluation");
-      const evalData = await evalResponse.json();
+      const evalData = await evaluateQA({
+        result_filename: resultFile,
+        evaluator_model: formValues.evaluatorModel,
+        generation_id: genId,
+      }) as any;
       if (evalData.success && evalData.job_id) {
         setEvalJobId(evalData.job_id);
       } else throw new Error(evalData.error || "Failed to start evaluation");

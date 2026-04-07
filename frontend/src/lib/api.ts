@@ -147,6 +147,14 @@ export async function generateQA(request: GenerateRequest): Promise<ApiResponse>
   });
 }
 
+export async function getGenStatus(jobId: string): Promise<ApiResponse> {
+  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/status`);
+}
+
+export async function getGenPreview(jobId: string, limit = 3): Promise<ApiResponse> {
+  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/preview?limit=${limit}`);
+}
+
 // ── Evaluation ─────────────────────────────────────────────────────────────
 
 export async function evaluateQA(request: EvaluateRequest): Promise<ApiResponse> {
