@@ -1,21 +1,7 @@
 import React, { useState } from "react";
 import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { API_BASE, getHierarchyList } from "@/src/lib/api";
-
-/** Cold start 대비 재시도 fetch (최대 3회, 5초 간격) */
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delayMs = 5000): Promise<Response> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      return res;
-    } catch (e) {
-      if (attempt === retries) throw e;
-      await new Promise(r => setTimeout(r, delayMs));
-    }
-  }
-  throw new Error("fetch failed");
-}
+import { API_BASE, getHierarchyList, apiFetchWithRetry } from "@/src/lib/api";
 
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -119,21 +105,20 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setHierarchyTree(null);
     try {
       // 1단계: H1/H2/H3 master 한 번에 생성
-      const res = await fetchWithRetry(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
+      const result = await apiFetchWithRetry<AnalysisResult>(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: uploadedFilename }),
       });
-      if (!res.ok) {
-        const errData = await res.json();
-        const detail = errData.detail || "";
-        const isOverloaded = res.status === 503 || detail.includes("503") || detail.toLowerCase().includes("unavailable") || detail.toLowerCase().includes("high demand");
+      if (!result.success) {
+        const detail = result.error || "";
+        const isOverloaded = detail.includes("503") || detail.toLowerCase().includes("unavailable") || detail.toLowerCase().includes("high demand");
         throw new Error(isOverloaded
           ? "현재 일시적으로 응답이 지연됩니다. 잠시 후 다시 시도해 주세요."
           : detail || "분석 중 오류가 발생했습니다. 다시 시도해 주세요."
         );
       }
-      const data: AnalysisResult = await res.json();
+      const data = result.data!;
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
       if (data.document_id) {
