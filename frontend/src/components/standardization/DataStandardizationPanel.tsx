@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { API_BASE, getHierarchyList, apiFetchWithRetry } from "@/src/lib/api";
+import { API_BASE, getHierarchyList, apiFetchWithRetry, uploadDocument, applyGranularTagging } from "@/src/lib/api";
 
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -78,16 +78,15 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     formData.append("file", file);
     const fileName = file.name;
     try {
-      const res = await fetch(`${API_BASE}/api/ingestion/upload`, { method: "POST", body: formData });
-      const data = await res.json();
-      if (res.ok) {
+      const res = await uploadDocument(formData);
+      if (res.success) {
         setUploadMessage({ text: `"${fileName}" 분석이 완료되었습니다.`, type: "success" });
         setUploadedFilename(fileName);
         clearDocumentId(fileName); // 재업로드 시 기존 document_id 무효화
         onUploadComplete?.(fileName);
         setFile(null);
       } else {
-        setUploadMessage({ text: data.detail || "업로드 실패", type: "error" });
+        setUploadMessage({ text: res.error || "업로드 실패", type: "error" });
       }
     } catch {
       setUploadMessage({ text: "서버 연결에 실패했습니다.", type: "error" });
@@ -128,19 +127,14 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
 
       // 2단계: 청크 태깅 (document_id 기반 — 현재 업로드 버전만 태깅)
       setIsTagging(true);
-      const taggingRes = await fetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: uploadedFilename,
-          selected_h1_list: data.h1_candidates,
-          h2_h3_master: data.h2_h3_master,
-          document_id: data.document_id,
-        }),
+      const taggingRes = await applyGranularTagging({
+        filename: uploadedFilename,
+        selected_h1_list: data.h1_candidates,
+        h2_h3_master: data.h2_h3_master,
+        document_id: data.document_id,
       });
-      if (!taggingRes.ok) throw new Error((await taggingRes.json()).detail || "카테고리 적용 실패");
-      const taggingData = await taggingRes.json();
-      setTaggingSamples(taggingData.samples || []);
+      if (!taggingRes.success) throw new Error(taggingRes.error || "카테고리 적용 실패");
+      setTaggingSamples((taggingRes as any).samples || []);
 
       const treeRes = await getHierarchyList(uploadedFilename, false); // 표시용: QA 필터 없이 전체 태깅 결과 반환
       if (treeRes.success) {

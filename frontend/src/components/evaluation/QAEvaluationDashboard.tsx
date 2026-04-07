@@ -4,9 +4,9 @@ import {
   ChevronLeft, ChevronRight, Bot,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
-import { getEvalStatus, getEvalHistory, getEvalExport, getEvalExportById } from '@/src/lib/api';
+import { getEvalExport, getEvalExportById } from '@/src/lib/api';
 import type { QAStatus, QAPreviewItem, EvalReport, HistoryItem } from '@/src/types/evaluation';
 import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, GRADE_COLOR, QA_PAGE_SIZE } from '@/src/types/evaluation';
 import { SCORE_THRESHOLDS, getQAStatus } from '@/src/lib/evalScoreUtils';
@@ -17,114 +17,46 @@ import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap'
 import { QualityScoreChart } from '@/src/components/evaluation/charts/QualityScoreChart';
 import { QADetailView } from '@/src/components/evaluation/QADetailView';
 import { HistoryDropdown } from '@/src/components/evaluation/HistoryDropdown';
+import { useEvaluationData } from './hooks/useEvaluationData';
+import { useEvalHistory } from './hooks/useEvalHistory';
+import { useQATable } from './hooks/useQATable';
 
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
-export function QAEvaluationDashboard({ 
-  evalJobId, 
+export function QAEvaluationDashboard({
+  evalJobId,
   initialEvalDbId,
   setActiveTab
-}: { 
-  evalJobId?: string | null; 
+}: {
+  evalJobId?: string | null;
   initialEvalDbId?: string | null;
   setActiveTab?: (tab: string) => void;
 } = {}) {
-  const [showExportMenu, setShowExportMenu]   = useState(false);
-  const [exportLoading, setExportLoading]     = useState(false);
-  const [showHistoryMenu, setShowHistoryMenu] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportLoading, setExportLoading]   = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading]                 = useState(false);
-  const [error, setError]                     = useState<string | null>(null);
-  const [report, setReport]                   = useState<EvalReport | null>(null);
-  const [historyList, setHistoryList]         = useState<HistoryItem[]>([]);
-  const [historyReport, setHistoryReport]     = useState<{ summaryStats: any[]; layer1Stats: any[]; intentDistribution: any[]; llmQualityScores: any[]; item: HistoryItem } | null>(null);
-  const [historyQaPreview, setHistoryQaPreview] = useState<QAPreviewItem[]>([]);
-  const [historyQaLoading, setHistoryQaLoading] = useState(false);
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-  const [qaPage, setQaPage]                   = useState(0);
-  const [statusFilter, setStatusFilter]       = useState<QAStatus | null>(null);
-  const [sortCol, setSortCol]                 = useState<string | null>(null);
-  const [sortDir, setSortDir]                 = useState<'asc' | 'desc'>('asc');
-  const [selectedQA, setSelectedQA]           = useState<QAPreviewItem | null>(null);
-  const prevEvalJobId = useRef<string | null>(null);
 
-  // Export 메뉴 외부 클릭 시 닫기
-  useEffect(() => {
-    if (!showExportMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setShowExportMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showExportMenu]);
+  const { loading, error, report } = useEvaluationData(evalJobId, () => {
+    clearHistory();
+    resetTable();
+  });
 
-  // evalJobId 변경 시 실제 데이터 fetch
-  useEffect(() => {
-    if (!evalJobId || evalJobId === prevEvalJobId.current) return;
-    prevEvalJobId.current = evalJobId;
-    setLoading(true);
-    setError(null);
-    setHistoryReport(null);
-    setSelectedHistoryId(null);
-    setQaPage(0);
-    setSelectedQA(null);
+  const {
+    historyList, historyReport, historyQaPreview, historyQaLoading,
+    selectedHistoryId, showHistoryMenu, setShowHistoryMenu,
+    selectHistory, clearHistory,
+  } = useEvalHistory(initialEvalDbId, () => resetTable());
 
-    const fetchReport = async () => {
-      try {
-        const res = await getEvalStatus(evalJobId) as any;
-        if (res.success && res.eval_report) {
-          setReport(res.eval_report as EvalReport);
-        } else {
-          setError(res.error ?? '평가 결과를 불러오지 못했습니다.');
-        }
-      } catch {
-        setError('네트워크 오류가 발생했습니다.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
-  }, [evalJobId]);
+  const qaPreview = report?.qa_preview ?? historyQaPreview;
 
-  // 히스토리 목록 마운트 시 로드
-  useEffect(() => {
-    getEvalHistory().then((res) => {
-      if (res.success && Array.isArray((res as any).history)) {
-        setHistoryList((res as any).history);
-      }
-    });
-  }, []);
-
-  // 대시보드에서 진입 시 해당 히스토리 항목 자동 선택
-  // historyList 로드 전에 initialEvalDbId가 설정될 수 있으므로 두 값 모두 준비된 시점에 실행
-  useEffect(() => {
-    if (!initialEvalDbId || !historyList.length) return;
-    const target = historyList.find((h) => h.id === initialEvalDbId);
-    if (target) selectHistory(target);
-  }, [initialEvalDbId, historyList]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 히스토리 항목 선택
-  const selectHistory = async (item: HistoryItem) => {
-    setSelectedHistoryId(item.id);
-    setReport(null);
-    setHistoryReport({ ...buildChartDataFromHistory(item), item });
-    setHistoryQaPreview([]);
-    setShowHistoryMenu(false);
-    setQaPage(0);
-    setStatusFilter(null);
-    setSelectedQA(null);
-
-    setHistoryQaLoading(true);
-    try {
-      const res = await getEvalExportById(item.id) as any;
-      if (res.success && Array.isArray(res.detail)) {
-        setHistoryQaPreview(res.detail as QAPreviewItem[]);
-      }
-    } finally {
-      setHistoryQaLoading(false);
-    }
-  };
+  const {
+    qaPage, setQaPage,
+    statusFilter, setStatusFilter,
+    sortCol, setSortCol,
+    sortDir, setSortDir,
+    selectedQA, setSelectedQA,
+    filteredQA, totalPages, pagedQA,
+    resetTable,
+  } = useQATable(qaPreview);
 
   // 현재 표시할 차트 데이터
   const chartData = report
@@ -133,30 +65,9 @@ export function QAEvaluationDashboard({
       ? { summaryStats: historyReport.summaryStats, layer1Stats: historyReport.layer1Stats, intentDistribution: historyReport.intentDistribution, llmQualityScores: historyReport.llmQualityScores }
       : null;
 
-  const activeReport = report;
-  const activeItem   = historyReport?.item;
-  const qaPreview    = report?.qa_preview ?? historyQaPreview;
+  const activeReport  = report;
+  const activeItem    = historyReport?.item;
   const qaListLoading = historyQaLoading;
-  const filteredQA   = statusFilter
-    ? qaPreview.filter(qa => getQAStatus(qa) === statusFilter)
-    : qaPreview;
-  const sortedQA = sortCol ? [...filteredQA].sort((a, b) => {
-    let av: any, bv: any;
-    if (sortCol === 'id')       { av = a.qa_index; bv = b.qa_index; }
-    else if (sortCol === 'intent')  { av = a.intent ?? ''; bv = b.intent ?? ''; }
-    else if (sortCol === 'q')       { av = a.q ?? ''; bv = b.q ?? ''; }
-    else if (sortCol === 'a')       { av = a.a ?? ''; bv = b.a ?? ''; }
-    else if (sortCol === 'quality') { av = a.quality_avg ?? -1; bv = b.quality_avg ?? -1; }
-    else if (sortCol === 'triad')   { av = a.rag_avg ?? -1; bv = b.rag_avg ?? -1; }
-    else if (sortCol === 'status')  { av = getQAStatus(a); bv = getQAStatus(b); }
-    else if (sortCol === 'failure') { av = a.primary_failure ?? ''; bv = b.primary_failure ?? ''; }
-    else return 0;
-    if (av < bv) return sortDir === 'asc' ? -1 : 1;
-    if (av > bv) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  }) : filteredQA;
-  const totalPages   = Math.max(1, Math.ceil(sortedQA.length / QA_PAGE_SIZE));
-  const pagedQA      = sortedQA.slice(qaPage * QA_PAGE_SIZE, (qaPage + 1) * QA_PAGE_SIZE);
 
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;

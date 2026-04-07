@@ -137,6 +137,25 @@ export async function getHierarchyList(filename?: string, filterForQa = true): P
   return { success: true, ...result.data! };
 }
 
+// ── Ingestion (추가) ────────────────────────────────────────────────────────
+
+export async function uploadDocument(formData: FormData): Promise<ApiResponse> {
+  return apiFetch(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+}
+
+export async function applyGranularTagging(payload: {
+  filename: string;
+  selected_h1_list: string[];
+  h2_h3_master: Record<string, Record<string, string[]>>;
+  document_id?: string;
+}): Promise<ApiResponse> {
+  return apiFetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 // ── Generation ─────────────────────────────────────────────────────────────
 
 export async function generateQA(request: GenerateRequest): Promise<ApiResponse> {
