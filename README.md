@@ -167,9 +167,10 @@ autoeval/
 │ │ ├── chunker.py # LLM/Rule-based 청킹 로직 분리 (ingest_with_llm/rule_chunking)
 │ │ └── pipeline.py # 임베딩 → Supabase 저장 파이프라인 (process_and_ingest)
 │ ├── generators/
-│ │ ├── prompts.py # 시스템 프롬프트·유저 템플릿 — SYSTEM_PROMPT_V1, USER_TEMPLATE_V1
+│ │ ├── prompts.py # 한국어 시스템 프롬프트·유저 템플릿 (주 경로)
+│ │ ├── prompts_en.py # 영어 시스템 프롬프트·유저 템플릿 (EN fallback)
 │ │ ├── job_manager.py # JobStatus, GenerationJob, JobManager, 전역 job_manager 싱글턴
-│ │ ├── worker.py # 생성 오케스트레이션 — run_qa_generation\*(), 청크 필터·도메인 프로파일·병렬 생성·Supabase 저장
+│ │ ├── worker.py # 생성 오케스트레이션 — 청크 필터·도메인 프로파일·병렬 생성·Supabase 저장
 │ │ ├── qa_generator.py # 프로바이더별 LLM API 호출 + 응답 파싱
 │ │ └── domain_profiler.py # 폴백 전용 — doc_metadata 없을 때만 LLM 호출
 │ ├── evaluators/
@@ -198,26 +199,41 @@ autoeval/
 │ ├── Dockerfile.dev # Node 20-alpine Vite dev server (HMR)
 │ ├── nginx.conf # SPA 라우팅 + /api/ 리버스 프록시
 │ └── src/
-│ ├── App.tsx # 탭 라우팅 + Glassmorphism 배경 (gradient mesh)
-│ ├── lib/api.ts # 백엔드 API 클라이언트 함수
+│ ├── App.tsx # 탭 라우팅 + 알림 + 테마 (light/dark)
+│ ├── types/
+│ │ └── evaluation.ts # QAStatus, QAPreviewItem, EvalReport, HistoryItem 등
+│ ├── lib/
+│ │ ├── api.ts # API 클라이언트 — apiFetch/apiFetchWithRetry 래퍼 + 전 엔드포인트 함수
+│ │ ├── evalChartUtils.ts # 차트 데이터 빌더 + formatKST
+│ │ ├── evalScoreUtils.ts # 점수 임계값 + getQAStatus
+│ │ ├── utils.ts # cn (clsx + tailwind-merge)
+│ │ └── exportUtils/ # 내보내기 유틸 (4파일 분리)
+│ │ ├── types.ts # EvaluationData 인터페이스
+│ │ ├── xlsxBuilder.ts # buildWorkbook, exportToCSV
+│ │ ├── htmlBuilder.ts # SVG 차트 3종 + buildHTMLContent + exportToHTML
+│ │ └── index.ts # exportToJSON, exportToZip + re-exports (facade)
 │ └── components/
 │ ├── layout/
 │ │ ├── Sidebar.tsx # 글래스 사이드바 (bg-slate-900/95 backdrop-blur-xl)
-│ │ └── Header.tsx # 글래스 헤더 (bg-white/70 backdrop-blur-md)
+│ │ └── Header.tsx # 글래스 헤더 + 테마 토글 + 알림 드롭다운
 │ ├── dashboard/
 │ │ ├── DashboardOverview.tsx # 실시간 대시보드 (Supabase 집계 데이터)
 │ │ ├── StatsCards.tsx # 통계 카드 (accent border + glass)
-│ │ └── ActivityChart.tsx # 점수 추이 차트 (주석 처리)
+│ │ └── ActivityChart.tsx # 점수 추이 차트
 │ ├── standardization/
-│ │ └── DataStandardizationPanel.tsx # 업로드 + 계층 태깅
+│ │ └── DataStandardizationPanel.tsx # 업로드 → 계층 분석 → 태깅 (3단계)
 │ ├── generation/
-│ │ └── QAGenerationPanel.tsx # H1/H2 드롭다운 + 생성 설정 UI
+│ │ └── QAGenerationPanel.tsx # 3-Step: 설정 → 생성 → 평가
 │ ├── evaluation/
-│ │ ├── QAEvaluationDashboard.tsx # 평가 결과 + 레이어별 점수 UI
+│ │ ├── QAEvaluationDashboard.tsx # 평가 결과 대시보드 (훅 기반 분리)
+│ │ ├── hooks/
+│ │ │ ├── useEvaluationData.ts # loading/error/report + evalJobId fetch
+│ │ │ ├── useEvalHistory.ts # 히스토리 목록·선택·QA preview
+│ │ │ └── useQATable.ts # 정렬·필터·페이지네이션 파생 상태
 │ │ ├── QADetailView.tsx # QA 개별 상세 뷰
 │ │ ├── HistoryDropdown.tsx # 평가 히스토리 드롭다운
-│ │ ├── shared.tsx # 공통 UI
-│ │ └── charts/ # 차트 컴포넌트 (MetricRadialGauge, IntentTreemap, QualityScoreChart)
+│ │ ├── shared.tsx # ChartInfoTooltip 공통 UI
+│ │ └── charts/ # MetricRadialGauge, IntentTreemap, QualityScoreChart
 │ ├── agents/
 │ │ └── AgentTable.tsx # 에이전트 테이블
 │ ├── analytics/
@@ -498,4 +514,4 @@ Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~2
 
 ---
 
-**Last Updated**: 2026-04-05 | **Branch**: main
+**Last Updated**: 2026-04-07 | **Branch**: main
