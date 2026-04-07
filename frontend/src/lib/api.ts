@@ -168,11 +168,21 @@ export async function getHierarchyList(filename?: string, filterForQa = true): P
   if (filename) qs.set('filename', filename);
   if (!filterForQa) qs.set('filter_for_qa', 'false');
   const params = qs.toString() ? `?${qs.toString()}` : '';
-  const result = await apiFetch<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> }>(
-    `${API_BASE}/api/ingestion/hierarchy-list${params}`
-  );
+  // 백엔드가 flat JSON { success, h1_list, h2_by_h1, h3_by_h1_h2 } 을 반환 (data 키 없음)
+  const result = await apiFetch(`${API_BASE}/api/ingestion/hierarchy-list${params}`) as unknown as {
+    success: boolean;
+    h1_list?: string[];
+    h2_by_h1?: Record<string, string[]>;
+    h3_by_h1_h2?: Record<string, string[]>;
+    error?: string;
+  };
   if (!result.success) return { success: false, h1_list: [], h2_by_h1: {}, h3_by_h1_h2: {} };
-  return { success: true, ...result.data! };
+  return {
+    success: true,
+    h1_list:      result.h1_list      ?? [],
+    h2_by_h1:     result.h2_by_h1     ?? {},
+    h3_by_h1_h2:  result.h3_by_h1_h2  ?? {},
+  };
 }
 
 // ── Ingestion (추가) ────────────────────────────────────────────────────────

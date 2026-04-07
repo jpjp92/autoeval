@@ -68,6 +68,7 @@ class HierarchyAnalysisRequest(BaseModel):
 
 
 class HierarchyAnalysisResponse(BaseModel):
+    success: bool = True
     domain_analysis: str
     h1_candidates: List[str]
     h2_h3_master: Dict[str, Any]

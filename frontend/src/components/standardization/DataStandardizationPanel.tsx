@@ -109,10 +109,12 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: uploadedFilename }),
       });
+      // analyze-hierarchy는 HierarchyAnalysisResponse를 flat하게 반환 (ApiResponse 래퍼 없음)
+      // apiFetchWithRetry는 raw JSON을 그대로 반환하므로 success 필드가 없으면 에러로 처리
       if (!result.success) {
         throw new Error(mapErrorToMessage(result.error || ""));
       }
-      const data = result.data!;
+      const data = result as unknown as AnalysisResult;
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
       if (data.document_id) {
