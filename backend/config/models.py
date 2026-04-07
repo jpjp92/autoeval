@@ -33,7 +33,7 @@ MODEL_CONFIG = {
         "cost_output": 14.0 / 1_000_000,    # $14 per MTok
         "name": "GPT-5.2",
     },
-    "gemini-3.1-flash": {
+    "gemini-3-flash": {
         "provider": "google",
         "model_id": "gemini-3-flash-preview",
         "cost_input": 0.3 / 1_000_000,      # $0.3 per MTok

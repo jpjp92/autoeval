@@ -41,7 +41,7 @@ logger = logging.getLogger("autoeval.generation")
 # ============================================================================
 
 class GenerateRequest(BaseModel):
-    model: str = "gemini-3.1-flash"
+    model: str = "gemini-3-flash"
     lang: str = "ko"
     samples: int = 10
     qa_per_doc: Optional[int] = None
@@ -78,7 +78,7 @@ def setup_generation_routes(app: FastAPI):
 
         Usage:
             POST /api/generate
-            {"model": "gemini-3.1-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
+            {"model": "gemini-3-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
         """
         try:
             job_id = f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"

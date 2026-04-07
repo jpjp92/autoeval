@@ -37,7 +37,7 @@ logger = logging.getLogger("autoeval.worker")
 
 # ── provider별 최대 동시 workers ───────────────────────────────────────────────
 # 추정: input ~1,600 + output ~700 tokens, 호출 1회 ~25초
-#   - gemini-3.1-flash: RPM 1,000 / TPM 2M  → workers=5
+#   - gemini-3-flash: RPM 1,000 / TPM 2M  → workers=5
 #   - claude-sonnet-4.6: RPM 50 / TPM 30K   → workers=2 (429 방지)
 #   - gpt-5.2:           RPM 500 / TPM 500K → workers=5
 GENERATION_MAX_WORKERS: Dict[str, int] = {
@@ -526,12 +526,12 @@ async def run_qa_generation_real(
             output_tokens = output_data["statistics"].get("total_output_tokens", 0)
 
             cost_per_1m_input = {
-                "gemini-3.1-flash": 0.3,
+                "gemini-3-flash": 0.3,
                 "claude-sonnet": 3.0,
                 "gpt-5.2": 1.75,
             }.get(model, 0)
             cost_per_1m_output = {
-                "gemini-3.1-flash": 1.2,
+                "gemini-3-flash": 1.2,
                 "claude-sonnet": 15.0,
                 "gpt-5.2": 14.0,
             }.get(model, 0)

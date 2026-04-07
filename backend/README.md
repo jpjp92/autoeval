@@ -133,7 +133,7 @@ API 문서: `http://localhost:8000/docs`
 
 ```json
 {
-  "model":           "gemini-3.1-flash",
+  "model":           "gemini-3-flash",
   "lang":            "ko",
   "samples":         8,
   "prompt_version":  "v1",
@@ -304,7 +304,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 | alias                | model_id               | provider  | Workers |
 | -------------------- | ---------------------- | --------- | ------- |
-| `gemini-3.1-flash` | gemini-3-flash-preview | google    | 5       |
+| `gemini-3-flash`   | gemini-3-flash-preview | google    | 5       |
 | `gpt-5.2`          | gpt-5.2-2025-12-11     | openai    | 5       |
 | `claude-sonnet`    | claude-sonnet-4-6      | anthropic | 2       |
 

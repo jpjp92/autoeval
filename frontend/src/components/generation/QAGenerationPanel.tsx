@@ -171,7 +171,7 @@ function renderWithBounceDots(msg: string) {
 export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTreeData, onGenerationComplete, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
 
   const [formValues, setFormValues] = useState<FormValues>({
-    model: "gemini-3.1-flash", lang: "ko", samples: 2,
+    model: "gemini-3-flash", lang: "ko", samples: 2,
     promptVersion: "v1", autoEvaluate: true, evaluatorModel: "gpt-5.1",
   });
   const [sampleInputValue, setSampleInputValue] = useState("");
@@ -427,7 +427,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">생성 모델</label>
               <select value={formValues.model} onChange={e => setFormValues({ ...formValues, model: e.target.value })} disabled={isGenerating} className={selectCls(isGenerating)}>
-                <option value="gemini-3.1-flash">Gemini 3 Flash</option>
+                <option value="gemini-3-flash">Gemini 3 Flash</option>
                 <option value="claude-sonnet">Claude Sonnet 4.6</option>
                 <option value="gpt-5.2">GPT-5.2</option>
               </select>
