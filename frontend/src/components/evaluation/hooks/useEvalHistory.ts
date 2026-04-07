@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { getEvalHistory, getEvalExportById } from '@/src/lib/api';
 import { buildChartDataFromHistory } from '@/src/lib/evalChartUtils';
+import type { SummaryStat } from '@/src/lib/evalChartUtils';
 import type { QAPreviewItem, HistoryItem } from '@/src/types/evaluation';
 
 export type HistoryReport = {
-  summaryStats: any[];
+  summaryStats: SummaryStat[];
   layer1Stats: any[];
   intentDistribution: any[];
   llmQualityScores: any[];
@@ -28,8 +29,8 @@ export function useEvalHistory(
   // 마운트 시 히스토리 목록 로드
   useEffect(() => {
     getEvalHistory().then((res) => {
-      if (res.success && Array.isArray((res as any).history)) {
-        setHistoryList((res as any).history);
+      if (res.success && Array.isArray(res.history)) {
+        setHistoryList(res.history);
       }
     });
   }, []);
@@ -49,7 +50,7 @@ export function useEvalHistory(
     setShowHistoryMenu(false);
     setHistoryQaLoading(true);
     try {
-      const res = await getEvalExportById(item.id) as any;
+      const res = await getEvalExportById(item.id);
       if (res.success && Array.isArray(res.detail)) {
         setHistoryQaPreview(res.detail as QAPreviewItem[]);
       }

@@ -3,6 +3,16 @@ import type { EvalReport, HistoryItem } from '@/src/types/evaluation';
 import { INTENT_KR } from '@/src/types/evaluation';
 import { getQAStatus } from '@/src/lib/evalScoreUtils';
 
+export interface TooltipItem { text: string; label?: string; }
+export interface SummaryStat {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  bg: string;
+  tooltip: { title: string; items: TooltipItem[] };
+}
+
 export function formatKST(dateStr: string): string {
   if (!dateStr) return '-';
   return new Date(dateStr).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });

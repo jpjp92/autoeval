@@ -13,16 +13,6 @@ import {
 import { cn } from "@/src/lib/utils";
 import { generateQA, getGenStatus, getGenPreview, getEvalStatus, evaluateQA, getHierarchyList, mapErrorToMessage } from "@/src/lib/api";
 
-interface GenerationStatus {
-  job_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress?: number;
-  message?: string;
-  error?: string;
-  result_file?: string;
-  result_id?: string;
-}
-
 interface QaPreviewItem {
   context: string;
   q: string;
@@ -262,20 +252,19 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
       try {
         const res = await getGenStatus(jobId);
         if (!res.success) throw new Error(res.error);
-        const data = res as any as GenerationStatus;
 
-        setProgress(data.progress || 0);
-        setStatusMessage(data.message || "");
+        setProgress(res.progress || 0);
+        setStatusMessage(res.message || "");
 
-        if (data.status === 'completed') {
+        if (res.status === 'completed') {
           setIsGenerating(false);
-          setResultFile(data.result_file || null);
-          setResultId(data.result_id || null);
+          setResultFile(res.result_file || null);
+          setResultId(res.result_id || null);
           clearInterval(pollInterval);
 
           // QA Preview 조회
           try {
-            const previewData = await getGenPreview(jobId, 3) as any;
+            const previewData = await getGenPreview(jobId, 3);
             if (previewData.success) {
               setQaPreview(previewData.preview ?? []);
               setQaPreviewTotal(previewData.total ?? 0);
@@ -284,16 +273,16 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
           setJobId(null);
           onGenerationComplete?.();
-          if (formValues.autoEvaluate && data.result_file) {
+          if (formValues.autoEvaluate && res.result_file) {
             setPhase('evaluating');
             setProgress(0);
-            startEvaluation(data.result_file, data.result_id);
+            startEvaluation(res.result_file, res.result_id);
           } else {
             setPhase('complete');
           }
-        } else if (data.status === 'failed') {
+        } else if (res.status === 'failed') {
           setIsGenerating(false);
-          setError(mapErrorToMessage(data.error || "Unknown error"));
+          setError(mapErrorToMessage(res.error || "Unknown error"));
           clearInterval(pollInterval);
           setJobId(null);
           setPhase('complete');
@@ -308,7 +297,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     if (!evalJobId) return;
     const pollInterval = setInterval(async () => {
       try {
-        const data = await getEvalStatus(evalJobId) as any;
+        const data = await getEvalStatus(evalJobId);
 
         setProgress(data.progress || 0);
         setStatusMessage(data.message || "");
@@ -343,7 +332,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
         result_filename: resultFile,
         evaluator_model: formValues.evaluatorModel,
         generation_id: genId,
-      }) as any;
+      });
       if (evalData.success && evalData.job_id) {
         setEvalJobId(evalData.job_id);
       } else throw new Error(evalData.error || "Failed to start evaluation");
@@ -377,7 +366,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
         ...(selectedH2 && { hierarchy_h2: selectedH2 }),
         ...(selectedH3 && { hierarchy_h3: selectedH3 }),
         ...(documentId && { document_id: documentId }),
-      }) as any;
+      });
       if (!response.success || !response.job_id) throw new Error(response.error || "Failed to start generation");
       setJobId(response.job_id);
     } catch (err) {
@@ -794,7 +783,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                       { label: "구문 통과율",   value: `${s.syntax_pass_rate ?? 0}%`,                   ok: (s.syntax_pass_rate ?? 0) >= 80 },
                       { label: "유효 QA 수량", value: `${m.valid_qa ?? '-'}개`,                         ok: null              },
                       { label: "통합 품질 점수", value: qualityAvg,                                      ok: qualityOk         },
-                      { label: "최종 점수",     value: `${((s.final_score ?? 0) * 100).toFixed(1)}/100`, ok: 'highlight' as any },
+                      { label: "최종 점수",     value: `${((s.final_score ?? 0) * 100).toFixed(1)}/100`, ok: 'highlight' as const },
                       { label: "평가 모델",     value: m.evaluator_model ?? '-',                         ok: null              },
                     ];
                   })().map(({ label, value, ok }) => (

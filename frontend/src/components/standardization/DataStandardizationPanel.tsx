@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { API_BASE, getHierarchyList, apiFetchWithRetry, uploadDocument, applyGranularTagging } from "@/src/lib/api";
+import { API_BASE, getHierarchyList, apiFetchWithRetry, uploadDocument, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
 
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -110,12 +110,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         body: JSON.stringify({ filename: uploadedFilename }),
       });
       if (!result.success) {
-        const detail = result.error || "";
-        const isOverloaded = detail.includes("503") || detail.toLowerCase().includes("unavailable") || detail.toLowerCase().includes("high demand");
-        throw new Error(isOverloaded
-          ? "현재 일시적으로 응답이 지연됩니다. 잠시 후 다시 시도해 주세요."
-          : detail || "분석 중 오류가 발생했습니다. 다시 시도해 주세요."
-        );
+        throw new Error(mapErrorToMessage(result.error || ""));
       }
       const data = result.data!;
       setAnalysis(data);

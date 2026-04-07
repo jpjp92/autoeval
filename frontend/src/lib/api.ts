@@ -20,6 +20,10 @@ export function mapErrorToMessage(error: string): string {
   if (error.includes("QA 생성에 필요한 문서 청크를 찾을 수 없습니다"))
     return "업로드된 문서가 없습니다.\n'Documents' 페이지에서 문서를 업로드하고 카테고리 분류를 완료해 주세요.";
 
+  // LLM 과부하 / 서버 일시 지연 (503, high demand)
+  if (error.includes("503") || error.toLowerCase().includes("high demand"))
+    return "현재 일시적으로 응답이 지연됩니다. 잠시 후 다시 시도해 주세요.";
+
   // DB 연결 오류
   if (error.includes("Supabase") || error.includes("unavailable"))
     return "데이터베이스 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.";
@@ -27,10 +31,6 @@ export function mapErrorToMessage(error: string): string {
   // 네트워크 단절
   if (error.toLowerCase().includes("failed to fetch") || error.toLowerCase().includes("networkerror"))
     return "네트워크 연결을 확인해 주세요.";
-
-  // HTTP 상태코드 경유 (apiFetch에서 넘어오는 케이스)
-  if (error.includes("HTTP 4") || error.includes("HTTP 5"))
-    return "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
 
   // fallback — 내부 문자열 노출 제거
   return "일시적인 오류가 발생했습니다. 문제가 지속되면 관리자에게 문의해 주세요.";
@@ -41,6 +41,44 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   status_code?: number;
+}
+
+// ── 엔드포인트별 응답 타입 ─────────────────────────────────────────────────────
+
+export interface JobStartResponse extends ApiResponse {
+  job_id?: string;
+}
+
+export interface GenStatusResponse extends ApiResponse {
+  job_id?: string;
+  status?: string;
+  progress?: number;
+  message?: string;
+  result_file?: string;
+  result_id?: string;
+}
+
+export interface GenPreviewResponse extends ApiResponse {
+  preview?: any[];
+  total?: number;
+}
+
+export interface EvalStatusResponse extends ApiResponse {
+  job_id?: string;
+  status?: string;
+  progress?: number;
+  message?: string;
+  layers?: Record<string, any>;
+  eval_report?: any;
+}
+
+export interface EvalExportResponse extends ApiResponse {
+  detail?: any[];
+  timestamp?: string;
+}
+
+export interface EvalHistoryResponse extends ApiResponse {
+  history?: any[];
 }
 
 interface GenerateRequest {
@@ -96,7 +134,7 @@ export async function apiFetchWithRetry<T = any>(
     try {
       const response = await fetch(url, options);
       if (!response.ok) {
-        let errMsg = `HTTP ${response.status}`;
+        let errMsg = httpStatusToMessage(response.status);
         try {
           const errBody = await response.json();
           if (errBody.detail) errMsg = errBody.detail;
@@ -158,44 +196,44 @@ export async function applyGranularTagging(payload: {
 
 // ── Generation ─────────────────────────────────────────────────────────────
 
-export async function generateQA(request: GenerateRequest): Promise<ApiResponse> {
+export async function generateQA(request: GenerateRequest): Promise<JobStartResponse> {
   return apiFetch(`${API_BASE}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
-  });
+  }) as Promise<JobStartResponse>;
 }
 
-export async function getGenStatus(jobId: string): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/status`);
+export async function getGenStatus(jobId: string): Promise<GenStatusResponse> {
+  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/status`) as Promise<GenStatusResponse>;
 }
 
-export async function getGenPreview(jobId: string, limit = 3): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/preview?limit=${limit}`);
+export async function getGenPreview(jobId: string, limit = 3): Promise<GenPreviewResponse> {
+  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/preview?limit=${limit}`) as Promise<GenPreviewResponse>;
 }
 
 // ── Evaluation ─────────────────────────────────────────────────────────────
 
-export async function evaluateQA(request: EvaluateRequest): Promise<ApiResponse> {
+export async function evaluateQA(request: EvaluateRequest): Promise<JobStartResponse> {
   return apiFetch(`${API_BASE}/api/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
-  });
+  }) as Promise<JobStartResponse>;
 }
 
-export async function getEvalStatus(jobId: string): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/status`);
+export async function getEvalStatus(jobId: string): Promise<EvalStatusResponse> {
+  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/status`) as Promise<EvalStatusResponse>;
 }
 
-export async function getEvalHistory(): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/history`);
+export async function getEvalHistory(): Promise<EvalHistoryResponse> {
+  return apiFetch(`${API_BASE}/api/evaluate/history`) as Promise<EvalHistoryResponse>;
 }
 
-export async function getEvalExport(jobId: string): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/export`);
+export async function getEvalExport(jobId: string): Promise<EvalExportResponse> {
+  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/export`) as Promise<EvalExportResponse>;
 }
 
-export async function getEvalExportById(evalId: string): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/export-by-id/${encodeURIComponent(evalId)}`);
+export async function getEvalExportById(evalId: string): Promise<EvalExportResponse> {
+  return apiFetch(`${API_BASE}/api/evaluate/export-by-id/${encodeURIComponent(evalId)}`) as Promise<EvalExportResponse>;
 }

@@ -7,10 +7,12 @@ import { cn } from '@/src/lib/utils';
 import { useState, useRef } from 'react';
 import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
 import { getEvalExport, getEvalExportById } from '@/src/lib/api';
+import type { EvalExportResponse } from '@/src/lib/api';
 import type { QAStatus, QAPreviewItem, EvalReport, HistoryItem } from '@/src/types/evaluation';
 import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, GRADE_COLOR, QA_PAGE_SIZE } from '@/src/types/evaluation';
 import { SCORE_THRESHOLDS, getQAStatus } from '@/src/lib/evalScoreUtils';
 import { formatKST, buildChartData, buildChartDataFromHistory } from '@/src/lib/evalChartUtils';
+import type { SummaryStat } from '@/src/lib/evalChartUtils';
 import { ChartInfoTooltip } from '@/src/components/evaluation/shared';
 import { MetricRadialGauge } from '@/src/components/evaluation/charts/MetricRadialGauge';
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
@@ -72,7 +74,7 @@ export function QAEvaluationDashboard({
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
   const successCount = qaPreview.filter(qa => getQAStatus(qa) === 'success').length;
-  const correctedSummaryStats = chartData?.summaryStats.map((stat, i) => {
+  const correctedSummaryStats: SummaryStat[] = (chartData?.summaryStats ?? []).map((stat, i) => {
     // 히스토리 로딩 중이고 상세 데이터가 아직 준비되지 않았다면 모든 지표에 스켈레톤 적용 (일관성)
     if (historyQaLoading && qaPreview.length === 0) {
       return { ...stat, value: 'loading' };
@@ -83,7 +85,7 @@ export function QAEvaluationDashboard({
       return { ...stat, value: `${successCount} / ${totalQA}` };
     }
     return stat;
-  }) ?? [];
+  });
 
   // export용 데이터
   const evaluationData = chartData ? {
@@ -113,7 +115,6 @@ export function QAEvaluationDashboard({
       eval_model: activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
       source:     activeReport?.metadata?.source_doc || activeItem?.metadata?.source_doc || activeReport?.result_filename || activeItem?.result_filename || '-',
       timestamp:  activeReport?.timestamp ?? activeItem?.created_at ?? new Date().toISOString(),
-      model:      activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
     },
   } : null;
 
@@ -127,9 +128,9 @@ export function QAEvaluationDashboard({
 
     setExportLoading(true);
     try {
-      let res: any = null;
-      if (evalJobId)         res = await getEvalExport(evalJobId) as any;
-      else if (selectedHistoryId) res = await getEvalExportById(selectedHistoryId) as any;
+      let res: EvalExportResponse | null = null;
+      if (evalJobId)              res = await getEvalExport(evalJobId);
+      else if (selectedHistoryId) res = await getEvalExportById(selectedHistoryId);
 
       if (res?.success && Array.isArray(res.detail)) {
         exportToCSV({
@@ -373,9 +374,9 @@ export function QAEvaluationDashboard({
       >
         {summaryStats.map((stat, i) => (
           <div key={i} className="relative group hover:z-30 bg-white dark:bg-white/5 p-5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:hover:shadow-black/40 flex items-center gap-4">
-            {(stat as any).tooltip && (
+            {stat.tooltip && (
               <div className="absolute top-4 right-4">
-                <ChartInfoTooltip title={(stat as any).tooltip.title} items={(stat as any).tooltip.items} />
+                <ChartInfoTooltip title={stat.tooltip.title} items={stat.tooltip.items} />
               </div>
             )}
             <div className={cn('w-12 h-12 shrink-0 rounded-lg flex items-center justify-center transition-transform duration-300 group-hover:scale-110 group-hover:shadow-inner', stat.bg, stat.color)}>
