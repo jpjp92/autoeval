@@ -8,10 +8,10 @@ import { useState, useRef } from 'react';
 import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
 import { getEvalExport, getEvalExportById } from '@/src/lib/api';
 import type { EvalExportResponse } from '@/src/lib/api';
-import type { QAStatus, QAPreviewItem, EvalReport, HistoryItem } from '@/src/types/evaluation';
-import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, GRADE_COLOR, QA_PAGE_SIZE } from '@/src/types/evaluation';
+import type { QAStatus } from '@/src/types/evaluation';
+import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, QA_PAGE_SIZE } from '@/src/types/evaluation';
 import { SCORE_THRESHOLDS, getQAStatus } from '@/src/lib/evalScoreUtils';
-import { formatKST, buildChartData, buildChartDataFromHistory } from '@/src/lib/evalChartUtils';
+import { formatKST, buildChartData } from '@/src/lib/evalChartUtils';
 import type { SummaryStat } from '@/src/lib/evalChartUtils';
 import { ChartInfoTooltip } from '@/src/components/evaluation/shared';
 import { MetricRadialGauge } from '@/src/components/evaluation/charts/MetricRadialGauge';
@@ -87,6 +87,14 @@ export function QAEvaluationDashboard({
     return stat;
   });
 
+  const getGenerationModel = () => {
+    const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
+    if (fromMeta) return fromMeta;
+    const fn = activeReport?.result_filename || activeItem?.result_filename || '';
+    const m = fn.match(/^qa_(.+?)_[a-z]{2}_/);
+    return m?.[1] || '-';
+  };
+
   // export용 데이터
   const evaluationData = chartData ? {
     summaryStats:       correctedSummaryStats,
@@ -104,14 +112,7 @@ export function QAEvaluationDashboard({
       context_relevance: q.context_relevance, completeness: q.completeness,
     })),
     metadata: {
-      qa_model: (() => {
-        const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
-        if (fromMeta) return fromMeta;
-        // fallback: result_filename 패턴 "qa_{model}_{lang}_..." 에서 모델 파싱
-        const fn = activeReport?.result_filename || activeItem?.result_filename || '';
-        const m = fn.match(/^qa_(.+?)_[a-z]{2}_/);
-        return m?.[1] || '-';
-      })(),
+      qa_model: getGenerationModel(),
       eval_model: activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
       source:     activeReport?.metadata?.source_doc || activeItem?.metadata?.source_doc || activeReport?.result_filename || activeItem?.result_filename || '-',
       timestamp:  activeReport?.timestamp ?? activeItem?.created_at ?? new Date().toISOString(),
@@ -157,20 +158,6 @@ export function QAEvaluationDashboard({
     }
   };
 
-  const grade   = activeReport?.summary?.grade ?? activeItem?.final_grade ?? null;
-  const metaStr = activeReport
-    ? `평가 모델: ${activeReport.metadata.evaluator_model} | ${formatKST(activeReport.timestamp)}`
-    : activeItem
-      ? `평가 모델: ${activeItem.metadata?.evaluator_model ?? '-'} | ${formatKST(activeItem.created_at)}`
-      : '';
-
-  const getGenerationModel = () => {
-    const fromMeta = activeReport?.metadata?.generation_model || activeItem?.metadata?.generation_model;
-    if (fromMeta) return fromMeta;
-    const fn = activeReport?.result_filename || activeItem?.result_filename || '';
-    const m = fn.match(/^qa_(.+?)_[a-z]{2}_/);
-    return m?.[1] || '-';
-  };
 
   // ─── Empty state ───────────────────────────────────────────────────────────
   if (!evalJobId && !historyReport && !loading) {

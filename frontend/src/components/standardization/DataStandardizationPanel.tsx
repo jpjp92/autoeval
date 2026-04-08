@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { API_BASE, getHierarchyList, apiFetchWithRetry, uploadDocument, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
+import { getHierarchyList, uploadDocument, analyzeHierarchy, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
+import type { AnalyzeHierarchyResponse } from "@/src/lib/api";
+import type { HierarchyTree } from "@/src/types/hierarchy";
 
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -22,7 +24,7 @@ const clearDocumentId = (filename: string) => {
 export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTaggingComplete }: {
   setActiveTab?: (tab: string) => void;
   onUploadComplete?: (filename: string) => void;
-  onTaggingComplete?: (treeData: { h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> }) => void;
+  onTaggingComplete?: (treeData: HierarchyTree) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -36,7 +38,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   const [selectedH1s, setSelectedH1s] = useState<string[]>([]);
   const [taggingSamples, setTaggingSamples] = useState<TaggingSample[]>([]);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
-  const [hierarchyTree, setHierarchyTree] = useState<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null>(null);
+  const [hierarchyTree, setHierarchyTree] = useState<HierarchyTree | null>(null);
   const [expandedH1, setExpandedH1] = useState<Record<string, boolean>>({});
   const [expandedH2, setExpandedH2] = useState<Record<string, boolean>>({});
 
@@ -104,17 +106,16 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     setHierarchyTree(null);
     try {
       // 1단계: H1/H2/H3 master 한 번에 생성
-      const result = await apiFetchWithRetry<AnalysisResult>(`${API_BASE}/api/ingestion/analyze-hierarchy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: uploadedFilename }),
-      });
-      // analyze-hierarchy는 HierarchyAnalysisResponse를 flat하게 반환 (ApiResponse 래퍼 없음)
-      // apiFetchWithRetry는 raw JSON을 그대로 반환하므로 success 필드가 없으면 에러로 처리
+      const result = await analyzeHierarchy(uploadedFilename);
       if (!result.success) {
         throw new Error(mapErrorToMessage(result.error || ""));
       }
-      const data = result as unknown as AnalysisResult;
+      const data: AnalysisResult = {
+        domain_analysis: result.domain_analysis ?? '',
+        h1_candidates:   result.h1_candidates  ?? [],
+        h2_h3_master:    result.h2_h3_master   ?? {},
+        document_id:     result.document_id,
+      };
       setAnalysis(data);
       setSelectedH1s(data.h1_candidates);
       if (data.document_id) {
@@ -131,7 +132,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         document_id: data.document_id,
       });
       if (!taggingRes.success) throw new Error(taggingRes.error || "카테고리 적용 실패");
-      setTaggingSamples((taggingRes as any).samples || []);
+      setTaggingSamples(taggingRes.samples || []);
 
       const treeRes = await getHierarchyList(uploadedFilename, false); // 표시용: QA 필터 없이 전체 태깅 결과 반환
       if (treeRes.success) {

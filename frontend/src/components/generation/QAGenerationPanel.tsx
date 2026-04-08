@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { generateQA, getGenStatus, getGenPreview, getEvalStatus, evaluateQA, getHierarchyList, mapErrorToMessage } from "@/src/lib/api";
+import type { HierarchyTree } from "@/src/types/hierarchy";
 
 interface QaPreviewItem {
   context: string;
@@ -32,7 +33,7 @@ interface FormValues {
 interface QAGenerationPanelProps {
   currentFilename?: string | null;
   taggingVersion?: number;
-  taggingTreeData?: { h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null;
+  taggingTreeData?: HierarchyTree | null;
   onGenerationComplete?: () => void;
   onEvalComplete?: (evalJobId: string) => void;
   onGoToEvaluation?: () => void;

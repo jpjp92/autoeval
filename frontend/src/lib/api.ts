@@ -185,10 +185,28 @@ export async function getHierarchyList(filename?: string, filterForQa = true): P
   };
 }
 
-// ── Ingestion (추가) ────────────────────────────────────────────────────────
+// ── Ingestion ───────────────────────────────────────────────────────────────
+
+export interface AnalyzeHierarchyResponse extends ApiResponse {
+  domain_analysis?: string;
+  h1_candidates?: string[];
+  h2_h3_master?: Record<string, Record<string, string[]>>;
+  document_id?: string;
+}
+
+export interface TaggingResponse extends ApiResponse {
+  samples?: { id: string; content_preview: string; hierarchy: { h1: string; h2: string; h3: string } }[];
+}
 
 export async function uploadDocument(formData: FormData): Promise<ApiResponse> {
   return apiFetch(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+}
+
+export async function analyzeHierarchy(filename: string): Promise<AnalyzeHierarchyResponse> {
+  return apiFetchWithRetry<AnalyzeHierarchyResponse>(
+    `${API_BASE}/api/ingestion/analyze-hierarchy`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) },
+  ) as Promise<AnalyzeHierarchyResponse>;
 }
 
 export async function applyGranularTagging(payload: {
@@ -196,12 +214,12 @@ export async function applyGranularTagging(payload: {
   selected_h1_list: string[];
   h2_h3_master: Record<string, Record<string, string[]>>;
   document_id?: string;
-}): Promise<ApiResponse> {
+}): Promise<TaggingResponse> {
   return apiFetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  });
+  }) as Promise<TaggingResponse>;
 }
 
 // ── Generation ─────────────────────────────────────────────────────────────

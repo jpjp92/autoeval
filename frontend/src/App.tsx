@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { HierarchyTree } from "./types/hierarchy";
 import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "lucide-react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { Header, type Notification } from "./components/layout/Header";
@@ -7,6 +8,7 @@ import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { QAEvaluationDashboard } from "./components/evaluation/QAEvaluationDashboard";
 import { QAGenerationPanel } from "./components/generation/QAGenerationPanel";
 import { DataStandardizationPanel } from "./components/standardization/DataStandardizationPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function App() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -15,7 +17,7 @@ function App() {
   const [lastEvalDbId, setLastEvalDbId]   = useState<string | null>(null); // DB 히스토리 id용
   // taggingVersion + 완료 시점 treeData를 QAGenerationPanel에 전달
   const [taggingVersion, setTaggingVersion] = useState(0);
-  const [taggingTreeData, setTaggingTreeData] = useState<{ h1_list: string[]; h2_by_h1: Record<string, string[]>; h3_by_h1_h2: Record<string, string[]> } | null>(null);
+  const [taggingTreeData, setTaggingTreeData] = useState<HierarchyTree | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState<'light' | 'dark'>(
     () => (localStorage.getItem('theme') as 'light' | 'dark') ?? 'dark'
@@ -81,6 +83,7 @@ function App() {
           />
 
         <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden px-4" : "overflow-y-scroll px-4 pb-4 pt-6"}`}>
+          <ErrorBoundary>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
             <DashboardOverview
@@ -133,6 +136,7 @@ function App() {
           <div className={activeTab === "settings" ? "h-full" : "hidden"}>
             <SettingsPanel section={settingsSection} />
           </div>
+          </ErrorBoundary>
         </main>
       </div>
     </div>
