@@ -156,15 +156,18 @@ frontend/src/
 
 | 함수 | 설명 |
 |------|------|
-| `apiFetch<T>(url, options?)` | 단일 요청. HTTP 에러 → `httpStatusToMessage`로 한국어 변환 |
-| `apiFetchWithRetry<T>(url, options, retries?, delayMs?)` | Cold start 대비 재시도 (기본 3회, 5초 간격). 에러 바디 `detail` 파싱 |
+| `apiFetch<T extends ApiResponse>(url, options?)` | 단일 요청 → `Promise<T>` 직접 반환. HTTP 에러 → `httpStatusToMessage`로 한국어 변환 |
+| `apiFetchWithRetry<T extends ApiResponse>(url, options, retries?, delayMs?)` | Cold start 대비 재시도 (기본 3회, 5초 간격). 에러 바디 `detail` 파싱 |
 | `mapErrorToMessage(error)` | 백엔드 에러 문자열 → 사용자 메시지 변환 |
+
+> 백엔드는 전 엔드포인트에서 `{ success, ...fields }` flat JSON을 반환. `ApiResponse`는 `{ success, error?, status_code? }` 기반 인터페이스이며 `data` 래퍼 없음.  
+> 예외: `/api/dashboard/metrics`만 `{ success, data: {...} }` 형태 사용 → `DashboardMetricsResponse`로 별도 처리.
 
 ### 엔드포인트 함수
 
 | 함수 | 메서드 | 경로 |
 |------|--------|------|
-| `getDashboardMetrics()` | GET | `/api/dashboard/metrics` |
+| `getDashboardMetrics()` | GET | `/api/dashboard/metrics` — `DashboardMetricsResponse` (`data?: unknown`) |
 | `getHierarchyList(filename?, filterForQa?)` | GET | `/api/ingestion/hierarchy-list` |
 | `uploadDocument(formData)` | POST | `/api/ingestion/upload` |
 | `analyzeHierarchy(filename)` | POST | `/api/ingestion/analyze-hierarchy` |
@@ -247,7 +250,7 @@ frontend/src/
 
 ---
 
-## 주요 파일 규모
+## 주요 파일 규모 (2026-04-08 기준)
 
 | 파일 | 줄 수 |
 |------|-------|
@@ -255,5 +258,5 @@ frontend/src/
 | `QAEvaluationDashboard.tsx` | 663 |
 | `exportUtils/htmlBuilder.ts` | 615 |
 | `DataStandardizationPanel.tsx` | 581 |
-| `api.ts` | 267 |
-| `App.tsx` | 146 |
+| `api.ts` | 271 |
+| `App.tsx` | 149 |

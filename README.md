@@ -201,10 +201,11 @@ autoeval/
 │ └── src/
 │ ├── App.tsx # 탭 라우팅 + 알림 + 테마 (light/dark)
 │ ├── types/
-│ │ └── evaluation.ts # QAStatus, QAPreviewItem, EvalReport, HistoryItem 등
+│ │ ├── evaluation.ts # QAStatus, QAPreviewItem, EvalReport, HistoryItem 등
+│ │ └── hierarchy.ts # HierarchyTree 공통 타입 (h1_list/h2_by_h1/h3_by_h1_h2)
 │ ├── lib/
-│ │ ├── api.ts # API 클라이언트 — apiFetch/apiFetchWithRetry 래퍼 + 전 엔드포인트 함수
-│ │ ├── evalChartUtils.ts # 차트 데이터 빌더 + formatKST
+│ │ ├── api.ts # API 클라이언트 — apiFetch<T extends ApiResponse> flat JSON 직접 반환
+│ │ ├── evalChartUtils.ts # 차트 데이터 빌더 + formatKST + SummaryStat/TooltipItem 타입
 │ │ ├── evalScoreUtils.ts # 점수 임계값 + getQAStatus
 │ │ ├── utils.ts # cn (clsx + tailwind-merge)
 │ │ └── exportUtils/ # 내보내기 유틸 (4파일 분리)
@@ -213,6 +214,7 @@ autoeval/
 │ │ ├── htmlBuilder.ts # SVG 차트 3종 + buildHTMLContent + exportToHTML
 │ │ └── index.ts # exportToJSON, exportToZip + re-exports (facade)
 │ └── components/
+│ ├── ErrorBoundary.tsx # 앱 루트 래핑 — TypeError 시 화면 소멸 방지
 │ ├── layout/
 │ │ ├── Sidebar.tsx # 글래스 사이드바 (bg-slate-900/95 backdrop-blur-xl)
 │ │ └── Header.tsx # 글래스 헤더 + 테마 토글 + 알림 드롭다운
@@ -234,8 +236,6 @@ autoeval/
 │ │ ├── HistoryDropdown.tsx # 평가 히스토리 드롭다운
 │ │ ├── shared.tsx # ChartInfoTooltip 공통 UI
 │ │ └── charts/ # MetricRadialGauge, IntentTreemap, QualityScoreChart
-│ ├── agents/
-│ │ └── AgentTable.tsx # 에이전트 테이블
 │ ├── analytics/
 │ │ └── AnalyticsDashboard.tsx # 분석 대시보드
 │ └── settings/
