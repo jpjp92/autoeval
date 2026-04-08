@@ -40,6 +40,7 @@ logging.getLogger("alembic").setLevel(logging.WARNING)
 logger = logging.getLogger("autoeval.evaluation")
 
 # ============= evaluators 패키지에서 import =============
+from config.models import MODEL_CONFIG
 from evaluators import (
     EvalJobStatus,
     EvalJob,
@@ -87,7 +88,8 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 body = {}
 
             result_filename = body.get("result_filename") if isinstance(body, dict) else None
-            evaluator_model = body.get("evaluator_model", "gemini-2.5-flash") if isinstance(body, dict) else "gemini-2.5-flash"
+            _default_eval_model = MODEL_CONFIG["gemini-flash"]["model_id"]
+            evaluator_model = body.get("evaluator_model", _default_eval_model) if isinstance(body, dict) else _default_eval_model
             generation_id   = body.get("generation_id") if isinstance(body, dict) else None
             limit           = body.get("limit")         if isinstance(body, dict) else None
 
