@@ -36,9 +36,8 @@ export function mapErrorToMessage(error: string): string {
   return "일시적인 오류가 발생했습니다. 문제가 지속되면 관리자에게 문의해 주세요.";
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse {
   success: boolean;
-  data?: T;
   error?: string;
   status_code?: number;
 }
@@ -113,23 +112,23 @@ function httpStatusToMessage(status: number): string {
   return `HTTP ${status}`;
 }
 
-async function apiFetch<T = any>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
+async function apiFetch<T extends ApiResponse = ApiResponse>(url: string, options?: RequestInit): Promise<T> {
   try {
     const response = await fetch(url, options);
     if (!response.ok) throw new Error(httpStatusToMessage(response.status));
-    return await response.json();
+    return await response.json() as T;
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: (error as Error).message } as T;
   }
 }
 
 /** Cold start 대비 재시도 fetch (최대 retries회, delayMs 간격) */
-export async function apiFetchWithRetry<T = any>(
+export async function apiFetchWithRetry<T extends ApiResponse = ApiResponse>(
   url: string,
   options: RequestInit,
   retries = 3,
   delayMs = 5000,
-): Promise<ApiResponse<T>> {
+): Promise<T> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(url, options);
@@ -141,47 +140,51 @@ export async function apiFetchWithRetry<T = any>(
         } catch {}
         throw new Error(errMsg);
       }
-      return await response.json();
+      return await response.json() as T;
     } catch (e) {
-      if (attempt === retries) return { success: false, error: '서버에 연결할 수 없습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.' };
+      if (attempt === retries) return { success: false, error: '서버에 연결할 수 없습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.' } as T;
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
-  return { success: false, error: '서버에 연결할 수 없습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.' };
+  return { success: false, error: '서버에 연결할 수 없습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.' } as T;
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
-export async function getDashboardMetrics(): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/dashboard/metrics`);
+// /api/dashboard/metrics 는 예외적으로 { success, data: {...} } 래퍼를 사용
+export interface DashboardMetricsResponse extends ApiResponse {
+  data?: unknown;
+}
+
+export async function getDashboardMetrics(): Promise<DashboardMetricsResponse> {
+  return apiFetch<DashboardMetricsResponse>(`${API_BASE}/api/dashboard/metrics`);
 }
 
 // ── Ingestion ──────────────────────────────────────────────────────────────
 
+interface HierarchyListResponse extends ApiResponse {
+  h1_list?: string[];
+  h2_by_h1?: Record<string, string[]>;
+  h3_by_h1_h2?: Record<string, string[]>;
+}
+
 export async function getHierarchyList(filename?: string, filterForQa = true): Promise<{
+  success: boolean;
   h1_list: string[];
   h2_by_h1: Record<string, string[]>;
   h3_by_h1_h2: Record<string, string[]>;
-  success: boolean;
 }> {
   const qs = new URLSearchParams();
   if (filename) qs.set('filename', filename);
   if (!filterForQa) qs.set('filter_for_qa', 'false');
   const params = qs.toString() ? `?${qs.toString()}` : '';
-  // 백엔드가 flat JSON { success, h1_list, h2_by_h1, h3_by_h1_h2 } 을 반환 (data 키 없음)
-  const result = await apiFetch(`${API_BASE}/api/ingestion/hierarchy-list${params}`) as unknown as {
-    success: boolean;
-    h1_list?: string[];
-    h2_by_h1?: Record<string, string[]>;
-    h3_by_h1_h2?: Record<string, string[]>;
-    error?: string;
-  };
+  const result = await apiFetch<HierarchyListResponse>(`${API_BASE}/api/ingestion/hierarchy-list${params}`);
   if (!result.success) return { success: false, h1_list: [], h2_by_h1: {}, h3_by_h1_h2: {} };
   return {
     success: true,
-    h1_list:      result.h1_list      ?? [],
-    h2_by_h1:     result.h2_by_h1     ?? {},
-    h3_by_h1_h2:  result.h3_by_h1_h2  ?? {},
+    h1_list:     result.h1_list     ?? [],
+    h2_by_h1:    result.h2_by_h1    ?? {},
+    h3_by_h1_h2: result.h3_by_h1_h2 ?? {},
   };
 }
 
@@ -199,14 +202,14 @@ export interface TaggingResponse extends ApiResponse {
 }
 
 export async function uploadDocument(formData: FormData): Promise<ApiResponse> {
-  return apiFetch(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+  return apiFetch<ApiResponse>(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
 }
 
 export async function analyzeHierarchy(filename: string): Promise<AnalyzeHierarchyResponse> {
   return apiFetchWithRetry<AnalyzeHierarchyResponse>(
     `${API_BASE}/api/ingestion/analyze-hierarchy`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) },
-  ) as Promise<AnalyzeHierarchyResponse>;
+  );
 }
 
 export async function applyGranularTagging(payload: {
@@ -215,53 +218,53 @@ export async function applyGranularTagging(payload: {
   h2_h3_master: Record<string, Record<string, string[]>>;
   document_id?: string;
 }): Promise<TaggingResponse> {
-  return apiFetch(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
+  return apiFetch<TaggingResponse>(`${API_BASE}/api/ingestion/apply-granular-tagging`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }) as Promise<TaggingResponse>;
+  });
 }
 
 // ── Generation ─────────────────────────────────────────────────────────────
 
 export async function generateQA(request: GenerateRequest): Promise<JobStartResponse> {
-  return apiFetch(`${API_BASE}/api/generate`, {
+  return apiFetch<JobStartResponse>(`${API_BASE}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
-  }) as Promise<JobStartResponse>;
+  });
 }
 
 export async function getGenStatus(jobId: string): Promise<GenStatusResponse> {
-  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/status`) as Promise<GenStatusResponse>;
+  return apiFetch<GenStatusResponse>(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/status`);
 }
 
 export async function getGenPreview(jobId: string, limit = 3): Promise<GenPreviewResponse> {
-  return apiFetch(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/preview?limit=${limit}`) as Promise<GenPreviewResponse>;
+  return apiFetch<GenPreviewResponse>(`${API_BASE}/api/generate/${encodeURIComponent(jobId)}/preview?limit=${limit}`);
 }
 
 // ── Evaluation ─────────────────────────────────────────────────────────────
 
 export async function evaluateQA(request: EvaluateRequest): Promise<JobStartResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate`, {
+  return apiFetch<JobStartResponse>(`${API_BASE}/api/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
-  }) as Promise<JobStartResponse>;
+  });
 }
 
 export async function getEvalStatus(jobId: string): Promise<EvalStatusResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/status`) as Promise<EvalStatusResponse>;
+  return apiFetch<EvalStatusResponse>(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/status`);
 }
 
 export async function getEvalHistory(): Promise<EvalHistoryResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/history`) as Promise<EvalHistoryResponse>;
+  return apiFetch<EvalHistoryResponse>(`${API_BASE}/api/evaluate/history`);
 }
 
 export async function getEvalExport(jobId: string): Promise<EvalExportResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/export`) as Promise<EvalExportResponse>;
+  return apiFetch<EvalExportResponse>(`${API_BASE}/api/evaluate/${encodeURIComponent(jobId)}/export`);
 }
 
 export async function getEvalExportById(evalId: string): Promise<EvalExportResponse> {
-  return apiFetch(`${API_BASE}/api/evaluate/export-by-id/${encodeURIComponent(evalId)}`) as Promise<EvalExportResponse>;
+  return apiFetch<EvalExportResponse>(`${API_BASE}/api/evaluate/export-by-id/${encodeURIComponent(evalId)}`);
 }

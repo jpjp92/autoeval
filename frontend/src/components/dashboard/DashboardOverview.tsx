@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { StatsGrid } from "./StatsCards";
 // import { ActivityChart } from "./ActivityChart"; // Phase 8.2: 리더보드로 대체 (필요 시 복구)
 import { getDashboardMetrics } from "@/src/lib/api";
+import type { DashboardMetricsResponse } from "@/src/lib/api";
 import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trophy, Zap, ScrollText, Rocket } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
@@ -99,7 +100,7 @@ export function DashboardOverview({
     setGradeAnimated(false);
     async function load() {
       setLoading(true);
-      const res = await getDashboardMetrics();
+      const res: DashboardMetricsResponse = await getDashboardMetrics();
       if (!cancelled && res.success && res.data) {
         setData(res.data as DashboardData);
       }
