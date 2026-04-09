@@ -191,7 +191,6 @@ autoeval/
 │ │ ├── hierarchy_repo.py # 계층 목록 조회 / 일괄 업데이트
 │ │ └── dashboard_repo.py # 대시보드 집계 (summary, recent_jobs, grade_dist)
 │ └── config/
-│     ├── prompts.py # 호환성 shim — generators/prompts.py re-export
 │     ├── supabase_client.py # re-export wrapper → backend/db/ 위임
 │     └── models.py # 모델 alias → model_id, cost 매핑
 ├── frontend/
@@ -514,4 +513,4 @@ Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~2
 
 ---
 
-**Last Updated**: 2026-04-07 | **Branch**: main
+**Last Updated**: 2026-04-09 | **Branch**: main

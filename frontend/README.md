@@ -1,6 +1,6 @@
 # AutoEval Frontend
 
-> 마지막 업데이트: 2026-04-08
+> 마지막 업데이트: 2026-04-09
 
 LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론트엔드.
 
@@ -258,5 +258,5 @@ frontend/src/
 | `QAEvaluationDashboard.tsx` | 663 |
 | `exportUtils/htmlBuilder.ts` | 615 |
 | `DataStandardizationPanel.tsx` | 581 |
-| `api.ts` | 271 |
-| `App.tsx` | 149 |
+| `api.ts` | 270 |
+| `App.tsx` | 146 |
