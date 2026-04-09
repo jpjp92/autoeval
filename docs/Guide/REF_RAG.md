@@ -490,6 +490,69 @@ if total_qa == 0:
 
 ---
 
+## 일반 RAG vs AutoEval 비교
+
+### 유사점
+
+| 일반 RAG | AutoEval |
+| -------- | -------- |
+| Knowledgebase → Vector DB (청킹 + 임베딩) | PDF/DOCX → Supabase pgvector (청킹 + Gemini Embedding 2) |
+| Query → Retriever → Vector DB 검색 | `retrieval_query` → `match_doc_chunks` RPC (코사인 유사도) |
+| Chunks of text → Augmentation | 검색된 청크 → QA 생성 프롬프트에 컨텍스트로 주입 |
+| Generation by LLM | Claude / Gemini / GPT 중 선택하여 QA 생성 |
+| Response 반환 | `qa_gen_results` 저장 |
+
+### 차이점
+
+#### 1. Retriever 목적이 다름
+일반 RAG는 **사용자 질의에 답변**하기 위해 청크를 검색한다. AutoEval은 **QA 쌍 생성을 위한 시드 컨텍스트 수집**이 목적이다. 검색된 청크가 "답"이 아니라 "QA를 만들 재료"로 사용된다.
+
+#### 2. 청킹에 LLM 사용
+일반 RAG는 보통 `RecursiveCharacterTextSplitter` 같은 rule 기반 청킹을 사용하지만, AutoEval은 **Gemini 2.5 Flash가 직접 의미 단위로 청킹**한다. 표·제목·법조문 구조 인식이 포함된다.
+
+#### 3. 벡터 저장 후 수동 계층 태깅 단계 존재
+일반 RAG에 없는 단계. 벡터 저장 후 **H1/H2/H3 계층 분류를 별도 LLM 호출**로 수행하고 metadata에 패치한다. 이를 기반으로 검색 필터를 사전에 좁힌다.
+
+#### 4. Retrieval이 선택적 (3가지 수집 전략)
+일반 RAG는 항상 벡터 검색을 통하지만, AutoEval은 상황에 따라 분기한다:
+
+```
+retrieval_query 있음 → 벡터 유사도 검색 (match_doc_chunks RPC)
+document_id만 있음  → 균등 stride 샘플링 (get_doc_chunks_sampled)
+hierarchy 필터만    → metadata 조건 조회 (get_doc_chunks_by_filter)
+```
+
+#### 5. Augmentation 단계에서 도메인 프로파일 주입
+일반 RAG의 Augmentation은 단순 "쿼리 + 청크" 병합이지만, AutoEval은 **`doc_metadata`에서 `domain_profile`을 로드해 프롬프트에 추가**한다 (문서의 목적·대상 독자·도메인 특성 등). 계층 분류 단계에서 사전 생성된 프로파일을 재사용하므로 LLM 추가 호출 없음.
+
+#### 6. 생성 후 QA 품질 가드
+일반 RAG는 Response를 바로 반환하지만, AutoEval은 생성 후 추가 처리를 거친다:
+
+- `_dedup_across_chunks(sim_threshold=0.75)` — 의미 중복 QA 제거
+- `total_qa == 0` → FAILED 처리 (DB 저장 건너뜀)
+- 이후 별도 평가 파이프라인(Layer 1~3) 존재 → [REF_EVAL.md](REF_EVAL.md)
+
+### 전체 구조 대응도
+
+```
+일반 RAG                        AutoEval
+──────────────────────────────────────────────────────────────
+Knowledgebase                → PDF / DOCX
+Vector DB 구축                → LLM 청킹 + Gemini Embedding 2
+                                + H1/H2/H3 계층 태깅 (추가 단계)
+Query                        → retrieval_query (선택적)
+Retriever                    → match_doc_chunks RPC
+                                or 균등 샘플링 / metadata 필터
+Augmentation                 → domain_profile + 청크 컨텍스트
+                                → QA 생성 프롬프트
+Generation by LLM            → Claude / Gemini / GPT (병렬, 선택)
+Response                     → qa_gen_results → 평가 파이프라인
+```
+
+> **핵심 차이**: 일반 RAG는 "검색해서 답변", AutoEval은 "검색해서 QA를 만들고, 그 QA를 다시 평가"하는 2단 구조.
+
+---
+
 ## 사용 라이브러리 요약
 
 | 라이브러리                   | 역할                               | 비고                          |
