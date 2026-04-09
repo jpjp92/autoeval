@@ -267,6 +267,117 @@ doc_chunks (
 
 ---
 
+## HNSW & L2 정규화 상세
+
+### HNSW (Hierarchical Navigable Small World)
+
+HNSW는 고차원 벡터 공간에서 **근사 최근접 이웃(ANN, Approximate Nearest Neighbor)** 검색을 빠르게 수행하기 위한 그래프 기반 인덱싱 알고리즘이다. Supabase pgvector에서 `USING hnsw (embedding vector_cosine_ops)` 구문으로 생성된다.
+
+#### 구조
+
+```
+Layer 3 (최상위) : 소수 노드 — 장거리 점프
+Layer 2          : 중간 밀도
+Layer 1          : 더 조밀
+Layer 0 (최하위) : 전체 벡터 포함
+```
+
+- **상위 레이어** — 데이터의 부분 집합만 포함. 노드 간 연결 거리가 커서 넓은 범위를 빠르게 탐색 ("장거리 점프").
+- **최하위 레이어(Layer 0)** — 모든 벡터 포함. 세밀한 이웃 탐색 담당.
+
+#### 검색 흐름
+
+1. 최상위 레이어 진입점에서 탐색 시작
+2. 현재 노드 이웃 중 쿼리에 가장 가까운 노드로 이동 (Greedy Search)
+3. 현재 레이어에서 더 이상 가까워질 수 없으면 한 단계 아래 레이어로 내려감
+4. Layer 0에 도달하면 최종 후보 `match_count`개 반환
+
+검색 복잡도는 **O(log N)**으로, 데이터셋 크기가 커져도 효율적이다.
+
+#### AutoEval 설정
+
+```sql
+-- setup_vector_db.sql
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_hnsw
+ON doc_chunks USING hnsw (embedding vector_cosine_ops);
+```
+
+| 항목 | 값 |
+| ---- | -- |
+| 인덱스 방식 | `hnsw` |
+| 거리 연산자 | `vector_cosine_ops` (`<=>` 코사인 거리) |
+| 벡터 차원 | 1536 (HNSW pgvector 2000차원 제한 고려) |
+| pgvector 버전 | Supabase 기본 제공 |
+
+유사도 쿼리:
+
+```sql
+1 - (embedding <=> query_embedding) AS similarity  -- 코사인 유사도 (0~1)
+ORDER BY embedding <=> query_embedding             -- 거리 오름차순 = 유사도 내림차순
+```
+
+`<=>` 연산자는 코사인 **거리** (1 − 유사도)를 반환하므로, `1 − 거리`로 유사도를 계산한다.
+
+---
+
+### L2 정규화 (L2 Normalization)
+
+벡터를 저장하거나 검색할 때 그 **크기(norm)를 1로 스케일링**하는 전처리 단계다. 머신러닝의 가중치 감소(Weight Decay)와는 다른 개념이다.
+
+#### 수식
+
+$$\hat{v} = \frac{v}{\|v\|_2}, \quad \|v\|_2 = \sqrt{\sum_i v_i^2}$$
+
+#### AutoEval 적용 위치
+
+**문서 청크 저장 시** (`ingestion/pipeline.py`):
+
+```python
+embedding_np = np.array(emb_data.values)
+norm = np.linalg.norm(embedding_np)   # L2 Norm 계산
+normalized_embedding = (embedding_np / norm).tolist() if norm > 0 else emb_data.values
+```
+
+**쿼리 벡터 생성 시** (`generators/worker.py`):
+
+```python
+v_np = np.array(res.embeddings[0].values)
+v_norm = np.linalg.norm(v_np)
+query_vector = (v_np / v_norm).tolist() if v_norm > 0 else res.embeddings[0].values
+```
+
+#### 정규화가 필요한 이유
+
+코사인 유사도는 정의상 두 벡터의 크기 정보를 제거하고 방향(각도)만 비교한다.
+
+$$\cos(\theta) = \frac{v \cdot u}{\|v\|\|u\|}$$
+
+L2 정규화로 저장된 벡터 `v̂`는 이미 `‖v̂‖ = 1`이므로, pgvector의 코사인 거리 연산자 `<=>` 내부에서 분모 나눗셈이 단순화된다. 즉:
+
+- **검색 결과 동등**: 정규화 여부와 무관하게 코사인 유사도 순위는 동일하다.
+- **수치 안정성**: 저장/쿼리 단계 모두 정규화를 적용하면 분모 값이 항상 1에 가까워 수치 오차가 줄어든다.
+- **일관성**: 임베딩 모델 출력 벡터의 크기가 다소 달라도 정규화를 통해 비교 기준을 통일한다.
+
+#### 정규화 적용 흐름 요약
+
+```
+[Gemini Embedding 2 API 응답] → raw float[] (1536차원)
+         │
+         ▼ np.linalg.norm()
+[L2 Norm 계산] → scalar
+         │
+         ▼ embedding / norm
+[정규화된 벡터] → Supabase vector(1536) 저장
+                  (RETRIEVAL_DOCUMENT 저장 / RETRIEVAL_QUERY 검색 모두 동일)
+```
+
+| task_type | 사용 위치 | 정규화 |
+| --------- | --------- | ------ |
+| `RETRIEVAL_DOCUMENT` | 청크 저장 (`pipeline.py`) | ✅ |
+| `RETRIEVAL_QUERY` | 검색 쿼리 (`worker.py`) | ✅ |
+
+---
+
 ## Stage 5 — 계층 분류 (H1/H2/H3 태깅)
 
 ### 엔드포인트 순서

@@ -39,6 +39,8 @@ analyze_pdf_structure.py
 sample/
 .python-version
 .claude/CLAUDE.md
+scripts/
+results/
 .env copy
 .claude/
 image/
@@ -49,3 +51,10 @@ backend/scripts/anchor_ids_regen.json
 backend/scripts/cleanup_queries.sql
 backend/scripts/cleanup_targets.json
 docs/feedback.md
+results/parser_comparison/테스트데이터_1/current_output.txt
+results/parser_comparison/테스트데이터_1/diff_summary.txt
+results/parser_comparison/테스트데이터_1/llm4pdf_output.md
+scripts/parser_block_merge_analysis.md
+scripts/parser_heading_comparison.md
+scripts/test_parser_fixes.py
+scripts/test_parser_heading.py
