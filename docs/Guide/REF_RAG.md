@@ -1,11 +1,13 @@
 <!--
 파일: REF_RAG.md
-설명: 문서 인제스션(PDF/DOCX 추출 → LLM/Rule 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색) → 평가 파이프라인 전체 흐름 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함.
-업데이트: 2026-04-06
+설명: 문서 인제스션(PDF/DOCX 추출 → LLM/Rule 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색)까지의 RAG 파이프라인 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함. 평가 파이프라인은 REF_EVAL.md 참조.
+업데이트: 2026-04-09
 -->
+
 # AutoEval RAG Pipeline
 
-> 문서 업로드부터 벡터 검색 기반 QA 생성·평가까지의 전체 흐름 정리
+> 문서 업로드부터 벡터 검색 기반 QA 생성까지의 흐름 정리
+> 평가 파이프라인(Layer 1~3, 점수 계산) → [REF_EVAL.md](REF_EVAL.md)
 
 ---
 
@@ -17,66 +19,71 @@
       │
       ▼
 [텍스트 추출]  parsers.extract_text_by_page()
-  PDF  → PyMuPDF(fitz)     블록 단위 추출
-  DOCX → python-docx XML   단락·표 블록 구조 추출
+  PDF  → PyMuPDF rawdict 모드  chars 단위 추출 + 한글 공백 복원
+         detect_heading() : font>=10 패턴 매칭 / font_boost 이중 감지
+         _KOR_CONT 병합   : y_gap > 15 AND font_diff > 1.5 시 병합 금지
+  DOCX → python-docx XML  단락·표·Heading 스타일 구조 보존
       │
       ▼
 [전처리 / 노이즈 필터]
-  - normalize_text()         unicode 정규화, 이상 문자 제거
+  - normalize_text()          unicode 정규화, 이상 문자 제거
   - detect_repeated_headers() 반복 헤더 탐지
-  - is_toc_chunk()           목차 블록 제거
-  - _is_docx_noise_block()   커버·장식 요소 제거 (DOCX 전용)
+  - is_toc_chunk()            목차 블록 제거
+  - _is_docx_noise_block()    커버·장식 요소 제거 (DOCX 전용)
       │
       ▼
-[청킹]  두 경로 중 선택 (기본: llm)
-  ┌──────────────────┐     ┌────────────────────────────────┐
-  │  rule 청킹       │     │  LLM 청킹 (기본, 품질 우선)     │
-  │ chunk_blocks_    │     │  run_llm_chunking()      (PDF) │
-  │ aware()          │     │  run_llm_chunking_docx() (DOCX)│
-  │ RecursiveCharac- │     │  Gemini 2.5 Flash              │
-  │ terTextSplitter  │     │  의미 단위 배치 병렬 처리       │
-  └──────────────────┘     └────────────────────────────────┘
+[청킹]  두 경로 중 선택 (chunking_method 파라미터, 기본: llm)
+  ┌──────────────────────┐     ┌──────────────────────────────────┐
+  │  rule 청킹           │     │  LLM 청킹 (기본, 품질 우선)       │
+  │  chunk_blocks_aware()│     │  run_llm_chunking()        (PDF) │
+  │  RecursiveCharacter- │     │  run_llm_chunking_docx()  (DOCX) │
+  │  TextSplitter        │     │  Gemini 2.5 Flash                │
+  │  (LangChain)         │     │  페이지/블록 수 기반 티어 조정    │
+  └──────────────────────┘     └──────────────────────────────────┘
       │
       ▼
 [청크 후처리]
   - 중복 제거  (SHA-1 content_hash)
-  - 너무 짧은 청크 병합  (< 60자 → 제거, < 300자 → 인접 병합)
-  - context_prefix 부착  "[파일명] [섹션제목] (p.N)\n..."
+  - 최소 길이  (< 60자 → 제거)
+  - context_prefix 부착  "[파일명] [섹션제목] (p.N)\n..."  ← rule 청킹만 적용
+    LLM 청킹은 context_prefix 미부착 (text == raw_text)
       │
       ▼
-[임베딩]  Gemini Embedding 2 Preview
+[임베딩]  gemini-embedding-2-preview
   - task_type: RETRIEVAL_DOCUMENT
   - output_dimensionality: 1536
   - L2 정규화 후 저장
+  - 배치: 64청크 단위
       │
       ▼
-[벡터 DB 저장]  Supabase pgvector
-  - 테이블: doc_chunks
+[벡터 DB 저장]  Supabase pgvector (doc_chunks)
+  - content + metadata jsonb + embedding vector(1536)
+  - document_id 전용 컬럼 (FK → doc_metadata)
   - 인덱스: HNSW (cosine), GIN (metadata jsonb)
       │
       ▼
 [계층 분류]  H1 / H2 / H3 태깅
-  - analyze-hierarchy   → H1 후보 도출
-  - analyze-h2-h3       → H2/H3 마스터 생성
-  - apply-granular-tagging → 청크별 계층 메타데이터 업데이트
+  - analyze-hierarchy      → 전체 청크 풀 랜덤 40개 → __admin__ 필터 → 최대 30개
+                             LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성
+                             → doc_metadata upsert
+  - analyze-tagging-samples → 기존 태깅 샘플 미리보기 (5개)
+  - apply-granular-tagging → 청크별 h1/h2/h3 일괄 태깅
+                             master 목록에서 선택만 허용, 신규 생성 금지
       │
       ▼
-[QA 생성]  generation_api.py
-  - 벡터 DB에서 계층 필터 또는 semantic search로 청크 수집
-  - 다중 LLM(Claude Sonnet / Gemini Flash / GPT-5.2)으로 QA 생성
+[QA 생성]  generation_api.py → generators/worker.py
+  - sample_doc_chunks RPC 균등 샘플링 → h1/h2/h3 후처리 필터
+  - doc_metadata에서 domain_profile 로드 (LLM 0회)
+  - build_system_prompt() / build_user_template() 적응형 프롬프트 빌드
+  - ThreadPoolExecutor 병렬 생성
+    Claude Sonnet 4.6 (workers=2) / Gemini 3 Flash (workers=5) / GPT-5.2 (workers=5)
+  - _dedup_across_chunks(sim_threshold=0.75) 중복 제거
   - total_qa == 0 → FAILED (DB 저장 건너뜀)
       │
       ▼
-[평가 파이프라인]  evaluators/pipeline.py
-  Layer 1-A  구문 검증 (SyntaxValidator)
-  Layer 1-B  통계 검증 (DatasetStats)
-  Layer 2    RAG Triad (관련성·근거성·맥락성)  Claude Haiku
-  Layer 3    품질 평가 (완전성)               Claude Haiku
-      │
-      ▼
-[결과 저장 & 대시보드]
-  Supabase qa_generation_results / qa_evaluation_scores
-  Frontend: QAEvaluationDashboard
+[결과 저장]
+  Supabase qa_gen_results
+  → 평가 파이프라인은 REF_EVAL.md 참조
 ```
 
 ---
@@ -85,9 +92,16 @@
 
 ### PDF (`PyMuPDF / fitz`)
 
-- `fitz.open()` → 페이지별 블록 순회
+- `fitz.open()` → 페이지별 블록 순회 (rawdict 모드 — chars 단위 추출)
 - 각 블록: `{"text", "font_size", "bbox", "page"}`
 - 반복 헤더·푸터 탐지 후 후속 단계에서 제거
+
+**파서 보정 규칙 (2026-04-09 적용)**
+
+| 규칙                             | 대상                       | 내용                                                                                                                  |
+| -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| FIX-A — heading font 하한       | `detect_heading()`       | 패턴 매칭(`^제\s*\d+\s*장` 등) 시 `font_size >= 10.0` 조건 추가 — running header(font 8~9) 오분류 방지           |
+| FIX-B —`_KOR_CONT` y_gap 가드 | `extract_text_by_page()` | 한글 어절 절단 병합 시 `y_gap > 15 AND font_diff > 1.5` 이면 별개 단락으로 간주 — heading+본문 첫 문장 오병합 방지 |
 
 ### DOCX (`python-docx` 직접 XML 파싱)
 
@@ -134,13 +148,13 @@
 
 #### 배치 티어 정책 (PDF 기준 — `recommend_params`)
 
-| 티어 | 페이지 수  | batch_size | parallel | overlap | max_output_tokens |
-| ---- | ---------- | ---------- | -------- | ------- | ----------------- |
-| S    | ≤ 20      | 30         | 3        | 3       | 8192              |
-| M    | 21–50     | 30         | 3        | 3       | 8192              |
-| L    | 51–100    | 40         | 5        | 3       | 12288             |
-| XL   | 101–200   | 50         | 5        | 5       | 16384             |
-| XXL  | 200+       | 50         | 5        | 5       | 16384             |
+| 티어 | 페이지 수 | batch_size | parallel | overlap | max_output_tokens |
+| ---- | --------- | ---------- | -------- | ------- | ----------------- |
+| S    | ≤ 20     | 30         | 3        | 3       | 8192              |
+| M    | 21–50    | 30         | 3        | 3       | 8192              |
+| L    | 51–100   | 40         | 5        | 3       | 12288             |
+| XL   | 101–200  | 50         | 5        | 5       | 16384             |
+| XXL  | 200+      | 50         | 5        | 5       | 16384             |
 
 #### 배치 티어 정책 (DOCX 기준 — `recommend_params_docx`)
 
@@ -186,6 +200,7 @@ SHA-1 content_hash      # 완전 중복 → 제거
 ```
 
 > **경로별 context_prefix 차이**:
+>
 > - **Rule 청킹** (`ingest_with_rule_chunking`): `build_context_prefix()` 호출 → `text = prefix + raw_text`, `raw_text` 별도 보존. 임베딩 입력에 prefix 포함.
 > - **LLM 청킹** (`ingest_with_llm_chunking`): context_prefix **미부착** → `text == raw_text`. 임베딩은 원문 그대로 저장.
 
@@ -207,13 +222,16 @@ SHA-1 content_hash      # 완전 중복 → 제거
 
 ```sql
 doc_chunks (
-  id         uuid PRIMARY KEY,
-  content    text NOT NULL,        -- 청크 원문
-  metadata   jsonb,                -- 파일명·페이지·계층·chunk_type 등
-  embedding  vector(1536),         -- 정규화된 임베딩 벡터
-  created_at timestamptz
+  id          uuid PRIMARY KEY,
+  content     text NOT NULL,        -- 청크 원문
+  metadata    jsonb,                -- 파일명·페이지·계층·chunk_type 등
+  embedding   vector(1536),         -- 정규화된 임베딩 벡터
+  document_id text REFERENCES doc_metadata(document_id) ON DELETE SET NULL,
+  created_at  timestamptz
 )
 ```
+
+> `document_id`는 `metadata` jsonb가 아닌 **전용 컬럼**으로 저장 — 컬럼 인덱스 활용, metadata 중복 제거.
 
 #### 인덱스
 
@@ -245,7 +263,6 @@ doc_chunks (
 }
 ```
 
-> **주의**: `document_id`는 metadata jsonb가 아닌 `doc_chunks.document_id` 별도 컬럼으로 저장.
 > `section_path`, `section_level`은 현재 코드에서 생성하지 않음.
 
 ---
@@ -256,17 +273,42 @@ doc_chunks (
 
 ```
 POST /api/ingestion/analyze-hierarchy
-  └─ H1 후보 도출 (LLM)
-
-POST /api/ingestion/analyze-h2-h3
-  └─ H1 선택 후 H2/H3 마스터 생성 (LLM)
+  └─ sample_doc_chunks RPC → 전체 청크 풀에서 랜덤 40개 추출
+  └─ __admin__ 청크 필터 제거 → 최대 30개 (filtered[:30])
+  └─ 청크당 최대 글자 수 동적 조정: max(400, 20000 // len(anchor_chunks))
+  └─ LLM 1회 호출 (gemini-3-flash-preview)
+  └─ H1(3~5개) + H2/H3 전체 master + domain_profile 동시 생성
+  └─ doc_metadata upsert (h2_h3_master + domain_profile)
 
 POST /api/ingestion/analyze-tagging-samples
-  └─ 샘플 청크 태깅 미리보기
+  └─ 이미 태깅된 청크 샘플 5개 반환 (미리보기용)
 
 POST /api/ingestion/apply-granular-tagging
   └─ 전체 청크 metadata.hierarchy_h1/h2/h3 일괄 업데이트
+  └─ master_hierarchy 목록에서 선택만 허용 (신규 생성 금지)
+  └─ patch_chunk_hierarchy RPC (jsonb merge)
 ```
+
+> `analyze-hierarchy`가 H1/H2/H3 master와 domain_profile을 **단일 LLM 호출**로 동시 생성한다.
+
+### anchor 샘플링 상세
+
+실제 Supabase 함수는 `chunk_index` 기준 **등간격 stride** 방식 (상세: [REF_DB.md](REF_DB.md#sample_doc_chunks)).
+
+```
+step_size = GREATEST(total_count / p_n, 1)
+WHERE (rn - 1) % step_size = 0   ← 전역 chunk_index 순 균등 추출
+```
+
+| 단계 | 처리 |
+| ---- | ---- |
+| 1    | Supabase RPC로 document_id 기준 최신 버전에서 균등 40개 추출 |
+| 2    | `__admin__` 청크 제거 (목차·커버 등 노이즈) |
+| 3    | 필터 후 10개 미만이면 필터 취소 → 원본 40개 복원 |
+| 4    | `filtered[:30]` — 최종 anchor 청크 확정 |
+| 5    | 청크당 글자 수 상한: `max(400, 20000 // 청크수)` (30개 기준 최대 666자/청크) |
+
+**LLM 입력 총량**: anchor 수 × 청크당 상한 ≈ **최대 약 20,000자** 고정
 
 ### 재인제스션 시 구버전 처리
 
@@ -293,6 +335,7 @@ MIN_CONTENT_CHARS = 300   # 총 텍스트 < 300자 → 제외
 ```
 
 **필터 조건 (h2/h3 계층별 상이)**:
+
 - h3: 청크 수 < MIN_CHUNKS_FOR_QA **AND** 총 chars < MIN_CONTENT_CHARS → 둘 다 미달일 때만 제외
 - h2 (독립 존재 시): 청크 수 >= MIN_CHUNKS_FOR_QA **OR** chars >= MIN_CONTENT_CHARS → 하나만 충족해도 노출
 - h1: 유효한 h2가 하나도 없으면 제외
@@ -336,36 +379,6 @@ if total_qa == 0:
 
 ---
 
-## Stage 7 — 평가 파이프라인
-
-`evaluators/pipeline.py` — 4단계 순차 + 병렬 처리
-
-| 레이어 | 이름        | 도구                                  | 설명                         |
-| ------ | ----------- | ------------------------------------- | ---------------------------- |
-| 1-A    | 구문 검증   | `SyntaxValidator`                   | JSON 형식·필수 필드 체크    |
-| 1-B    | 통계 검증   | `DatasetStats`                      | 길이·다양성·중복 통계      |
-| 2      | RAG Triad   | `RAGTriadEvaluator` + Claude Haiku  | 관련성·근거성·맥락성 (0~1) |
-| 3      | 완전성 평가 | `QAQualityEvaluator` + Claude Haiku | 완전성 (0~1)                 |
-
-### 평가 점수 구조
-
-```
-rag_avg     = avg(관련성, 근거성, 맥락성)
-quality_avg = 완전성
-unified     = (rag_avg × 3 + quality_avg) / 4
-final_score = unified  (0~1, × 100 으로 % 표시)
-```
-
-### 평가 모델 워커 수
-
-| Provider  | 모델             | 최대 workers |
-| --------- | ---------------- | ------------ |
-| Anthropic | Claude Haiku 4.5 | 2            |
-| Google    | Gemini Flash     | 10           |
-| OpenAI    | GPT-5.x          | 8            |
-
----
-
 ## 사용 라이브러리 요약
 
 | 라이브러리                   | 역할                               | 비고                          |
@@ -375,7 +388,8 @@ final_score = unified  (0~1, × 100 으로 % 표시)
 | `google-genai`             | Gemini 임베딩·청킹 LLM            | Gemini 2.5 Flash, Embedding 2 |
 | `langchain-text-splitters` | `RecursiveCharacterTextSplitter` | rule 청킹 경로에서만 사용     |
 | `supabase-py`              | pgvector DB 연동                   |                               |
-| `anthropic`                | Claude Haiku 평가                  | RAG Triad + 완전성            |
+| `anthropic`                | Claude Sonnet 4.6 QA 생성          |                               |
+| `openai`                   | GPT-5.2 QA 생성                    |                               |
 | `numpy`                    | 임베딩 L2 정규화                   |                               |
 
 ---
@@ -394,10 +408,6 @@ backend/
 │   ├── llm_chunker.py         # Gemini 기반 LLM 청킹 (PDF/DOCX 분기)
 │   ├── tagging.py             # 청크 hierarchy 태깅 핵심 로직 (run_tagging)
 │   └── prompts.py             # 계층 분석·태깅용 LLM 프롬프트
-├── evaluators/
-│   ├── pipeline.py            # 4-Layer 평가 오케스트레이터
-│   ├── rag_triad.py           # RAG Triad 평가
-│   └── qa_quality.py          # 완전성 평가
 ├── db/
 │   └── hierarchy_repo.py      # H1/H2/H3 드롭다운 필터 (MIN_CHUNKS/CHARS)
 └── scripts/

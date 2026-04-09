@@ -1,11 +1,11 @@
 <!--
 파일: REF_EVAL.md
 설명: QA 평가 파이프라인 기준 정리. 최종 점수 계산식(구문·통계·RAG Triad·완전성), 등급 기준, Layer별 평가 지표(관련성·근거성·맥락성·완전성) 및 평가 모델 설정 포함.
-업데이트: 2026-04-06
+업데이트: 2026-04-09
 -->
 # 평가 기준 (Evaluation Criteria)
 
-> 마지막 업데이트: 2026-04-06
+> 마지막 업데이트: 2026-04-09
 
 ## 최종 점수 계산
 
@@ -213,3 +213,17 @@ pass = avg_quality >= 0.70
 | `bad_chunk` | 불량청크 | context 길이 < 100자 |
 | `evaluation_error` | 평가오류 | LLM 평가 예외 발생 |
 | `low_quality` | 품질미달 | failure_types 없음 AND avg_quality < 0.70 |
+
+---
+
+## 평가 모델
+
+기본값: Gemini 2.5 Flash. 요청 시 모델 지정 가능.
+
+| Provider  | 기본 모델        | 최대 workers |
+| --------- | ---------------- | :----------: |
+| Google    | Gemini 2.5 Flash | 10           |
+| OpenAI    | GPT-5.1          | 8            |
+| Anthropic | Claude Haiku 4.5 | 2            |
+
+파이프라인: `evaluators/pipeline.py` — Layer 1-A/B 순차, Layer 2/3 병렬 처리

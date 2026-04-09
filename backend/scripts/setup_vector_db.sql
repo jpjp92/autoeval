@@ -96,28 +96,73 @@ END;
 $$;
 
 
--- 7. 문서 전체에서 균등 랜덤 샘플링 (sample_doc_chunks)
--- document_id 지정 시 해당 업로드 버전만, 미지정 시 filename 전체에서 샘플링.
+-- 7. export 최적화 — pipeline_results 전체 전송 없이 qa_scores만 추출 (get_eval_qa_scores)
+CREATE OR REPLACE FUNCTION get_eval_qa_scores(p_eval_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT jsonb_build_object(
+    'rag_qa_scores',     COALESCE(pipeline_results->'layers'->'rag'->'qa_scores',     '[]'::jsonb),
+    'quality_qa_scores', COALESCE(pipeline_results->'layers'->'quality'->'qa_scores', '[]'::jsonb)
+  )
+  FROM qa_eval_results
+  WHERE id = p_eval_id;
+$$;
+
+
+-- 8. 문서 전체에서 균등 stride 샘플링 (sample_doc_chunks)
+-- document_id 미지정 시 created_at DESC로 최신 버전 자동 고정.
+-- step_size = GREATEST(total / p_n, 1) 등간격으로 결정적 샘플링.
 CREATE OR REPLACE FUNCTION sample_doc_chunks(
-  p_filename TEXT,
-  p_n INT DEFAULT 30,
+  p_filename    TEXT,
+  p_n           INT  DEFAULT 30,
   p_document_id TEXT DEFAULT NULL
 )
 RETURNS TABLE (
-  id uuid,
-  content text,
-  metadata jsonb,
-  document_id text
+  id           uuid,
+  content      text,
+  embedding    vector(1536),
+  metadata     jsonb,
+  created_at   timestamptz,
+  document_id  text
 )
-LANGUAGE plpgsql
-AS $$
+LANGUAGE plpgsql AS $$
+DECLARE
+    total_count INT;
+    step_size   INT;
+    v_doc_id    TEXT;
 BEGIN
-  RETURN QUERY
-  SELECT dc.id, dc.content, dc.metadata, dc.document_id
-  FROM doc_chunks dc
-  WHERE dc.metadata->>'filename' = p_filename
-    AND (p_document_id IS NULL OR dc.document_id = p_document_id)
-  ORDER BY random()
-  LIMIT p_n;
+    IF p_document_id IS NULL THEN
+        SELECT ch.document_id INTO v_doc_id
+        FROM doc_chunks ch
+        WHERE ch.metadata->>'filename' = p_filename
+        ORDER BY ch.created_at DESC
+        LIMIT 1;
+    ELSE
+        v_doc_id := p_document_id;
+    END IF;
+
+    IF v_doc_id IS NULL THEN RETURN; END IF;
+
+    SELECT COUNT(*) INTO total_count
+    FROM doc_chunks ch
+    WHERE ch.document_id = v_doc_id;
+
+    IF total_count = 0 THEN RETURN; END IF;
+    step_size := GREATEST(total_count / p_n, 1);
+
+    RETURN QUERY
+    SELECT ch.id, ch.content, ch.embedding, ch.metadata, ch.created_at, ch.document_id
+    FROM (
+        SELECT ch2.*,
+               ROW_NUMBER() OVER (
+                 ORDER BY (ch2.metadata->>'chunk_index')::int
+               ) AS rn
+        FROM doc_chunks ch2
+        WHERE ch2.document_id = v_doc_id
+    ) ch
+    WHERE (ch.rn - 1) % step_size = 0
+    LIMIT p_n;
 END;
 $$;
