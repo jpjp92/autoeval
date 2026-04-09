@@ -196,7 +196,10 @@ def detect_heading(text: str, font_size: float, prev_font_size: float) -> Option
         r'^부\s*칙',
     ]
 
-    is_pattern_match = any(re.match(p, clean_text) for p in heading_patterns)
+    is_pattern_match = (
+        any(re.match(p, clean_text) for p in heading_patterns)
+        and font_size >= 10.0   # running header(font 8~9) 오분류 방지
+    )
     is_font_boost = font_size > prev_font_size + 1.5 and font_size > 12.5
 
     if is_pattern_match or is_font_boost:
@@ -686,6 +689,14 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                             _KOR_CONT.match(stripped)
                             and _KOR_TAIL.search(prev_text.rstrip())
                         )
+                        if is_kor:
+                            prev_y1   = prev_block.get("bbox", [0, 0, 0, 0])[3]
+                            y_gap_val = y_pos - prev_y1
+                            prev_font = prev_block.get("font_size", 10.0)
+                            cur_font  = block_dict.get("font_size", 10.0)
+                            font_diff = abs(prev_font - cur_font)
+                            if y_gap_val > 15.0 and font_diff > 1.5:
+                                is_kor = False  # heading+본문 오병합 방지
                         if is_paren or is_kor:
                             prev_stripped = prev_text.rstrip()
                             if is_kor:
