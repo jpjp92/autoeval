@@ -201,8 +201,31 @@ export interface TaggingResponse extends ApiResponse {
   samples?: { id: string; content_preview: string; hierarchy: { h1: string; h2: string; h3: string } }[];
 }
 
-export async function uploadDocument(formData: FormData): Promise<ApiResponse> {
-  return apiFetch<ApiResponse>(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+export interface IngestionStartResponse extends ApiResponse {
+  job_id?: string;
+  status?: string;
+  filename?: string;
+}
+
+export interface IngestionStatusResponse extends ApiResponse {
+  job_id?: string;
+  status?: string;
+  filename?: string;
+  doc_id?: string;
+  progress?: number;
+  total?: number;
+  message?: string;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export async function uploadDocument(formData: FormData): Promise<IngestionStartResponse> {
+  return apiFetch<IngestionStartResponse>(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+}
+
+export async function getIngestionStatus(jobId: string): Promise<IngestionStatusResponse> {
+  return apiFetch<IngestionStatusResponse>(`${API_BASE}/api/ingestion/${jobId}/status`);
 }
 
 export async function analyzeHierarchy(filename: string): Promise<AnalyzeHierarchyResponse> {

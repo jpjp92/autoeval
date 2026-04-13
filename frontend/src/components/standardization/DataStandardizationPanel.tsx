@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { getHierarchyList, uploadDocument, analyzeHierarchy, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
+import { getHierarchyList, uploadDocument, getIngestionStatus, analyzeHierarchy, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
 import type { AnalyzeHierarchyResponse } from "@/src/lib/api";
 import type { HierarchyTree } from "@/src/types/hierarchy";
 
@@ -81,15 +81,40 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     const fileName = file.name;
     try {
       const res = await uploadDocument(formData);
-      if (res.success) {
-        setUploadMessage({ text: `"${fileName}" 분석이 완료되었습니다.`, type: "success" });
-        setUploadedFilename(fileName);
-        clearDocumentId(fileName); // 재업로드 시 기존 document_id 무효화
-        onUploadComplete?.(fileName);
-        setFile(null);
-      } else {
+      if (!res.job_id) {
         setUploadMessage({ text: res.error || "업로드 실패", type: "error" });
+        return;
       }
+
+      // 비동기 인제스션 완료까지 폴링
+      const jobId = res.job_id;
+      const POLL_INTERVAL = 2000;
+      const POLL_TIMEOUT = 5 * 60 * 1000; // 5분
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < POLL_TIMEOUT) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+        const statusRes = await getIngestionStatus(jobId);
+        const status = statusRes.status;
+
+        if (status === "completed") {
+          setUploadMessage({ text: `"${fileName}" 분석이 완료되었습니다.`, type: "success" });
+          setUploadedFilename(fileName);
+          clearDocumentId(fileName);
+          onUploadComplete?.(fileName);
+          setFile(null);
+          return;
+        }
+        if (status === "failed") {
+          setUploadMessage({ text: statusRes.error || "인제스션 실패", type: "error" });
+          return;
+        }
+        // 진행 중(extracting/chunking/embedding) — 메시지 업데이트
+        if (statusRes.message) {
+          setUploadMessage({ text: statusRes.message, type: "success" });
+        }
+      }
+      setUploadMessage({ text: "인제스션 시간 초과 (5분). 서버 상태를 확인하세요.", type: "error" });
     } catch {
       setUploadMessage({ text: "서버 연결에 실패했습니다.", type: "error" });
     } finally {

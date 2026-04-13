@@ -24,8 +24,9 @@ import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from google import genai as google_genai
 from pydantic import BaseModel
 
@@ -40,6 +41,7 @@ from config.supabase_client import (
     patch_chunk_hierarchy,
 )
 from db.doc_metadata_repo import upsert_doc_metadata
+from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import extract_text_by_page
 from ingestion.pipeline import process_and_ingest
 from ingestion.prompts import build_hierarchy_prompt
@@ -61,6 +63,25 @@ class IngestionResponse(BaseModel):
     success: bool
     message: str
     file_name: str = ""
+
+
+class IngestionStartResponse(BaseModel):
+    job_id: str
+    status: str
+    filename: str
+
+
+class IngestionStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    filename: str
+    doc_id: str
+    progress: int
+    total: int
+    message: str
+    error: Optional[str]
+    started_at: str
+    completed_at: Optional[str]
 
 
 class HierarchyAnalysisRequest(BaseModel):
@@ -92,17 +113,19 @@ class TaggingSamplesRequest(BaseModel):
 # 엔드포인트
 # ============================================================================
 
-@router.post("/upload", response_model=IngestionResponse)
+@router.post("/upload", response_model=IngestionStartResponse)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     hierarchy_h1: Optional[str] = Form(None),
     hierarchy_h2: Optional[str] = Form(None),
     hierarchy_h3: Optional[str] = Form(None),
     chunking_method: str = Form("llm"),
 ):
-    """문서 업로드 및 벡터화 인제스션 (동기 — 완료 후 응답).
+    """문서 업로드 → 비동기 인제스션 시작. job_id 즉시 반환.
 
     chunking_method: "llm" (기본) | "rule"
+    진행 상황은 GET /api/ingestion/{job_id}/status 로 폴링.
     """
     if not is_supabase_available():
         raise HTTPException(status_code=500, detail="Supabase 설정이 구성되지 않았습니다.")
@@ -133,25 +156,30 @@ async def upload_document(
             if len(total_text) < 100:
                 raise HTTPException(status_code=400, detail="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
 
+        job_id = str(uuid4())
+        ingestion_job_manager.create_job(job_id, file.filename)
+
         metadata = {
             "hierarchy_h1": hierarchy_h1,
             "hierarchy_h2": hierarchy_h2,
             "hierarchy_h3": hierarchy_h3,
             "filename": file.filename,
         }
-        await process_and_ingest(
+        background_tasks.add_task(
+            process_and_ingest,
             file.filename,
             pages,
             metadata,
-            gemini_client=gemini_client,
-            model_id=MODEL_CONFIG["gemini-flash"]["model_id"],
-            chunking_method=chunking_method,
+            gemini_client,
+            MODEL_CONFIG["gemini-flash"]["model_id"],
+            chunking_method,
+            job_id,
         )
 
-        return IngestionResponse(
-            success=True,
-            message="문서 업로드 및 벡터화가 완료되었습니다.",
-            file_name=file.filename,
+        return IngestionStartResponse(
+            job_id=job_id,
+            status=IngestionStatus.PENDING,
+            filename=file.filename,
         )
 
     except ValueError as ve:
@@ -161,6 +189,15 @@ async def upload_document(
     except Exception as e:
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/{job_id}/status", response_model=IngestionStatusResponse)
+async def get_ingestion_status(job_id: str):
+    """인제스션 진행 상황 조회."""
+    job = ingestion_job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    return IngestionStatusResponse(**job.to_dict())
 
 
 @router.post("/analyze-hierarchy", response_model=HierarchyAnalysisResponse)

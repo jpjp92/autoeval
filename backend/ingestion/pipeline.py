@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import numpy as np
@@ -19,12 +20,20 @@ from google import genai as google_genai
 from config.supabase_client import save_doc_chunks_batch
 from db.doc_metadata_repo import upsert_doc_metadata
 from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking
+from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import detect_repeated_headers
 
 logger = logging.getLogger("autoeval.ingestion.pipeline")
 
+_EMBED_SEM = asyncio.Semaphore(int(os.getenv("EMBED_CONCURRENCY", "5")))
+
 _EMBED_MODEL = "gemini-embedding-2-preview"
 _EMBED_BATCH_SIZE = 64
+
+
+async def _embed_and_save_guarded(*args, **kwargs) -> None:
+    async with _EMBED_SEM:
+        await _embed_and_save(*args, **kwargs)
 
 
 async def _embed_and_save(
@@ -43,14 +52,23 @@ async def _embed_and_save(
 ) -> None:
     """배치 임베딩 후 Supabase 저장."""
     batch_texts = [item["text"] for item in batch]
-    res = await gemini_client.aio.models.embed_content(
-        model=_EMBED_MODEL,
-        contents=batch_texts,
-        config=google_genai.types.EmbedContentConfig(
-            task_type="RETRIEVAL_DOCUMENT",
-            output_dimensionality=1536,
-        ),
-    )
+    for attempt in range(3):
+        try:
+            res = await gemini_client.aio.models.embed_content(
+                model=_EMBED_MODEL,
+                contents=batch_texts,
+                config=google_genai.types.EmbedContentConfig(
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=1536,
+                ),
+            )
+            break
+        except Exception as e:
+            if attempt == 2:
+                raise
+            wait = 2 ** attempt
+            logger.warning(f"[{filename}] embed_content retry {attempt + 1}/3 (wait={wait}s): {e}")
+            await asyncio.sleep(wait)
     batch_rows = []
     for idx, emb_data in enumerate(res.embeddings):
         c = batch[idx]
@@ -89,18 +107,29 @@ async def process_and_ingest(
     gemini_client: Any,
     model_id: str,
     chunking_method: str = "llm",
+    job_id: Optional[str] = None,
 ) -> None:
     """청킹 → Gemini Embedding 2 → Supabase 저장.
 
     chunking_method:
       "llm"  — Gemini 2.5 Flash LLM 청킹 (기본, 품질 우선)
       "rule" — rule-based 청킹 (parsers.chunk_blocks_aware, 하위 호환)
+
+    job_id: IngestionJobManager job ID. 전달 시 단계별 상태 업데이트.
     """
+
+    def _update(status=None, **kwargs):
+        if job_id:
+            ingestion_job_manager.update_job(job_id, status=status, **kwargs)
+
     try:
         doc_id = str(uuid4())
         ingested_at = datetime.utcnow().isoformat()
 
+        _update(status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
         await upsert_doc_metadata(document_id=doc_id, filename=filename)
+        if job_id:
+            ingestion_job_manager.update_job(job_id, doc_id=doc_id)
 
         repeated_headers = detect_repeated_headers(pages)
         if repeated_headers:
@@ -112,8 +141,10 @@ async def process_and_ingest(
 
         if not all_blocks:
             logger.warning(f"[{filename}] No blocks extracted.")
+            _update(status=IngestionStatus.FAILED, error="추출된 블록 없음")
             return
 
+        _update(status=IngestionStatus.CHUNKING, message="청킹 중")
         if chunking_method == "llm":
             all_chunks_to_embed = await ingest_with_llm_chunking(
                 filename, pages, all_blocks, repeated_headers,
@@ -126,10 +157,19 @@ async def process_and_ingest(
 
         if not all_chunks_to_embed:
             logger.error(f"[{filename}] 0 chunks produced")
+            _update(status=IngestionStatus.FAILED, error="청크 생성 결과 없음")
             return
 
         total_chunks = len(all_chunks_to_embed)
+        total_batches = (total_chunks + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE
         source_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
+
+        _update(
+            status=IngestionStatus.EMBEDDING,
+            message="임베딩 중",
+            progress=0,
+            total=total_batches,
+        )
 
         embed_kwargs = dict(
             filename=filename,
@@ -143,7 +183,7 @@ async def process_and_ingest(
         )
 
         embed_tasks = [
-            _embed_and_save(
+            _embed_and_save_guarded(
                 i // _EMBED_BATCH_SIZE + 1,
                 i,
                 all_chunks_to_embed[i: i + _EMBED_BATCH_SIZE],
@@ -153,6 +193,11 @@ async def process_and_ingest(
         ]
         await asyncio.gather(*embed_tasks)
 
+        _update(
+            status=IngestionStatus.COMPLETED,
+            progress=total_batches,
+            message=f"완료 ({total_chunks}청크, method={chunking_method})",
+        )
         logger.info(
             f"Ingestion complete: {filename} "
             f"({total_chunks} chunks, method={chunking_method})"
@@ -160,3 +205,4 @@ async def process_and_ingest(
 
     except Exception as e:
         logger.error(f"Ingestion pipeline failed for {filename}: {e}", exc_info=True)
+        _update(status=IngestionStatus.FAILED, error=str(e))
