@@ -126,7 +126,6 @@ async def process_and_ingest(
         doc_id = str(uuid4())
         ingested_at = datetime.utcnow().isoformat()
 
-        _update(status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
         await upsert_doc_metadata(document_id=doc_id, filename=filename)
         if job_id:
             ingestion_job_manager.update_job(job_id, doc_id=doc_id)

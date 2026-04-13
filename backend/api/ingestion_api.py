@@ -133,9 +133,14 @@ async def upload_document(
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
     try:
+        job_id = str(uuid4())
+        ingestion_job_manager.create_job(job_id, file.filename)
+        ingestion_job_manager.update_job(job_id, status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
+
         content_bytes = await file.read()
         pages = await asyncio.to_thread(extract_text_by_page, content_bytes, file.filename)
         if not pages:
+            ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
             raise HTTPException(status_code=400, detail="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
 
         ext_lower = file.filename.split('.')[-1].lower()
@@ -144,6 +149,7 @@ async def upload_document(
             total_blocks = sum(len(p.get("blocks", [])) for p in pages)
             avg_chars = len(total_text) / max(total_blocks, 1)
             if len(total_text) < 300 or avg_chars < 5:
+                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="이미지 기반 PDF이거나 커스텀 심볼 폰트를 사용하는 문서입니다.")
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -154,10 +160,8 @@ async def upload_document(
         else:
             total_text = "".join(p.get("text", "") for p in pages)
             if len(total_text) < 100:
+                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
                 raise HTTPException(status_code=400, detail="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
-
-        job_id = str(uuid4())
-        ingestion_job_manager.create_job(job_id, file.filename)
 
         metadata = {
             "hierarchy_h1": hierarchy_h1,
