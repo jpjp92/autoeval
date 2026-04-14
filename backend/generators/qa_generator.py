@@ -11,6 +11,7 @@ import re
 from typing import Optional, Dict
 
 from config.models import MODEL_CONFIG, PROMPT_VERSION
+from exceptions import APIAuthError, APIQuotaExceededError
 from generators.prompts import SYSTEM_PROMPT_KO_V1, USER_TEMPLATE_KO_V1
 from generators.prompts_en import SYSTEM_PROMPT_EN_V1, USER_TEMPLATE_EN_V1
 
@@ -65,15 +66,6 @@ def get_client(provider: str):
             _clients[provider] = openai
     return _clients[provider]
 
-
-class APIQuotaExceededError(Exception):
-    """API 비용 소진 또는 Rate Limit 초과 시 발생 (job 즉시 중단용)"""
-    pass
-
-
-class APIAuthError(Exception):
-    """API 키 인증 실패 시 발생 (job 즉시 중단용)"""
-    pass
 
 
 def generate_qa_anthropic(model_id: str, system_prompt: str, user_prompt: str) -> Dict:

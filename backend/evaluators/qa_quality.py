@@ -19,6 +19,11 @@ except ImportError:
     except ImportError:
         MODEL_CONFIG = {}
 
+try:
+    from backend.exceptions import APIQuotaExceededError
+except ImportError:
+    from exceptions import APIQuotaExceededError
+
 # rag_triad의 clean_markdown 재사용
 try:
     from evaluators.rag_triad import clean_markdown
@@ -144,6 +149,9 @@ Return ONLY valid JSON:
                 return (response.content or "{}").strip()
 
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                raise APIQuotaExceededError(f"평가 모델 API 한도 초과: {e}") from e
             logger.warning(f"LLM combined eval error: {e}")
         return "{}"
 
@@ -212,6 +220,8 @@ Return ONLY valid JSON:
         try:
             raw = self._call_llm_combined(prompt)
             return self._parse_combined(raw)
+        except APIQuotaExceededError:
+            raise
         except Exception:
             return {
                 "completeness": 0.5,

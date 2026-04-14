@@ -261,6 +261,11 @@ try:
 except Exception:
     DEFAULT_MODEL = "gemini-2.5-flash"
 
+try:
+    from exceptions import APIQuotaExceededError
+except ImportError:
+    from backend.exceptions import APIQuotaExceededError
+
 
 # ──────────────────────────────────────────────────────────────
 # 파라미터 추천
@@ -572,6 +577,10 @@ async def _process_batch(
             ]
 
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                logger.error(f"Batch {batch_num}: LLM 청킹 API 비용 소진 (429) — 즉시 중단: {e}")
+                raise APIQuotaExceededError(f"Gemini LLM Chunking API 한도 초과: {e}") from e
             elapsed = time.time() - t0
             logger.error(f"Batch {batch_num}: error ({elapsed:.1f}s): {e}")
             return batch_num, [

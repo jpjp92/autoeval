@@ -27,11 +27,8 @@ from config.models import MODEL_CONFIG
 from config.supabase_client import is_supabase_available, save_qa_generation_to_supabase
 from generators.job_manager import JobStatus, job_manager
 from generators.prompts import build_system_prompt, build_user_template
-from generators.qa_generator import (
-    APIAuthError,
-    APIQuotaExceededError,
-    generate_qa as _generate_qa,
-)
+from exceptions import APIAuthError, APIQuotaExceededError
+from generators.qa_generator import generate_qa as _generate_qa
 
 logger = logging.getLogger("autoeval.worker")
 
@@ -46,14 +43,6 @@ GENERATION_MAX_WORKERS: Dict[str, int] = {
     "openai":    5,
 }
 
-# 429 발생 시 다른 provider 폴백
-QUOTA_FALLBACK_MODELS: Dict[str, str] = {
-    "anthropic": "gemini-flash",
-    "google":    "gpt-5.2",
-    "openai":    "gemini-flash",
-}
-
-
 def _get_generation_workers(model: str) -> int:
     m = model.lower()
     if "claude" in m:
@@ -62,11 +51,6 @@ def _get_generation_workers(model: str) -> int:
         return GENERATION_MAX_WORKERS["google"]
     return GENERATION_MAX_WORKERS["openai"]
 
-
-def _get_fallback_model(model: str) -> Optional[str]:
-    provider = MODEL_CONFIG.get(model, {}).get("provider")
-    fallback = QUOTA_FALLBACK_MODELS.get(provider)
-    return fallback if fallback and fallback in MODEL_CONFIG else None
 
 
 # ── 진입점 ─────────────────────────────────────────────────────────────────────
@@ -395,43 +379,10 @@ async def run_qa_generation_real(
             return idx, result, None
         except Exception as e:
             if isinstance(e, APIQuotaExceededError):
-                fallback = _get_fallback_model(current_model)
-                if fallback:
-                    with progress_lock:
-                        if active_model[0] == current_model:
-                            active_model[0] = fallback
-                            logger.warning(
-                                f"[{job_id}] {current_model} 429 한도 초과 → {fallback}으로 전환"
-                            )
-                            job_manager.update_job(
-                                job_id,
-                                message=f"모델 전환: {MODEL_CONFIG[fallback]['name']}으로 재시도 중...",
-                            )
-                    try:
-                        chunk_type = item.get("metadata", {}).get("chunk_type", "body")
-                        sys_prompt = build_system_prompt(domain_profile, lang)
-                        usr_template = build_user_template(domain_profile, chunk_type, total_chunks=len(items))
-                        result = _generate_qa(
-                            item,
-                            fallback,
-                            lang,
-                            prompt_version,
-                            system_prompt=sys_prompt,
-                            user_template=usr_template,
-                        )
-                        if qa_per_doc and result.get("qa_list"):
-                            result["qa_list"] = result["qa_list"][:qa_per_doc]
-                        return idx, result, None
-                    except Exception as e2:
-                        logger.error(f"[{job_id}] Fallback {fallback} also failed: {e2}")
-                        if not fatal_error:
-                            fatal_error.append(str(e2))
-                        return idx, None, str(e2)
-                else:
-                    logger.error(f"[{job_id}] API quota exceeded, no fallback: {e}")
-                    if not fatal_error:
-                        fatal_error.append(str(e))
-                    return idx, None, str(e)
+                logger.error(f"[{job_id}] API 비용 소진 (429) — 즉시 중단: {e}")
+                if not fatal_error:
+                    fatal_error.append(str(e))
+                return idx, None, str(e)
             if isinstance(e, APIAuthError):
                 logger.error(f"[{job_id}] API auth error, aborting: {e}")
                 if not fatal_error:

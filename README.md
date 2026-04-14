@@ -155,6 +155,7 @@ autoeval/
 │ ├── Dockerfile # Python 3.12-slim + uv, TZ=Asia/Seoul, curl 포함
 │ ├── main.py # FastAPI 앱 + 라우트 등록 + 로깅 설정
 │ │ GET /api/dashboard/metrics 포함
+│ ├── exceptions.py # 공통 예외 — APIQuotaExceededError, APIAuthError
 │ ├── api/
 │ │ ├── ingestion_api.py # POST /api/ingestion/* — 라우터 + Pydantic 모델
 │ │ ├── generation_api.py # POST /api/generate — 라우터 + Pydantic 모델
@@ -162,10 +163,11 @@ autoeval/
 │ ├── ingestion/
 │ │ ├── parsers.py # 파싱·정규화·필터·청킹 순수 함수 (I/O 없음)
 │ │ ├── llm_chunker.py # LLM 청킹 — Gemini 2.5 Flash, 배치·병렬 처리 (기본 청킹)
+│ │ ├── job_manager.py # IngestionStatus, IngestionJob, IngestionJobManager 싱글턴
 │ │ ├── prompts.py # LLM 프롬프트 빌더 (build_hierarchy_prompt / build_tagging_prompt)
 │ │ ├── tagging.py # 배치 태깅 코루틴 (run_tagging, \_is_admin_anchor)
 │ │ ├── chunker.py # LLM/Rule-based 청킹 로직 분리 (ingest_with_llm/rule_chunking)
-│ │ └── pipeline.py # 임베딩 → Supabase 저장 파이프라인 (process_and_ingest)
+│ │ └── pipeline.py # 임베딩 → Supabase 저장 파이프라인 (BackgroundTasks 비동기)
 │ ├── generators/
 │ │ ├── prompts.py # 한국어 시스템 프롬프트·유저 템플릿 (주 경로)
 │ │ ├── prompts_en.py # 영어 시스템 프롬프트·유저 템플릿 (EN fallback)
@@ -447,7 +449,8 @@ docker compose up -d --build
 
 | 메서드 | 경로                                     | 설명                                                                                   |
 | ------ | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| `POST` | `/api/ingestion/upload`                  | PDF/DOCX 업로드 → LLM/rule 청킹 → 임베딩 → doc_chunks 저장                             |
+| `POST` | `/api/ingestion/upload`                  | PDF/DOCX 업로드 → 텍스트 추출 후 즉시 `job_id` 반환. 청킹·임베딩은 BackgroundTasks 비동기 실행 |
+| `GET`  | `/api/ingestion/{job_id}/status`         | 인제스션 job 상태 조회 (`status`, `progress`, `total`, `message`, `doc_id`)            |
 | `POST` | `/api/ingestion/analyze-hierarchy`       | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장           |
 | `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)                      |
 | `POST` | `/api/ingestion/apply-granular-tagging`  | 청크별 hierarchy 일괄 적용 (`__admin__` 제외 샘플 5개 반환)                            |
@@ -513,4 +516,4 @@ Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~2
 
 ---
 
-**Last Updated**: 2026-04-09 | **Branch**: main
+**Last Updated**: 2026-04-14 | **Branch**: main

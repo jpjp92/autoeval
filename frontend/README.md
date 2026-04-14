@@ -1,6 +1,6 @@
 # AutoEval Frontend
 
-> 마지막 업데이트: 2026-04-09
+> 마지막 업데이트: 2026-04-14
 
 LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론트엔드.
 
@@ -65,7 +65,7 @@ frontend/src/
     │   └── ActivityChart.tsx
     │
     ├── standardization/             # Documents 탭
-    │   └── DataStandardizationPanel.tsx   # 파일 업로드 → 계층 분석 → 태깅 (~581줄)
+    │   └── DataStandardizationPanel.tsx   # 파일 업로드(비동기 job 폴링) → 계층 분석 → 태깅 (~581줄)
     │
     ├── generation/                  # QA Pipeline 탭
     │   └── QAGenerationPanel.tsx    # 3-Step: 설정 → 생성 → 평가 (~822줄)
@@ -169,7 +169,8 @@ frontend/src/
 |------|--------|------|
 | `getDashboardMetrics()` | GET | `/api/dashboard/metrics` — `DashboardMetricsResponse` (`data?: unknown`) |
 | `getHierarchyList(filename?, filterForQa?)` | GET | `/api/ingestion/hierarchy-list` |
-| `uploadDocument(formData)` | POST | `/api/ingestion/upload` |
+| `uploadDocument(formData)` | POST | `/api/ingestion/upload` — `IngestionStartResponse` (`job_id`, `status`, `filename`) 반환 |
+| `getIngestionStatus(jobId)` | GET | `/api/ingestion/{jobId}/status` — `IngestionStatusResponse` (progress/total/message/doc_id) |
 | `analyzeHierarchy(filename)` | POST | `/api/ingestion/analyze-hierarchy` |
 | `applyGranularTagging(payload)` | POST | `/api/ingestion/apply-granular-tagging` |
 | `generateQA(request)` | POST | `/api/generate` |

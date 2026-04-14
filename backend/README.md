@@ -10,6 +10,7 @@ FastAPI 기반 QA 생성·평가 백엔드.
 ```
 backend/
 ├── main.py                      # FastAPI 앱 + 라우트 통합 허브 + 로깅 설정
+├── exceptions.py                # 공통 예외 — APIQuotaExceededError, APIAuthError (전 모듈 공유)
 ├── api/                         # API 라우트 레이어
 │   ├── ingestion_api.py         # POST|GET /api/ingestion/* — 업로드·청킹·hierarchy 분석·태깅
 │   ├── generation_api.py        # POST|GET|DELETE /api/generate/* — QA 생성 job 관리
@@ -20,10 +21,13 @@ backend/
 │   │                            #   PDF: SYSTEM_PROMPT (noise_correction 포함)
 │   │                            #   DOCX: DOCX_SYSTEM_PROMPT (noise_correction 없음)
 │   │                            #   파라미터: PDF=페이지 수 기반, DOCX=블록 수 기반 티어 자동 조정
+│   ├── job_manager.py           # IngestionStatus, IngestionJob, IngestionJobManager, 전역 싱글턴
 │   ├── prompts.py               # LLM 프롬프트 빌더 — build_hierarchy_prompt / build_tagging_prompt
 │   ├── tagging.py               # 배치 태깅 코루틴 — run_tagging(), _is_admin_anchor()
 │   ├── chunker.py               # LLM/Rule-based 청킹 로직 — ingest_with_llm/rule_chunking()
 │   └── pipeline.py              # 임베딩 → Supabase 저장 파이프라인 — process_and_ingest()
+│                                #   BackgroundTasks 비동기 패턴, Semaphore(EMBED_CONCURRENCY),
+│                                #   임베딩 3회 재시도(지수 백오프), 배치별 progress 업데이트
 ├── generators/                  # QA 생성 핵심 로직
 │   ├── prompts.py               # 시스템 프롬프트·유저 템플릿 — SYSTEM_PROMPT_*/USER_TEMPLATE_*, build_system_prompt(), build_user_template()
 │   ├── job_manager.py           # JobStatus, GenerationJob, JobManager, 전역 job_manager 싱글턴
@@ -113,7 +117,8 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드   | 경로                         | 설명                                                                                                        |
 | -------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST` | `/upload`                  | PDF/DOCX 업로드 → 청킹 → 임베딩 → doc_chunks 저장 (`chunking_method`: `llm`(기본) \| `rule`)       |
+| `POST` | `/upload`                  | PDF/DOCX 업로드 → 텍스트 추출 후 즉시 `job_id` 반환 (BackgroundTasks 비동기). 청킹·임베딩은 백그라운드 실행. |
+| `GET`  | `/{job_id}/status`         | 인제스션 job 상태 조회 (`status`, `progress`, `total`, `message`, `error`, `doc_id`)                        |
 | `POST` | `/analyze-hierarchy`       | anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장                   |
 | `POST` | `/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)                                         |
 | `POST` | `/apply-granular-tagging`  | 청크별 hierarchy 일괄 태깅 (batch=5, parallel=5, 완료 후 샘플 5개 반환)                                     |
@@ -355,3 +360,6 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | `generation_api.py` 모듈화    | `prompts / job_manager / worker` 분리                                                                                                                      | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거 |
 | `config/prompts.py` 제거      | `generators/prompts.py`로 완전 이전, shim 삭제                                                                                                             | generation 전용 프롬프트를 generators 레이어로 귀속, `config/` 불필요 파일 제거                                                        |
 | `evaluation_api.py` 정리      | `TYPE_CHECKING` 제거, `try/except ImportError` → `sys.path.insert` 통일, `_build_export_detail` → `evaluators/pipeline.build_export_detail` 이동 | 418줄 → 321줄, 이중 import 패턴 제거, export 헬퍼 비즈니스 로직을 evaluators 레이어로 귀속                                             |
+| 인제스션 비동기 전환          | `POST /upload` → BackgroundTasks 패턴, `ingestion/job_manager.py` 신설, `GET /{job_id}/status` 추가                                                      | 대용량 파일 타임아웃 방지, 단계별(EXTRACTING→CHUNKING→EMBEDDING) 진행률 추적 가능                                                       |
+| 임베딩 안정화                 | `pipeline.py` — Semaphore(`EMBED_CONCURRENCY`), 3회 지수 백오프 재시도, 배치별 progress 업데이트                                                           | 동시 요청 폭주 방지, 폴링 클라이언트에서 실시간 임베딩 진행률 확인 가능                                                                 |
+| 429 예외처리 일관화           | `backend/exceptions.py` 신설 → `APIQuotaExceededError` 전 모듈 공유, fallback 로직 제거                                                                   | 비용 소진 시 silent fallback(기본 점수 반환) 대신 즉시 job FAILED 처리 — 결과 신뢰성 보장                                               |

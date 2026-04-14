@@ -19,6 +19,11 @@ except ImportError:
     except ImportError:
         MODEL_CONFIG = {}
 
+try:
+    from backend.exceptions import APIQuotaExceededError
+except ImportError:
+    from exceptions import APIQuotaExceededError
+
 
 def clean_markdown(text: str) -> str:
     """컨텍스트에서 마크다운 정크 제거"""
@@ -153,6 +158,9 @@ Step 4: Rate relevance:
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                raise APIQuotaExceededError(f"평가 모델 API 한도 초과: {e}") from e
             logger.warning(f"Relevance evaluation error: {e}")
             return 0.65
 
@@ -198,6 +206,9 @@ Step 4: DETERMINE GROUNDING LEVEL:
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                raise APIQuotaExceededError(f"평가 모델 API 한도 초과: {e}") from e
             logger.warning(f"Groundedness evaluation error: {e}")
             return 0.65
 
@@ -234,6 +245,9 @@ Rate context relevance on a 0-10 scale:
             response = self.judge_model.invoke(prompt)
             return self._extract_score(response.content)
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                raise APIQuotaExceededError(f"평가 모델 API 한도 초과: {e}") from e
             logger.warning(f"Context relevance evaluation error: {e}")
             return 0.65
 
@@ -346,6 +360,9 @@ Return ONLY valid JSON:
             response = self.judge_model.invoke(prompt)
             return self._parse_rag_json(response.content or "")
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                raise APIQuotaExceededError(f"평가 모델 API 한도 초과: {e}") from e
             logger.warning(f"RAG evaluate_all_with_reasons error: {e}")
             return {
                 "relevance": 0.65, "relevance_reason": "",

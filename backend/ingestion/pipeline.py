@@ -19,6 +19,7 @@ from google import genai as google_genai
 
 from config.supabase_client import save_doc_chunks_batch
 from db.doc_metadata_repo import upsert_doc_metadata
+from exceptions import APIQuotaExceededError
 from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking
 from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import detect_repeated_headers
@@ -49,6 +50,7 @@ async def _embed_and_save(
     ingested_at: str,
     total_chunks: int,
     gemini_client: Any,
+    job_id: Optional[str] = None,
 ) -> None:
     """배치 임베딩 후 Supabase 저장."""
     batch_texts = [item["text"] for item in batch]
@@ -64,6 +66,10 @@ async def _embed_and_save(
             )
             break
         except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                logger.error(f"[{filename}] 임베딩 API 비용 소진 (429) — 즉시 중단: {e}")
+                raise APIQuotaExceededError(f"Gemini Embedding API 한도 초과: {e}") from e
             if attempt == 2:
                 raise
             wait = 2 ** attempt
@@ -97,6 +103,8 @@ async def _embed_and_save(
             "document_id": doc_id,
         })
     await save_doc_chunks_batch(batch_rows)
+    if job_id:
+        ingestion_job_manager.update_job(job_id, progress=batch_num)
     logger.info(f"[{filename}] Embed batch {batch_num} done ({len(batch)} chunks)")
 
 
@@ -179,6 +187,7 @@ async def process_and_ingest(
             ingested_at=ingested_at,
             total_chunks=total_chunks,
             gemini_client=gemini_client,
+            job_id=job_id,
         )
 
         embed_tasks = [
