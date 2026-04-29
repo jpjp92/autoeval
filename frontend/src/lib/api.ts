@@ -4,6 +4,9 @@
 
 export const API_BASE = '';
 
+// 파일 업로드는 Vercel 4.5MB 제한을 우회하여 백엔드에 직접 전송
+const UPLOAD_BASE = import.meta.env.VITE_UPLOAD_BASE_URL ?? '';
+
 // ── 에러 메시지 매핑 ──────────────────────────────────────────────────────────
 
 export function mapErrorToMessage(error: string): string {
@@ -221,7 +224,7 @@ export interface IngestionStatusResponse extends ApiResponse {
 }
 
 export async function uploadDocument(formData: FormData): Promise<IngestionStartResponse> {
-  return apiFetch<IngestionStartResponse>(`${API_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
+  return apiFetch<IngestionStartResponse>(`${UPLOAD_BASE}/api/ingestion/upload`, { method: 'POST', body: formData });
 }
 
 export async function getIngestionStatus(jobId: string): Promise<IngestionStatusResponse> {

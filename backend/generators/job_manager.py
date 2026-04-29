@@ -31,7 +31,7 @@ class GenerationJob:
     result_id: Optional[str] = None  # Supabase UUID
     config: Dict[str, Any] = None
     started_at: str = ""
-    completed_at: Optional[str] = ""
+    completed_at: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
@@ -58,7 +58,8 @@ class JobManager:
             return job
 
     def get_job(self, job_id: str) -> Optional[GenerationJob]:
-        return self.jobs.get(job_id)
+        with self.lock:
+            return self.jobs.get(job_id)
 
     def update_job(
         self,
