@@ -113,6 +113,49 @@ class TaggingSamplesRequest(BaseModel):
 # 엔드포인트
 # ============================================================================
 
+async def _ingest_background(
+    job_id: str,
+    filename: str,
+    content_bytes: bytes,
+    metadata: Dict[str, Any],
+    chunking_method: str,
+) -> None:
+    """텍스트 추출 → 검증 → 청킹/임베딩 전체를 백그라운드에서 실행."""
+    try:
+        ingestion_job_manager.update_job(job_id, status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
+        pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename)
+        if not pages:
+            ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
+            return
+
+        ext_lower = filename.split('.')[-1].lower()
+        if ext_lower == 'pdf':
+            total_text = "".join(b.get("text", "") for p in pages for b in p.get("blocks", []))
+            total_blocks = sum(len(p.get("blocks", [])) for p in pages)
+            avg_chars = len(total_text) / max(total_blocks, 1)
+            if len(total_text) < 300 or avg_chars < 5:
+                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="이미지 기반 PDF이거나 커스텀 심볼 폰트를 사용하는 문서입니다.")
+                return
+        else:
+            total_text = "".join(p.get("text", "") for p in pages)
+            if len(total_text) < 100:
+                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
+                return
+
+        await process_and_ingest(
+            filename,
+            pages,
+            metadata,
+            gemini_client,
+            MODEL_CONFIG["gemini-flash"]["model_id"],
+            chunking_method,
+            job_id,
+        )
+    except Exception as e:
+        logger.error(f"Background ingestion error [{job_id}]: {e}")
+        ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="인제스션 중 오류가 발생했습니다.")
+
+
 @router.post("/upload", response_model=IngestionStartResponse)
 async def upload_document(
     background_tasks: BackgroundTasks,
@@ -133,63 +176,24 @@ async def upload_document(
         raise HTTPException(status_code=500, detail="Gemini client not initialized")
 
     try:
-        job_id = str(uuid4())
-        ingestion_job_manager.create_job(job_id, file.filename)
-        ingestion_job_manager.update_job(job_id, status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
-
         content_bytes = await file.read()
-        pages = await asyncio.to_thread(extract_text_by_page, content_bytes, file.filename)
-        if not pages:
-            ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
-            raise HTTPException(status_code=400, detail="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
-
-        ext_lower = file.filename.split('.')[-1].lower()
-        if ext_lower == 'pdf':
-            total_text = "".join(b.get("text", "") for p in pages for b in p.get("blocks", []))
-            total_blocks = sum(len(p.get("blocks", [])) for p in pages)
-            avg_chars = len(total_text) / max(total_blocks, 1)
-            if len(total_text) < 300 or avg_chars < 5:
-                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="이미지 기반 PDF이거나 커스텀 심볼 폰트를 사용하는 문서입니다.")
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "PDF에서 텍스트를 추출할 수 없습니다. "
-                        "이미지 기반 PDF이거나 커스텀 심볼 폰트를 사용하는 문서입니다."
-                    ),
-                )
-        else:
-            total_text = "".join(p.get("text", "") for p in pages)
-            if len(total_text) < 100:
-                ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
-                raise HTTPException(status_code=400, detail="문서 내용이 비어 있거나 지원하지 않는 형식입니다.")
-
+        job_id = str(uuid4())
+        filename = file.filename
         metadata = {
             "hierarchy_h1": hierarchy_h1,
             "hierarchy_h2": hierarchy_h2,
             "hierarchy_h3": hierarchy_h3,
-            "filename": file.filename,
+            "filename": filename,
         }
-        background_tasks.add_task(
-            process_and_ingest,
-            file.filename,
-            pages,
-            metadata,
-            gemini_client,
-            MODEL_CONFIG["gemini-flash"]["model_id"],
-            chunking_method,
-            job_id,
-        )
+        ingestion_job_manager.create_job(job_id, filename)
+        background_tasks.add_task(_ingest_background, job_id, filename, content_bytes, metadata, chunking_method)
 
         return IngestionStartResponse(
             job_id=job_id,
             status=IngestionStatus.PENDING,
-            filename=file.filename,
+            filename=filename,
         )
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

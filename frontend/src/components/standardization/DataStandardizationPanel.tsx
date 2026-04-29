@@ -82,7 +82,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
     try {
       const res = await uploadDocument(formData);
       if (!res.job_id) {
-        setUploadMessage({ text: res.error || "업로드 실패", type: "error" });
+        setUploadMessage({ text: mapErrorToMessage(res.error || ""), type: "error" });
         return;
       }
 
@@ -106,7 +106,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
           return;
         }
         if (status === "failed") {
-          setUploadMessage({ text: statusRes.error || "인제스션 실패", type: "error" });
+          setUploadMessage({ text: mapErrorToMessage(statusRes.error || ""), type: "error" });
           return;
         }
         // 진행 중(extracting/chunking/embedding) — 메시지 업데이트
@@ -156,7 +156,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         h2_h3_master: data.h2_h3_master,
         document_id: data.document_id,
       });
-      if (!taggingRes.success) throw new Error(taggingRes.error || "카테고리 적용 실패");
+      if (!taggingRes.success) throw new Error(mapErrorToMessage(taggingRes.error || ""));
       setTaggingSamples(taggingRes.samples || []);
 
       const treeRes = await getHierarchyList(uploadedFilename, false); // 표시용: QA 필터 없이 전체 태깅 결과 반환

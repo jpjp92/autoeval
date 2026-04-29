@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getEvalStatus } from '@/src/lib/api';
+import { getEvalStatus, mapErrorToMessage } from '@/src/lib/api';
 import type { EvalReport } from '@/src/types/evaluation';
 
 export function useEvaluationData(
@@ -28,7 +28,7 @@ export function useEvaluationData(
         if (res.success && res.eval_report) {
           setReport(res.eval_report as EvalReport);
         } else {
-          setError(res.error ?? '평가 결과를 불러오지 못했습니다.');
+          setError(mapErrorToMessage(res.error ?? '평가 결과를 불러오지 못했습니다.'));
         }
       } catch {
         setError('네트워크 오류가 발생했습니다.');

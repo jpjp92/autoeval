@@ -31,9 +31,13 @@ export function mapErrorToMessage(error: string): string {
   if (error.includes("Supabase") || error.includes("unavailable"))
     return "데이터베이스 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.";
 
-  // 네트워크 단절
+  // 서버 게이트웨이 오류 (Render cold start / 타임아웃)
+  if (error.includes("502") || error.includes("Bad Gateway"))
+    return "서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요.";
+
+  // 네트워크 단절 또는 CORS 차단된 서버 오류 (ERR_FAILED)
   if (error.toLowerCase().includes("failed to fetch") || error.toLowerCase().includes("networkerror"))
-    return "네트워크 연결을 확인해 주세요.";
+    return "서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.";
 
   // fallback — 내부 문자열 노출 제거
   return "일시적인 오류가 발생했습니다. 문제가 지속되면 관리자에게 문의해 주세요.";
