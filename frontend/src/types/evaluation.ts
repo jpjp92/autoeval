@@ -97,7 +97,7 @@ export const INTENT_DESCRIPTIONS: Record<string, string> = {
   purpose:    '원인, 배경, 이유를 탐색하는 질문',
   how:        '구체적 방법이나 절차를 묻는 질문',
   condition:  '조건·상황별 결과를 확인하는 질문',
-  comparison: '두 대상 이상을 비교하는 질문',
+  comparison: '여러 대상을 비교하는 질문',
   list:       '여러 항목을 나열·열거하는 질문',
 };
 
