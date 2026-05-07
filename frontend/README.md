@@ -1,6 +1,6 @@
 # AutoEval Frontend
 
-> 마지막 업데이트: 2026-04-14
+> 마지막 업데이트: 2026-05-07
 
 LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론트엔드.
 
@@ -39,7 +39,7 @@ frontend/src/
 ├── index.css
 │
 ├── lib/
-│   ├── api.ts                       # API 클라이언트 (apiFetch / apiFetchWithRetry 래퍼)
+│   ├── api.ts                       # API 클라이언트 (apiFetchWithRetry 공개 래퍼 + 내부 apiFetch)
 │   ├── evalChartUtils.ts            # 차트 데이터 빌더 + formatKST + SummaryStat/TooltipItem 타입
 │   ├── evalScoreUtils.ts            # 점수 임계값 + getQAStatus
 │   ├── utils.ts                     # cn (clsx + tailwind-merge)
@@ -65,7 +65,7 @@ frontend/src/
     │   └── ActivityChart.tsx
     │
     ├── standardization/             # Documents 탭
-    │   └── DataStandardizationPanel.tsx   # 파일 업로드(비동기 job 폴링) → 계층 분석 → 태깅 (~581줄)
+    │   └── DataStandardizationPanel.tsx   # 파일 업로드(비동기 job 폴링) → 계층 분석 → 태깅 (~606줄)
     │
     ├── generation/                  # QA Pipeline 탭
     │   └── QAGenerationPanel.tsx    # 3-Step: 설정 → 생성 → 평가 (~822줄)
@@ -150,15 +150,20 @@ frontend/src/
 
 ## API 클라이언트 (`src/lib/api.ts`)
 
-백엔드 주소는 `API_BASE` 상수로 관리 (로컬: `''` — Vite 프록시, 배포: `vercel.json` rewrites).
+백엔드 주소는 두 상수로 관리된다.
+
+| 상수 | 환경변수 | 용도 |
+|------|---------|------|
+| `API_BASE` | — (항상 `''`) | 모든 API 호출 — Vite 프록시 / `vercel.json` rewrites 경유 |
+| `UPLOAD_BASE` | `VITE_UPLOAD_BASE_URL` (미설정 시 `''`) | `POST /api/ingestion/upload` 전용 — Render cold-start 대비 별도 base 지정 가능 |
 
 ### 공통 래퍼
 
-| 함수 | 설명 |
-|------|------|
-| `apiFetch<T extends ApiResponse>(url, options?)` | 단일 요청 → `Promise<T>` 직접 반환. HTTP 에러 → `httpStatusToMessage`로 한국어 변환 |
-| `apiFetchWithRetry<T extends ApiResponse>(url, options, retries?, delayMs?)` | Cold start 대비 재시도 (기본 3회, 5초 간격). 에러 바디 `detail` 파싱 |
-| `mapErrorToMessage(error)` | 백엔드 에러 문자열 → 사용자 메시지 변환 |
+| 함수 | 공개 | 설명 |
+|------|:----:|------|
+| `apiFetch<T>(url, options?)` | 내부 | 단일 요청 → `Promise<T>` 직접 반환. HTTP 에러 → `httpStatusToMessage` 한국어 변환 |
+| `apiFetchWithRetry<T>(url, options, retries?, delayMs?)` | ✓ | Cold start 대비 재시도 (기본 3회, 5초 간격). 에러 바디 `detail` 파싱 |
+| `mapErrorToMessage(error)` | ✓ | 백엔드 에러 문자열 → 사용자 메시지 변환 |
 
 > 백엔드는 전 엔드포인트에서 `{ success, ...fields }` flat JSON을 반환. `ApiResponse`는 `{ success, error?, status_code? }` 기반 인터페이스이며 `data` 래퍼 없음.  
 > 예외: `/api/dashboard/metrics`만 `{ success, data: {...} }` 형태 사용 → `DashboardMetricsResponse`로 별도 처리.
@@ -251,13 +256,14 @@ frontend/src/
 
 ---
 
-## 주요 파일 규모 (2026-04-08 기준)
+## 주요 파일 규모 (2026-05-07 기준)
 
 | 파일 | 줄 수 |
 |------|-------|
 | `QAGenerationPanel.tsx` | 822 |
 | `QAEvaluationDashboard.tsx` | 663 |
 | `exportUtils/htmlBuilder.ts` | 615 |
-| `DataStandardizationPanel.tsx` | 581 |
-| `api.ts` | 270 |
+| `DashboardOverview.tsx` | 602 |
+| `DataStandardizationPanel.tsx` | 606 |
+| `api.ts` | 300 |
 | `App.tsx` | 146 |

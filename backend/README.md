@@ -105,7 +105,7 @@ API 문서: `http://localhost:8000/docs`
 
 ```
 모니터 URL : https://autoeval-uccr.onrender.com/health
-폙 간격   : 5분
+폴링 간격  : 5분
 응답 형식 : {"status": "healthy", "timestamp": "<ISO-8601>"}
 ```
 
@@ -244,7 +244,7 @@ Pass 3: /apply-granular-tagging
   실패 시 최대 3회 지수 백오프 재시도
 
 /hierarchy-list
-  filter_for_qa=true  → MIN_CHUNKS_FOR_QA=2 + MIN_CONTENT_CHARS=300 필터 적용 (QA 드롭다운)
+  filter_for_qa=true  → MIN_CHUNKS_FOR_QA=1 OR MIN_CONTENT_CHARS=300 필터 적용 (QA 드롭다운)
   filter_for_qa=false → 필터 없이 전체 태깅 결과 반환 (카테고리 구조 트리 표시용)
 ```
 
@@ -293,13 +293,14 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 ### 상태 판정 (프론트엔드에서 수행)
 
-> 백엔드는 QA별 `pass: bool` + `failure_types: list`만 반환. Pass/Hold/Fail 3단계 분류는 프론트엔드 `evalScoreUtils.ts`의 `getQAStatus()`에서 수행.
+> 백엔드는 QA별 `pass: bool` + `failure_types: list`만 반환. Success/Hold/Fail 3단계 분류는 프론트엔드 `evalScoreUtils.ts`의 `getQAStatus()`에서 수행.
+> QAStatus 타입: `'success' | 'hold' | 'fail'`
 
-| 상태 | 조건                                                          |
-| ---- | ------------------------------------------------------------- |
-| Fail | 품질 점수 AND RAG Triad 점수 모두 0.7 미만                    |
-| Hold | 0.7 미만 지표 1개 이상, 또는 0.7 이상이나 근거 오류/환각 감지 |
-| Pass | 모든 점수 ≥ 0.7, 결함 없음                                   |
+| 상태 (QAStatus) | 조건                                                                      |
+| --------------- | ------------------------------------------------------------------------- |
+| `fail`          | 품질 점수 AND RAG Triad 점수 모두 0.7 미만                                |
+| `hold`          | 0.7 미만 지표 1개 이상, 또는 모두 0.7 이상이나 `pass=false` / failure_type 있음 |
+| `success`       | 모든 점수 ≥ 0.7, `pass=true`, failure_types 없음                         |
 
 ---
 
@@ -355,7 +356,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | document_id 저장                | `doc_chunks.document_id` 전용 컬럼                                                                                                                         | metadata JSONB 중복 제거, 컬럼 인덱스 활용                                                                                              |
 | hierarchy-list 이중화           | `filter_for_qa` 파라미터                                                                                                                                   | QA 드롭다운(MIN_CHUNKS/CHARS 필터)과 표시용 트리(필터 없음) 분리                                                                        |
 | 빈 QA 저장 방지                 | `total_qa == 0` early return                                                                                                                               | 컨텍스트 부족 노드 선택 시 빈 레코드 DB 저장 방지                                                                                       |
-| H2/H3 최소 조건                 | `MIN_CHUNKS=2`, `MIN_CONTENT_CHARS=300`                                                                                                                  | 청크 수와 실제 텍스트 길이를 모두 충족해야 드롭다운 노출                                                                                |
+| H2/H3 최소 조건                 | `MIN_CHUNKS_FOR_QA=1`, `MIN_CONTENT_CHARS=300`                                                                                                           | 청크 수 OR 텍스트 길이 중 하나라도 충족하면 드롭다운 노출 (AND 조건 아님)                                                               |
 | `ingestion_api.py` 모듈화     | `prompts / tagging / chunker / pipeline` 분리                                                                                                              | 870줄 단일 파일 → 라우터 331줄 + 4개 전담 모듈, 프롬프트/태깅/청킹/파이프라인 독립 테스트 가능                                         |
 | `generation_api.py` 모듈화    | `prompts / job_manager / worker` 분리                                                                                                                      | 1006줄 단일 파일 → 라우터 224줄 + 3개 전담 모듈, 지연 import 워크어라운드 제거 |
 | `config/prompts.py` 제거      | `generators/prompts.py`로 완전 이전, shim 삭제                                                                                                             | generation 전용 프롬프트를 generators 레이어로 귀속, `config/` 불필요 파일 제거                                                        |
