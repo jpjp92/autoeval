@@ -1,4 +1,4 @@
-# AutoEval Backend
+# Agent Q Backend
 
 FastAPI 기반 QA 생성·평가 백엔드.
 문서 인제스션부터 적응형 QA 생성, 4레이어 평가까지 처리한다.
