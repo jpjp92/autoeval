@@ -136,11 +136,9 @@ function svgBars(items: Array<{ name: string; nameEn?: string; score: number; gr
     const targetW = Math.max(2, item.score * barMaxW);
     const color = item.score >= 0.85 ? '#10b981' : item.score >= 0.7 ? '#f59e0b' : '#f43f5e';
     const tip = item.nameEn ? `${item.name}(${item.nameEn}): ${item.score.toFixed(3)}` : `${item.name}: ${item.score.toFixed(3)}`;
-    const groupPrefix = item.group === 'rag'
-      ? `<tspan fill="#0284c7" font-weight="700" font-size="9">RAG </tspan>`
-      : item.group === 'quality'
-        ? `<tspan fill="#7c3aed" font-weight="700" font-size="9">품질 </tspan>`
-        : '';
+    const groupPrefix = item.group === 'quality'
+      ? `<tspan fill="#7c3aed" font-weight="700" font-size="9">품질 </tspan>`
+      : '';
     bars += `
 <text x="${labelW-6}" y="${(y+barH/2+1).toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="11" fill="#475569">${groupPrefix}${item.name}</text>
 <rect x="${labelW}" y="${y}" width="${barMaxW}" height="${barH}" rx="4" fill="#f1f5f9"/>
@@ -338,7 +336,7 @@ export function buildHTMLContent(data: EvaluationData): string {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
                   통합 품질 평가 점수
                 </div>
-                <div class="chart-sub">RAG Triad + 품질 평가 통합 점수</div>
+                <div class="chart-sub">LLM 품질 평가 통합 점수</div>
                 <div class="chart-card-inner" style="margin-top:10px">${barsSVG}</div>
             </div>
         </div>

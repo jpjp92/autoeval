@@ -33,7 +33,7 @@ export function buildChartData(report: EvalReport) {
     { label: '성공 QA 수',         value: `${successCount} / ${report.metadata.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
       tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
     { label: '통합 품질 평균 점수', value: (sum.final_score ?? 0).toFixed(3), icon: Target,       color: 'text-amber-600',   bg: 'bg-amber-100',
-      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
+      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'LLM 품질 평가 ×0.9 + 구문·통계 ×0.1' }] } },
     { label: '종합 평가 등급',     value: sum.grade ?? '-', icon: Activity,     color: 'text-rose-600',    bg: 'bg-rose-100',
       tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
   ];
@@ -54,9 +54,9 @@ export function buildChartData(report: EvalReport) {
   }));
 
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance',  score: rag?.summary?.avg_relevance          ?? 0, group: 'rag'     as const },
-    { name: '근거성', nameEn: 'Groundedness',       score: rag?.summary?.avg_groundedness       ?? 0, group: 'rag'     as const },
-    { name: '맥락성', nameEn: 'Context Relevance',  score: rag?.summary?.avg_context_relevance  ?? 0, group: 'rag'     as const },
+    { name: '관련성', nameEn: 'Answer Relevance',  score: rag?.summary?.avg_relevance          ?? 0, group: 'quality' as const },
+    { name: '근거성', nameEn: 'Groundedness',       score: rag?.summary?.avg_groundedness       ?? 0, group: 'quality' as const },
+    { name: '맥락성', nameEn: 'Context Relevance',  score: rag?.summary?.avg_context_relevance  ?? 0, group: 'quality' as const },
     { name: '완전성', nameEn: 'Completeness',        score: qua?.summary?.avg_completeness       ?? 0, group: 'quality' as const },
   ];
 
@@ -78,7 +78,7 @@ export function buildChartDataFromHistory(item: HistoryItem) {
     { label: '성공 QA 수',         value: `${passCount} / ${item.total_qa.toLocaleString()}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
       tooltip: { title: '성공 QA 수', items: [{ text: '검증을 통과한 고품질 QA 세트의 수입니다.' }, { label: '기준', text: '전체 지표 통과 및 구조적 오류가 없는 데이터' }] } },
     { label: '통합 품질 평균 점수', value: (item.final_score ?? 0).toFixed(3), icon: Target,  color: 'text-amber-600',   bg: 'bg-amber-100',
-      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'RAG Triad + 품질 평가 + 구조 검증 점수의 가중합' }] } },
+      tooltip: { title: '통합 품질 평균 점수', items: [{ text: '전체 QA 데이터의 평균 종합 점수입니다 (0~1).' }, { label: '구성', text: 'LLM 품질 평가 ×0.9 + 구문·통계 ×0.1' }] } },
     { label: '종합 평가 등급',     value: item.final_grade ?? '-', icon: Activity,            color: 'text-rose-600',    bg: 'bg-rose-100',
       tooltip: { title: '종합 평가 등급', items: [{ text: '데이터셋의 최종 활용 가능성을 나타내는 등급입니다.' }, { label: 'A등급', text: '우수 (즉시 상용화 가능)' }, { label: 'B등급', text: '양호 (일부 검토 요망)' }, { label: 'C 이하', text: '미흡 (재생성 권장)' }] } },
   ];
@@ -96,9 +96,9 @@ export function buildChartDataFromHistory(item: HistoryItem) {
   }));
 
   const llmQualityScores = [
-    { name: '관련성', nameEn: 'Answer Relevance',  score: rag?.summary?.avg_relevance          ?? 0, group: 'rag'     as const },
-    { name: '근거성', nameEn: 'Groundedness',       score: rag?.summary?.avg_groundedness       ?? 0, group: 'rag'     as const },
-    { name: '맥락성', nameEn: 'Context Relevance',  score: rag?.summary?.avg_context_relevance  ?? 0, group: 'rag'     as const },
+    { name: '관련성', nameEn: 'Answer Relevance',  score: rag?.summary?.avg_relevance          ?? 0, group: 'quality' as const },
+    { name: '근거성', nameEn: 'Groundedness',       score: rag?.summary?.avg_groundedness       ?? 0, group: 'quality' as const },
+    { name: '맥락성', nameEn: 'Context Relevance',  score: rag?.summary?.avg_context_relevance  ?? 0, group: 'quality' as const },
     { name: '완전성', nameEn: 'Completeness',        score: qua?.summary?.avg_completeness       ?? 0, group: 'quality' as const },
   ];
 

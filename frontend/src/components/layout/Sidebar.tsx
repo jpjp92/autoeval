@@ -46,7 +46,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                 <Zap className="w-5 h-5 text-white" fill="currentColor" />
               </div>
               <div className="flex flex-col leading-none">
-                <span className="font-black text-base tracking-tight text-slate-800 dark:text-white">Auto Eval</span>
+                <span className="font-black text-base tracking-tight text-slate-800 dark:text-white">Agent Q</span>
               </div>
             </button>
           </div>

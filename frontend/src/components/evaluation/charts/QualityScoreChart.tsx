@@ -9,7 +9,7 @@ const METRIC_META: Record<string, { desc: string; chip: string; text: string }> 
   완전성: { desc: '답변이 세부 요구사항을 충실히 다루었는지 평가', chip: 'bg-purple-500/10 dark:bg-purple-500/15', text: 'text-purple-600 dark:text-purple-400' },
 };
 
-export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number; group: 'rag' | 'quality' }> }) {
+export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn: string; score: number; group: 'quality' }> }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [animated, setAnimated]     = useState(false);
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -60,7 +60,6 @@ export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn
         const isMid  = item.score >= SCORE_THRESHOLDS.mid;
         const colorClass = isHigh ? 'from-emerald-400 to-teal-500' : isMid ? 'from-amber-400 to-orange-500' : 'from-rose-400 to-red-500';
         const glowClass  = isHigh ? 'shadow-[0_0_12px_rgba(16,185,129,0.3)]' : isMid ? 'shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'shadow-[0_0_12px_rgba(244,63,94,0.3)]';
-        const isRag = item.group === 'rag';
         const targetW = Math.min(item.score * 100, 100);
 
         return (
@@ -87,11 +86,8 @@ export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn
             )}
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2.5">
-                <span className={cn(
-                  "px-2 py-0.5 rounded-md text-[9px] font-black tracking-widest uppercase border backdrop-blur-sm shadow-sm",
-                  isRag ? "bg-blue-500/10 text-blue-500 border-blue-500/20" : "bg-purple-500/10 text-purple-500 border-purple-500/20"
-                )}>
-                  {isRag ? 'RAG' : '품질'}
+                <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-widest uppercase border backdrop-blur-sm shadow-sm bg-purple-500/10 text-purple-500 border-purple-500/20">
+                  품질
                 </span>
                 <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200">{item.name}</span>
               </div>

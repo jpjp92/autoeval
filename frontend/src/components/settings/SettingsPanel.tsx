@@ -1,11 +1,10 @@
-import { User, Key, Eye, EyeOff, GitBranch } from 'lucide-react';
+import { User, Eye, EyeOff, GitBranch } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/src/lib/utils';
 import { PipelineFlow } from './PipelineFlow';
 
 const sections = [
   { id: 'profile',   label: 'Profile',   icon: User      },
-  { id: 'api-keys',  label: 'API Keys',  icon: Key       },
   { id: 'pipeline',  label: 'Pipeline',  icon: GitBranch },
 ];
 
@@ -146,7 +145,7 @@ export function SettingsPanel({ section }: { section?: string } = {}) {
           </div>
         )}
 
-        {/* API Keys */}
+        {/* API Keys — 우선 제외
         {activeSection === 'api-keys' && (
           <div className="max-w-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className={glassCard}>
@@ -186,6 +185,7 @@ export function SettingsPanel({ section }: { section?: string } = {}) {
             </div>
           </div>
         )}
+        */}
 
         {/* Pipeline Flow — 전체 높이 활용 */}
         {activeSection === 'pipeline' && (

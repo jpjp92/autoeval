@@ -453,7 +453,7 @@ export function QAEvaluationDashboard({
               title="품질 평가"
               items={[
                 { text: '4개 기준으로 QA 품질을 LLM이 직접 평가합니다 (0–1).' },
-                { label: '최종 점수', text: 'RAG ×0.65 + 품질 ×0.25 + 구문·통계 ×0.1' },
+                { label: '최종 점수', text: 'LLM 품질 평가 ×0.9 + 구문·통계 ×0.1' },
                 { label: '등급', text: '0.85↑ 우수 / 0.70↑ 양호 / 미만 미흡' },
               ]}
             />
