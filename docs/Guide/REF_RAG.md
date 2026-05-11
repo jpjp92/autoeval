@@ -4,7 +4,7 @@
 업데이트: 2026-04-09
 -->
 
-# AutoEval RAG Pipeline
+# RAG Pipeline
 
 > 문서 업로드부터 벡터 검색 기반 QA 생성까지의 흐름 정리
 > 평가 파이프라인(Layer 1~3, 점수 계산) → [REF_EVAL.md](REF_EVAL.md)

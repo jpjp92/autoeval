@@ -1,4 +1,4 @@
-# AutoEval Frontend
+# Agent Q Frontend
 
 > 마지막 업데이트: 2026-05-07
 
@@ -155,7 +155,7 @@ frontend/src/
 | 상수 | 환경변수 | 용도 |
 |------|---------|------|
 | `API_BASE` | — (항상 `''`) | 모든 API 호출 — Vite 프록시 / `vercel.json` rewrites 경유 |
-| `UPLOAD_BASE` | `VITE_UPLOAD_BASE_URL` (미설정 시 `''`) | `POST /api/ingestion/upload` 전용 — Render cold-start 대비 별도 base 지정 가능 |
+| `UPLOAD_BASE` | `VITE_UPLOAD_BASE_URL` (미설정 시 `''`) | `POST /api/ingestion/upload` 전용 별도 base URL 지정 가능 |
 
 ### 공통 래퍼
 

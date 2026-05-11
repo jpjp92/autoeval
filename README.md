@@ -1,6 +1,6 @@
-# AutoEval
+# Agent Q
 
-**LLM 기반 QA 자동 생성 및 평가 POC 설계**
+**LLM 기반 QA 자동 생성 및 평가**
 
 PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질 평가까지 엔드-투-엔드로 처리합니다.
 
@@ -15,7 +15,6 @@ PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질
 5. [DB 스키마](#-db-스키마)
 6. [빠른 시작](#-빠른-시작)
 7. [API 엔드포인트](#-api-엔드포인트)
-8. [배포 구성](#-배포-구성-render--vercel)
 
 ---
 
@@ -483,36 +482,6 @@ docker compose up -d --build
 | ------ | ------------------------ | ------------------------------------------------------------------------- |
 | `GET`  | `/health`                | 헬스체크                                                                  |
 | `GET`  | `/api/dashboard/metrics` | 대시보드 집계 데이터 (summary, recent_jobs, grade_dist, model_benchmarks) |
-
----
-
-## 배포 구성 (Render + Vercel)
-
-| 플랫폼 | 역할             | 환경변수                                          |
-| ------ | ---------------- | ------------------------------------------------- |
-| Render | FastAPI 백엔드   | `CORS_ORIGINS=https://autoeval-v1.vercel.app`     |
-| Vercel | React 프론트엔드 | `VITE_API_URL=https://autoeval-uccr.onrender.com` |
-
-- Render는 `PORT` 환경변수를 자동 주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
-- 로컬 개발 시 Vite 프록시가 `/api/*`를 `localhost:8000`으로 포워딩 (`vite.config.ts`)
-- Vercel 배포 시 `vercel.json` rewrites가 `/api/*`를 Render로 서버사이드 포워딩 → CORS 불필요
-
-```
-브라우저 요청 흐름
-  로컬  : localhost:3000/api/... → Vite 프록시 → localhost:8000
-  Vercel: autoeval-v1.vercel.app/api/... → Vercel rewrites → autoeval-uccr.onrender.com
-```
-
-### Render 슬립 방지 (UptimeRobot)
-
-Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~20초 지연 발생.
-
-| 항목       | 내용                                                               |
-| ---------- | ------------------------------------------------------------------ |
-| 서비스     | [UptimeRobot](https://uptimerobot.com) 무료 플랜                   |
-| 모니터 URL | `https://autoeval-uccr.onrender.com/health`                        |
-| 폴링 간격  | 5분 (Render 15분 슬립 기준 충분)                                   |
-| 응답       | `{"status": "healthy", "timestamp": "..."}` 동적 타임스탬프 포함   |
 
 ---
 

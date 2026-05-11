@@ -96,18 +96,8 @@ API 문서: `http://localhost:8000/docs`
 
 | 항목           | 내용                                          |
 | -------------- | --------------------------------------------- |
-| 플랫폼       | Render (Free tier)                            |
-| 서비스 URL    | `https://autoeval-uccr.onrender.com`        |
+| 플랫폼       | Render                                        |
 | 환경 변수   | `CORS_ORIGINS`, `PORT` (자동 주입)          |
-| 슬립 방지    | UptimeRobot — 5분 간격 `GET /health` ping     |
-
-**Render 무료 플랜은 15분 비활성 후 spin-down** → UptimeRobot 5분 ping으로 슬립 방지 중.
-
-```
-모니터 URL : https://autoeval-uccr.onrender.com/health
-폴링 간격  : 5분
-응답 형식 : {"status": "healthy", "timestamp": "<ISO-8601>"}
-```
 
 ---
 
