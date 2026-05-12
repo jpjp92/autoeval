@@ -43,7 +43,7 @@ function App() {
       case "generation": return { title: "QA Pipeline", Icon: FilePlus };
       case "evaluation": return { title: "Evaluation", Icon: Target };
       case "settings": return { title: "Settings", Icon: Settings };
-      default: return { title: "Auto Eval", Icon: Zap };
+      default: return { title: "Agen Q", Icon: Zap };
     }
   };
   const { title: headerTitle, Icon: HeaderIcon } = getHeaderInfo();

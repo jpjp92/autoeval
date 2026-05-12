@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, Fragment, type ReactNode } from "react";
 import {
-  Settings, Play, Loader2, ListTree, CheckCircle2, ChevronRight,
+  Settings, Play, Loader2, ListTree, CheckCircle2, ChevronRight, ChevronDown,
   AlertCircle, X, RefreshCw, Check, BarChart2,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -37,6 +37,67 @@ interface QAGenerationPanelProps {
   onGenerationComplete?: () => void;
   onEvalComplete?: (evalJobId: string) => void;
   onGoToEvaluation?: () => void;
+}
+
+// ── CustomSelect ─────────────────────────────────────────────────────────────
+function CustomSelect({ value, onChange, options, disabled }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen(o => !o)}
+        disabled={disabled}
+        className={cn(
+          "w-full flex items-center justify-between pl-3 pr-2.5 py-2.5 bg-white dark:bg-white/5 border rounded-xl text-sm text-slate-700 dark:text-slate-200 transition-all",
+          open
+            ? "border-indigo-500 ring-2 ring-indigo-500/15"
+            : "border-slate-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/40",
+          disabled && "opacity-50 cursor-not-allowed"
+        )}
+      >
+        <span className="truncate">{selected?.label}</span>
+        <ChevronDown className={cn("w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ml-1", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1.5 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg shadow-slate-200/60 dark:shadow-black/30 overflow-hidden">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={cn(
+                "w-full text-left px-3 py-2.5 text-sm transition-colors",
+                opt.value === value
+                  ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 font-medium"
+                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/8"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── 공통 버튼 사이즈 ──────────────────────────────────────────────────────────
@@ -199,6 +260,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     quality: { status: "pending", progress: 0, message: "" },
   });
 
+  const [settingsConfirmed, setSettingsConfirmed] = useState(false);
+
   const [hierarchyH1List, setHierarchyH1List]   = useState<string[]>([]);
   const [hierarchyH2Map, setHierarchyH2Map]     = useState<Record<string, string[]>>({});
   const [hierarchyH3Map, setHierarchyH3Map]     = useState<Record<string, string[]>>({});
@@ -232,6 +295,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
   const loadHierarchyList = async () => {
     if (!currentFilename) return;
     setSelectedH1(""); setSelectedH2(""); setSelectedH3("");
+    setSettingsConfirmed(false);
     setIsLoadingHierarchy(true);
     const result = await getHierarchyList(currentFilename);
     if (result.success) {
@@ -402,10 +466,12 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     prevLayerStatuses.current = {};
   };
 
+
   // Step 상태
-  const step1Status: StepStatus = phase === "idle" ? "active" : "done";
+  const step1Status: StepStatus = settingsConfirmed ? "done" : "active";
   const step2Status: StepStatus =
-    phase === "idle" ? "pending" :
+    !settingsConfirmed ? "pending" :
+    phase === "idle" ? "active" :
     phase === "generating" ? "active" : "done";
   const generationDone = phase === "complete" || phase === "evaluating";
   const evaluationDone = phase === "complete" && !!evalReport;
@@ -424,54 +490,85 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
         status={step1Status} isLast={false}
       >
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            {/* 생성 모델 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">생성 모델</label>
-              <select value={formValues.model} onChange={e => setFormValues({ ...formValues, model: e.target.value })} disabled={isGenerating} className={selectCls(isGenerating)}>
-                <option value="gemini-3-flash">Gemini 3 Flash</option>
-                <option value="claude-sonnet">Claude Sonnet 4.6</option>
-                <option value="gpt-5.2">GPT-5.2</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">청크 샘플 수</label>
-              <input
-                type="number" min="1" max="50" placeholder="1 – 50"
-                value={sampleInputValue}
-                onChange={e => {
-                  const val = e.target.value; setSampleInputValue(val);
-                  const num = parseInt(val);
-                  if (!isNaN(num) && num >= 1 && num <= 50) setFormValues({ ...formValues, samples: num });
-                }}
-                onBlur={e => { if (e.target.value === "") setFormValues({ ...formValues, samples: 1 }); }}
+              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">생성 모델</label>
+              <CustomSelect
+                value={formValues.model}
+                onChange={v => setFormValues({ ...formValues, model: v })}
                 disabled={isGenerating}
-                className={selectCls(isGenerating)}
+                options={[
+                  { value: "gemini-3-flash", label: "Gemini 3 Flash" },
+                  { value: "claude-sonnet",  label: "Claude Sonnet 4.6" },
+                  { value: "gpt-5.2",        label: "GPT-5.2" },
+                ]}
               />
             </div>
 
+            {/* 청크 샘플 수 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">평가 모델</label>
-              <select value={formValues.evaluatorModel} onChange={e => setFormValues({ ...formValues, evaluatorModel: e.target.value })} disabled={isGenerating} className={selectCls(isGenerating)}>
-                <option value="gemini-flash">Gemini 2.5 Flash</option>
-                <option value="claude-haiku">Claude Haiku 4.5</option>
-                <option value="gpt-5.1">GPT-5.1</option>
-              </select>
+              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">청크 샘플 수</label>
+              <div className={cn(
+                "flex items-center bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden transition-all",
+                !isGenerating && "hover:border-indigo-300 dark:hover:border-indigo-500/40",
+                isGenerating && "opacity-50"
+              )}>
+                <button
+                  onClick={() => { const n = Math.max(1, formValues.samples - 1); setFormValues({ ...formValues, samples: n }); setSampleInputValue(String(n)); }}
+                  disabled={isGenerating || formValues.samples <= 1}
+                  className="px-3 h-[42px] text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed text-base font-semibold border-r border-slate-100 dark:border-white/8"
+                >−</button>
+                <input
+                  type="number" min="1" max="50"
+                  value={sampleInputValue}
+                  onChange={e => { const val = e.target.value; setSampleInputValue(val); const n = parseInt(val); if (!isNaN(n) && n >= 1 && n <= 50) setFormValues({ ...formValues, samples: n }); }}
+                  onBlur={e => { if (e.target.value === "") { setFormValues({ ...formValues, samples: 1 }); setSampleInputValue("1"); } }}
+                  disabled={isGenerating}
+                  className="flex-1 text-center text-sm font-semibold text-slate-700 dark:text-slate-200 bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  onClick={() => { const n = Math.min(50, formValues.samples + 1); setFormValues({ ...formValues, samples: n }); setSampleInputValue(String(n)); }}
+                  disabled={isGenerating || formValues.samples >= 50}
+                  className="px-3 h-[42px] text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed text-base font-semibold border-l border-slate-100 dark:border-white/8"
+                >+</button>
+              </div>
             </div>
 
+            {/* 평가 모델 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">자동 평가</label>
-              <div className={cn("w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-white/8 border border-slate-200 dark:border-white/10 rounded-lg", isGenerating && "opacity-50")}>
-                <p className="text-sm text-slate-600 dark:text-slate-300">QA 자동 평가 실행</p>
-                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                  <input type="checkbox" className="sr-only peer"
-                    checked={formValues.autoEvaluate}
-                    onChange={e => setFormValues({ ...formValues, autoEvaluate: e.target.checked })}
-                    disabled={isGenerating}
-                  />
-                  <div className="w-10 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600" />
-                </label>
-              </div>
+              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">평가 모델</label>
+              <CustomSelect
+                value={formValues.evaluatorModel}
+                onChange={v => setFormValues({ ...formValues, evaluatorModel: v })}
+                disabled={isGenerating}
+                options={[
+                  { value: "gemini-flash", label: "Gemini 2.5 Flash" },
+                  { value: "claude-haiku", label: "Claude Haiku 4.5" },
+                  { value: "gpt-5.1",      label: "GPT-5.1" },
+                ]}
+              />
+            </div>
+
+            {/* 자동 평가 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">자동 평가</label>
+              <button
+                onClick={() => !isGenerating && setFormValues({ ...formValues, autoEvaluate: !formValues.autoEvaluate })}
+                disabled={isGenerating}
+                className={cn(
+                  "w-full h-[42px] flex items-center justify-between px-3 rounded-xl border text-sm font-medium transition-all",
+                  formValues.autoEvaluate
+                    ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-400"
+                    : "bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-400 dark:text-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500/40",
+                  isGenerating && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <span>생성 후 자동 평가</span>
+                <div className={cn("w-9 h-5 rounded-full relative transition-colors flex-shrink-0", formValues.autoEvaluate ? "bg-indigo-600" : "bg-slate-200 dark:bg-white/20")}>
+                  <div className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all", formValues.autoEvaluate ? "left-[18px]" : "left-0.5")} />
+                </div>
+              </button>
             </div>
           </div>
 
@@ -508,24 +605,39 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H1 대분류</label>
-                  <select value={selectedH1} onChange={e => handleH1Change(e.target.value)} disabled={isGenerating} className={selectCls(isGenerating)}>
-                    <option value="">전체</option>
-                    {hierarchyH1List.map(h1 => <option key={h1} value={h1}>{h1}</option>)}
-                  </select>
+                  <CustomSelect
+                    value={selectedH1}
+                    onChange={handleH1Change}
+                    disabled={isGenerating}
+                    options={[
+                      { value: "", label: "전체" },
+                      ...hierarchyH1List.map(h1 => ({ value: h1, label: h1 })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H2 중분류</label>
-                  <select value={selectedH2} onChange={e => handleH2Change(e.target.value)} disabled={isGenerating || !selectedH1} className={selectCls(isGenerating || !selectedH1)}>
-                    <option value="">전체</option>
-                    {(hierarchyH2Map[selectedH1] || []).map(h2 => <option key={h2} value={h2}>{h2}</option>)}
-                  </select>
+                  <CustomSelect
+                    value={selectedH2}
+                    onChange={handleH2Change}
+                    disabled={isGenerating || !selectedH1}
+                    options={[
+                      { value: "", label: "전체" },
+                      ...(hierarchyH2Map[selectedH1] || []).map(h2 => ({ value: h2, label: h2 })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H3 소분류</label>
-                  <select value={selectedH3} onChange={e => setSelectedH3(e.target.value)} disabled={isGenerating || !selectedH2} className={selectCls(isGenerating || !selectedH2)}>
-                    <option value="">전체</option>
-                    {(hierarchyH3Map[`${selectedH1}__${selectedH2}`] || []).map(h3 => <option key={h3} value={h3}>{h3}</option>)}
-                  </select>
+                  <CustomSelect
+                    value={selectedH3}
+                    onChange={setSelectedH3}
+                    disabled={isGenerating || !selectedH2}
+                    options={[
+                      { value: "", label: "전체" },
+                      ...(hierarchyH3Map[`${selectedH1}__${selectedH2}`] || []).map(h3 => ({ value: h3, label: h3 })),
+                    ]}
+                  />
                 </div>
               </div>
             )}
@@ -537,6 +649,29 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                 {selectedH3 && <><ChevronRight className="w-3 h-3 text-slate-300" /><span className="text-indigo-300">{selectedH3}</span></>}
               </div>
             )}
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex items-center justify-end gap-3">
+            {settingsConfirmed && (
+              <button
+                onClick={() => setSettingsConfirmed(false)}
+                disabled={isGenerating}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline underline-offset-2 disabled:opacity-50"
+              >
+                설정 변경
+              </button>
+            )}
+            <button
+              onClick={() => setSettingsConfirmed(true)}
+              disabled={isGenerating || settingsConfirmed}
+              className={cn(btnBase, settingsConfirmed
+                ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 cursor-default"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200"
+              )}
+            >
+              <Check className="w-4 h-4" />
+              {settingsConfirmed ? "설정 완료됨" : "설정 완료"}
+            </button>
           </div>
         </div>
       </StepCard>
@@ -552,7 +687,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
           /* 대기 */
           <div className="flex items-center gap-4">
             <div className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
-              <p className="text-xs text-slate-400">Step 1 설정 완료 후 실행 버튼을 눌러 시작하세요.</p>
+              <p className="text-xs text-slate-400">설정 완료 후 생성을 시작할 수 있습니다.</p>
             </div>
             <button onClick={handleStart} className={cn(btnBase, "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200")}>
               <Play className="w-4 h-4" /> 생성 시작

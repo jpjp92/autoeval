@@ -1,4 +1,4 @@
-# Agent Q Frontend
+# Agen Q Frontend
 
 > 마지막 업데이트: 2026-05-07
 

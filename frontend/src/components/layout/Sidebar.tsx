@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutDashboard, Zap, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database, Settings } from "lucide-react";
+import { LayoutDashboard, Search, Target, PanelLeftClose, PanelLeftOpen, FilePlus, Database, Settings } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 interface SidebarProps {
@@ -27,7 +27,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
         Expanded = 256 - 24(p-3) - 24(p-3) = 208px 
         Collapsed = 84 - 24(p-3) - 24(p-3) = 36px 
       */}
-      <div className="h-full rounded-3xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-2xl border border-white/60 dark:border-white/8 shadow-2xl shadow-indigo-500/8 dark:shadow-black/30 flex flex-col p-3 overflow-hidden">
+      <div className="h-full rounded-3xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-2xl border border-white/60 dark:border-white/8 shadow-2xl shadow-indigo-500/8 dark:shadow-black/30 flex flex-col pt-2 px-3 pb-3 overflow-hidden">
 
         <div className={cn(
           "flex items-center h-11 mb-2 shrink-0 transition-all duration-300",
@@ -42,11 +42,11 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
               onClick={() => setActiveTab("overview")}
               className="flex items-center gap-3 hover:opacity-80 transition-opacity whitespace-nowrap"
             >
-              <div className="w-9 h-9 bg-indigo-500 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/30">
-                <Zap className="w-5 h-5 text-white" fill="currentColor" />
+              <div className="w-9 h-9 bg-indigo-500 rounded-full flex items-center justify-center shrink-0">
+                <Search className="w-5 h-5 text-white/80" strokeWidth={1.25} />
               </div>
               <div className="flex flex-col leading-none">
-                <span className="font-black text-base tracking-tight text-slate-800 dark:text-white">Agent Q</span>
+                <span className="font-black text-base tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500 dark:from-indigo-400 dark:to-purple-400">Agen Q</span>
               </div>
             </button>
           </div>

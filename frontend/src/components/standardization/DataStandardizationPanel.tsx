@@ -193,11 +193,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
   return (
     <div className="max-w-4xl mx-auto space-y-0">
 
-      {/* ── Step 1: 문서 업로드 ─────────────────────────────────────── */}
+      {/* ── Step 1: 문서 등록 ─────────────────────────────────────── */}
       <StepCard
         step={1}
-        title="문서 업로드"
-        subtitle="PDF 또는 DOCX 문서를 업로드하면 문맥을 파악해 의미 단위로 나누어 저장합니다."
+        title="문서 등록"
+        subtitle="PDF 또는 DOCX 문서를 등록하면 내용을 정리해 다음 단계에서 활용할 수 있도록 준비합니다."
         icon={<Database className="w-4 h-4" />}
         status={uploadDone ? "done" : "active"}
         isLast={false}
@@ -208,7 +208,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-emerald-800 dark:text-emerald-400 truncate">{uploadedFilename}</p>
-              <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">분석 완료 · 다음 단계로 이동하세요</p>
+              <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">등록 완료 · 다음 단계로 이동하세요</p>
             </div>
             <button
               onClick={() => { setUploadedFilename(null); setUploadMessage(null); setAnalysis(null); setTaggingSamples([]); setHierarchyTree(null); }}
@@ -288,7 +288,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                   <span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
                   <span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
                 </span>
-              ) : "문서 업로드"}
+              ) : "문서 등록"}
             </button>
           </div>
         )}

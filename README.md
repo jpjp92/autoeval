@@ -1,4 +1,4 @@
-# Agent Q
+# Agen Q
 
 **LLM 기반 QA 자동 생성 및 평가**
 
