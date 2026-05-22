@@ -78,7 +78,7 @@ function CustomSelect({ value, onChange, options, disabled }: {
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1.5 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg shadow-slate-200/60 dark:shadow-black/30 overflow-hidden">
+        <div className="absolute z-50 mt-1.5 w-full max-h-72 overflow-y-auto overscroll-contain bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg shadow-slate-200/60 dark:shadow-black/30">
           {options.map(opt => (
             <button
               key={opt.value}
@@ -114,7 +114,7 @@ function StepCard({
   children: ReactNode;
 }) {
   return (
-    <div className="flex gap-0">
+    <div className="relative flex gap-0" style={{ zIndex: 10 - step }}>
       <div className="flex flex-col items-center pt-6 mr-5">
         <div className={cn(
           "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 transition-all",
@@ -132,10 +132,10 @@ function StepCard({
         )}
       </div>
       <div className={cn(
-        "flex-1 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden mb-4 transition-all",
+        "flex-1 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-visible mb-4 transition-all",
         status === "pending" ? "border-white/60 dark:border-white/5 opacity-60" : "border-white/60 dark:border-white/8"
       )}>
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/5 flex items-center gap-3">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/5 rounded-t-2xl flex items-center gap-3">
           <div className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
             status === "done"   ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" :
