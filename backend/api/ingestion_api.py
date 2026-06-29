@@ -20,6 +20,7 @@ Ingestion API  —  /api/ingestion/*
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -51,8 +52,29 @@ logger = logging.getLogger("autoeval.ingestion")
 
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
 
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
-gemini_client = google_genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+def _secret_id(secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:10]
+
+
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+gemini_client = google_genai.Client(api_key=GOOGLE_API_KEY) if GOOGLE_API_KEY else None
+
+if not GOOGLE_API_KEY:
+    logger.warning("GOOGLE_API_KEY not set for Google Gemini client.")
+else:
+    logger.info(
+        "Google Gemini client initialized (GOOGLE_API_KEY key_id=%s)",
+        _secret_id(GOOGLE_API_KEY),
+    )
+
+if os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() == "true":
+    logger.info(
+        "Google GenAI Vertex routing enabled "
+        "(project=%s, location=%s)",
+        os.getenv("GOOGLE_CLOUD_PROJECT") or "<unset>",
+        os.getenv("GOOGLE_CLOUD_LOCATION") or os.getenv("GOOGLE_CLOUD_REGION") or "<unset>",
+    )
 
 
 # ============================================================================

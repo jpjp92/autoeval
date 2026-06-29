@@ -189,7 +189,7 @@ API 문서: `http://localhost:8000/docs`
   "content_hash":    "sha1hex",
   "char_length":     412,
   "chunking_method": "llm | rule",
-  "embedding_model": "gemini-embedding-2-preview",
+  "embedding_model": "gemini-embedding-2",
   "ingested_at":     "2026-04-02T10:00:00",
   "source":          "pdf | docx",
   "hierarchy_h1":    "대분류",
@@ -317,7 +317,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | 용도                            | model_id                   | 비고                                       |
 | ------------------------------- | -------------------------- | ------------------------------------------ |
 | LLM 청킹 (PDF/DOCX)             | gemini-2.5-flash           | thinking_budget=0, temperature=0.1         |
-| 임베딩                          | gemini-embedding-2-preview | 1536차원, RETRIEVAL_DOCUMENT/QUERY         |
+| 임베딩                          | gemini-embedding-2         | 1536차원, 입력 prefix로 문서/쿼리 구분     |
 | Hierarchy + domain_profile 생성 | gemini-3-flash-preview     | H1/H2/H3 master + domain_profile 동시 생성 |
 | Hierarchy 태깅                  | gemini-2.5-flash           | batch=5, parallel=5, temperature=0         |
 

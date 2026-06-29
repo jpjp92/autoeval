@@ -28,8 +28,44 @@ logger = logging.getLogger("autoeval.ingestion.pipeline")
 
 _EMBED_SEM = asyncio.Semaphore(int(os.getenv("EMBED_CONCURRENCY", "5")))
 
-_EMBED_MODEL = "gemini-embedding-2-preview"
-_EMBED_BATCH_SIZE = 64
+_EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-2")
+_EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "64"))
+
+
+def _embedding_quota_hint(error_text: str) -> str:
+    """Return an operator-facing hint for common Gemini embedding quota failures."""
+    if "aiplatform.googleapis.com" in error_text or "online_prediction_requests_per_base_model" in error_text:
+        return (
+            "Vertex AI base-model quota 제한입니다. Render 환경의 "
+            "GOOGLE_GENAI_USE_VERTEXAI / GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION 값과 "
+            "Google Cloud 콘솔에서 확인한 프로젝트·리전·base model(gemini-embedding-2)이 "
+            "일치하는지 확인하세요."
+        )
+    return (
+        "Gemini API quota/rate limit 제한입니다. API key가 연결된 프로젝트의 "
+        "embedding 모델 quota와 결제/tier 상태를 확인하세요."
+    )
+
+
+def _uses_embedding_2() -> bool:
+    return _EMBED_MODEL == "gemini-embedding-2"
+
+
+def _document_embedding_input(chunk: Dict[str, Any]) -> str:
+    title = chunk.get("section_title") or ""
+    text = chunk.get("text") or chunk.get("raw_text") or ""
+    if _uses_embedding_2():
+        return f"title: {title}\ntext: {text}" if title else f"text: {text}"
+    return text
+
+
+def _embed_config(document: bool = True) -> google_genai.types.EmbedContentConfig:
+    if _uses_embedding_2():
+        return google_genai.types.EmbedContentConfig(output_dimensionality=1536)
+    return google_genai.types.EmbedContentConfig(
+        task_type="RETRIEVAL_DOCUMENT" if document else "RETRIEVAL_QUERY",
+        output_dimensionality=1536,
+    )
 
 
 async def _embed_and_save_guarded(*args, **kwargs) -> None:
@@ -53,30 +89,41 @@ async def _embed_and_save(
     job_id: Optional[str] = None,
 ) -> None:
     """배치 임베딩 후 Supabase 저장."""
-    batch_texts = [item["text"] for item in batch]
     for attempt in range(3):
         try:
-            res = await gemini_client.aio.models.embed_content(
-                model=_EMBED_MODEL,
-                contents=batch_texts,
-                config=google_genai.types.EmbedContentConfig(
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=1536,
-                ),
-            )
+            if _uses_embedding_2():
+                embeddings = []
+                for item in batch:
+                    res = await gemini_client.aio.models.embed_content(
+                        model=_EMBED_MODEL,
+                        contents=_document_embedding_input(item),
+                        config=_embed_config(document=True),
+                    )
+                    embeddings.append(res.embeddings[0])
+            else:
+                res = await gemini_client.aio.models.embed_content(
+                    model=_EMBED_MODEL,
+                    contents=[item["text"] for item in batch],
+                    config=_embed_config(document=True),
+                )
+                embeddings = res.embeddings
             break
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-                logger.error(f"[{filename}] 임베딩 API 비용 소진 (429) — 즉시 중단: {e}")
-                raise APIQuotaExceededError(f"Gemini Embedding API 한도 초과: {e}") from e
+                hint = _embedding_quota_hint(err_str)
+                logger.error(f"[{filename}] 임베딩 API quota/rate limit (429) — 즉시 중단: {e} | {hint}")
+                raise APIQuotaExceededError(f"Gemini Embedding API 한도 초과: {e}. {hint}") from e
             if attempt == 2:
                 raise
             wait = 2 ** attempt
             logger.warning(f"[{filename}] embed_content retry {attempt + 1}/3 (wait={wait}s): {e}")
             await asyncio.sleep(wait)
     batch_rows = []
-    for idx, emb_data in enumerate(res.embeddings):
+    if len(embeddings) != len(batch):
+        raise ValueError(f"Embedding count mismatch: got {len(embeddings)}, expected {len(batch)}")
+
+    for idx, emb_data in enumerate(embeddings):
         c = batch[idx]
         embedding_np = np.array(emb_data.values)
         norm = np.linalg.norm(embedding_np)

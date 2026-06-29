@@ -49,11 +49,11 @@
     LLM 청킹은 context_prefix 미부착 (text == raw_text)
       │
       ▼
-[임베딩]  gemini-embedding-2-preview
-  - task_type: RETRIEVAL_DOCUMENT
+[임베딩]  gemini-embedding-2
+  - 문서 입력 prefix: "title: ...\ntext: ..."
   - output_dimensionality: 1536
   - L2 정규화 후 저장
-  - 배치: 64청크 단위
+  - 저장 배치: 64청크 단위, API 호출은 청크별 수행
       │
       ▼
 [벡터 DB 저장]  Supabase pgvector (doc_chunks)
@@ -212,9 +212,9 @@ SHA-1 content_hash      # 완전 중복 → 제거
 
 | 항목      | 값                                                         |
 | --------- | ---------------------------------------------------------- |
-| 모델      | `gemini-embedding-2-preview`                             |
+| 모델      | `gemini-embedding-2`                                     |
 | 차원      | 1536 (HNSW 2000차원 제한 고려)                             |
-| task_type | `RETRIEVAL_DOCUMENT` (저장) / `RETRIEVAL_QUERY` (검색) |
+| 입력 구분 | 저장: `title/text` prefix / 검색: `task/query` prefix |
 | 배치 크기 | 64 청크 단위                                               |
 | 정규화    | L2 Normalization 후 저장                                   |
 
@@ -257,7 +257,7 @@ doc_chunks (
   "hierarchy_h2":   "제2장 의무",
   "hierarchy_h3":   "제7조 투명성",
   "chunking_method":"llm",
-  "embedding_model":"gemini-embedding-2-preview",
+  "embedding_model":"gemini-embedding-2",
   "ingested_at":    "2026-04-02T10:00:00",
   "source":         "pdf | docx"
 }
@@ -368,13 +368,13 @@ L2 정규화로 저장된 벡터 `v̂`는 이미 `‖v̂‖ = 1`이므로, pgvec
          │
          ▼ embedding / norm
 [정규화된 벡터] → Supabase vector(1536) 저장
-                  (RETRIEVAL_DOCUMENT 저장 / RETRIEVAL_QUERY 검색 모두 동일)
+                  (문서/쿼리 모두 동일 모델 + L2 정규화)
 ```
 
-| task_type | 사용 위치 | 정규화 |
-| --------- | --------- | ------ |
-| `RETRIEVAL_DOCUMENT` | 청크 저장 (`pipeline.py`) | ✅ |
-| `RETRIEVAL_QUERY` | 검색 쿼리 (`worker.py`) | ✅ |
+| 입력 prefix | 사용 위치 | 정규화 |
+| ----------- | --------- | ------ |
+| `title/text` | 청크 저장 (`pipeline.py`) | ✅ |
+| `task/query` | 검색 쿼리 (`worker.py`) | ✅ |
 
 ---
 
@@ -477,7 +477,7 @@ ORDER BY embedding <=> query_embedding
 LIMIT match_count;
 ```
 
-쿼리 임베딩 생성: `task_type=RETRIEVAL_QUERY` + L2 정규화
+쿼리 임베딩 생성: `task/query` prefix + L2 정규화
 
 ### QA 생성 후 가드
 

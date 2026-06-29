@@ -32,6 +32,27 @@ from generators.qa_generator import generate_qa as _generate_qa
 
 logger = logging.getLogger("autoeval.worker")
 
+_EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-2")
+
+
+def _uses_embedding_2() -> bool:
+    return _EMBED_MODEL == "gemini-embedding-2"
+
+
+def _query_embedding_input(query: str) -> str:
+    if _uses_embedding_2():
+        return f"task: search result\nquery: {query}"
+    return query
+
+
+def _embed_config(google_genai: Any):
+    if _uses_embedding_2():
+        return google_genai.types.EmbedContentConfig(output_dimensionality=1536)
+    return google_genai.types.EmbedContentConfig(
+        task_type="RETRIEVAL_QUERY",
+        output_dimensionality=1536,
+    )
+
 # ── provider별 최대 동시 workers ───────────────────────────────────────────────
 # 추정: input ~1,600 + output ~700 tokens, 호출 1회 ~25초
 #   - gemini-3-flash: RPM 1,000 / TPM 2M  → workers=5
@@ -167,12 +188,9 @@ async def run_qa_generation_real(
 
             gemini_client = google_genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
             res = await gemini_client.aio.models.embed_content(
-                model="gemini-embedding-2-preview",
-                contents=r_query,
-                config=google_genai.types.EmbedContentConfig(
-                    task_type="RETRIEVAL_QUERY",
-                    output_dimensionality=1536,
-                ),
+                model=_EMBED_MODEL,
+                contents=_query_embedding_input(r_query),
+                config=_embed_config(google_genai),
             )
             v_np = np.array(res.embeddings[0].values)
             v_norm = np.linalg.norm(v_np)

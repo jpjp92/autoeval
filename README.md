@@ -46,7 +46,7 @@ PDF/DOCX 업로드
 | 청킹      | **LLM 청킹** (기본값, `chunking_method=llm`) — Gemini 2.5 Flash, 배치 단위 의미 경계 분할, 노이즈 제거 포함 / `rule` 옵션으로 rule-based 전환 가능 |
 | 정규화    | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합                                                                                                         |
 | 중복 방지 | SHA-1 `content_hash` 기반 — 배치 중복 SELECT → 신규 청크만 1회 배치 INSERT                                                                         |
-| 벡터화    | Gemini Embedding 2 (`gemini-embedding-2-preview`) — **1536차원** 벡터 변환                                                                          |
+| 벡터화    | Gemini Embedding 2 (`gemini-embedding-2`) — **1536차원** 벡터 변환                                                                                  |
 | 저장      | `doc_chunks` (content, metadata JSONB, embedding vector(1536)) — `hierarchy_h1/h2/h3` metadata에 포함                                              |
 
 #### STEP 2 — 계층 태깅 (2단계)
@@ -257,7 +257,7 @@ autoeval/
 | **UI Style**    | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
 | **Backend**     | FastAPI (Python 3.12+), Uvicorn                                                                             |
 | **Database**    | Supabase (PostgreSQL 17 + pgvector), service_role key                                                       |
-| **Embeddings**  | Gemini Embedding 2 (`gemini-embedding-2-preview`) — 1536dim, HNSW 인덱스                                    |
+| **Embeddings**  | Gemini Embedding 2 (`gemini-embedding-2`) — 1536dim, HNSW 인덱스                                            |
 | **Prompt 구조** | XML 태그 (`<role>` `<principles>` `<intent_types>` `<constraints>` `<context>` `<task>`)                    |
 | **병렬 처리**   | `ThreadPoolExecutor` — 모델별 worker 수 분리                                                                |
 
@@ -270,7 +270,7 @@ autoeval/
 | 용도                            | 모델                                              | 비고                                           |
 | ------------------------------- | ------------------------------------------------- | ---------------------------------------------- |
 | LLM 청킹                        | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 배치 단위, thinking OFF (`thinking_budget=0`)  |
-| Embedding                       | Gemini Embedding 2 (`gemini-embedding-2-preview`) | 1536차원, RPM 3,000                            |
+| Embedding                       | Gemini Embedding 2 (`gemini-embedding-2`)         | 1536차원, 청크/쿼리별 task prefix 사용         |
 | Hierarchy + domain_profile 분석 | Gemini 3 Flash (`gemini-3-flash-preview`)         | anchor 30청크 → 1회 호출                       |
 | 계층 태깅                       | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
 
