@@ -40,6 +40,8 @@ sample/
 .python-version
 .claude/CLAUDE.md
 scripts/
+!backend/scripts/
+!backend/scripts/compare_embedding_providers.py
 results/
 .env copy
 .claude/
@@ -58,3 +60,5 @@ scripts/parser_block_merge_analysis.md
 scripts/parser_heading_comparison.md
 scripts/test_parser_fixes.py
 scripts/test_parser_heading.py
+docs/Samples/internal_qa_dataset_sample.json
+docs/AgenQ_main_flow_2slides.pptx
