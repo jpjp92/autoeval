@@ -13,6 +13,8 @@ import {
 import { cn } from "@/src/lib/utils";
 import { generateQA, getGenStatus, getGenPreview, getEvalStatus, evaluateQA, getHierarchyList, mapErrorToMessage } from "@/src/lib/api";
 import type { HierarchyTree } from "@/src/types/hierarchy";
+import { GENERATION_MODELS, EVALUATOR_MODELS, DEFAULT_GENERATION_MODEL, DEFAULT_EVALUATOR_MODEL } from "@/src/lib/models";
+import { ModelSelect } from "./ModelSelect";
 
 interface QaPreviewItem {
   context: string;
@@ -233,8 +235,8 @@ function renderWithBounceDots(msg: string) {
 export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTreeData, onGenerationComplete, onEvalComplete, onGoToEvaluation }: QAGenerationPanelProps = {}) {
 
   const [formValues, setFormValues] = useState<FormValues>({
-    model: "gemini-3-flash", lang: "ko", samples: 2,
-    promptVersion: "v1", autoEvaluate: true, evaluatorModel: "gpt-5.1",
+    model: DEFAULT_GENERATION_MODEL, lang: "ko", samples: 2,
+    promptVersion: "v1", autoEvaluate: true, evaluatorModel: DEFAULT_EVALUATOR_MODEL,
   });
   const [sampleInputValue, setSampleInputValue] = useState("");
 
@@ -475,6 +477,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     phase === "generating" ? "active" : "done";
   const generationDone = phase === "complete" || phase === "evaluating";
   const evaluationDone = phase === "complete" && !!evalReport;
+  const modelsLocked = isGenerating || phase === "evaluating";
   const step3Status: StepStatus =
     !generationDone ? "pending" :
     evaluationDone ? "done" : "active";
@@ -490,21 +493,18 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
         status={step1Status} isLast={false}
       >
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {/* 생성 모델 */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">생성 모델</label>
-              <CustomSelect
-                value={formValues.model}
-                onChange={v => setFormValues({ ...formValues, model: v })}
-                disabled={isGenerating}
-                options={[
-                  { value: "gemini-3-flash", label: "Gemini 3 Flash" },
-                  { value: "claude-sonnet",  label: "Claude Sonnet 4.6" },
-                  { value: "gpt-5.2",        label: "GPT-5.2" },
-                ]}
-              />
-            </div>
+            <ModelSelect
+              id="qa-generation-model"
+              label="QA 생성 모델"
+              description="문서 내용을 바탕으로 질문과 답변을 생성합니다."
+              value={formValues.model}
+              onChange={model => setFormValues(previous => ({ ...previous, model }))}
+              disabled={modelsLocked}
+              options={GENERATION_MODELS}
+              defaultValue={DEFAULT_GENERATION_MODEL}
+            />
 
             {/* 청크 샘플 수 */}
             <div className="space-y-1.5">
@@ -536,19 +536,16 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             </div>
 
             {/* 평가 모델 */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">평가 모델</label>
-              <CustomSelect
-                value={formValues.evaluatorModel}
-                onChange={v => setFormValues({ ...formValues, evaluatorModel: v })}
-                disabled={isGenerating}
-                options={[
-                  { value: "gemini-flash", label: "Gemini 2.5 Flash" },
-                  { value: "claude-haiku", label: "Claude Haiku 4.5" },
-                  { value: "gpt-5.1",      label: "GPT-5.1" },
-                ]}
-              />
-            </div>
+            <ModelSelect
+              id="qa-evaluator-model"
+              label="평가 모델 (Judge)"
+              description="생성된 QA의 관련성·근거성·완전성을 평가합니다."
+              value={formValues.evaluatorModel}
+              onChange={evaluatorModel => setFormValues(previous => ({ ...previous, evaluatorModel }))}
+              disabled={modelsLocked}
+              options={EVALUATOR_MODELS}
+              defaultValue={DEFAULT_EVALUATOR_MODEL}
+            />
 
             {/* 자동 평가 */}
             <div className="space-y-1.5">
