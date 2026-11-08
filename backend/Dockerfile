@@ -23,4 +23,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uv", "run", "python", "backend/main.py"]
+CMD ["/app/.venv/bin/python", "backend/main.py"]

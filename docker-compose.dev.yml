@@ -1,4 +1,4 @@
-# 개발 오버라이드: backend --reload + frontend HMR (Vite dev server)
+# 개발 오버라이드: backend --reload + Next.js Fast Refresh
 # 사용법: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 services:
   server:
@@ -7,19 +7,21 @@ services:
     environment:
       LOG_LEVEL: DEBUG
     command:
-      ["uv", "run", "uvicorn", "backend.main:app",
-       "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      ["/app/.venv/bin/python", "-m", "uvicorn", "backend.main:app",
+       "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/backend"]
     healthcheck:
       start_period: 60s
 
   client:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev   # Vite dev server (HMR)
-    ports:
-      - "3000:5173"
+      dockerfile: Dockerfile.dev
+    environment:
+      BACKEND_API_URL: http://server:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules          # node_modules는 컨테이너 내부 유지
+      - /app/.next                 # 호스트와 컨테이너 빌드 캐시 분리
     depends_on:
-      - server                     # 개발 모드는 healthcheck 없이 단순 의존
+      server:
+        condition: service_started

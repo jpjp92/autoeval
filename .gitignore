@@ -12,6 +12,8 @@ wheels/
 # env
 .env
 .envlocal
+.env.local
+.env.*.local
 
 # ref
 ref/
@@ -29,6 +31,9 @@ validated_output/
 
 # package
 frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
 backend/default.sqlite
 
 # test

@@ -1,12 +1,6 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://autoeval-uccr.onrender.com/api/:path*"
-    },
-    {
-      "source": "/health",
-      "destination": "https://autoeval-uccr.onrender.com/health"
-    }
-  ]
+  "framework": "nextjs",
+  "env": {
+    "BACKEND_API_URL": "https://autoeval-uccr.onrender.com"
+  }
 }

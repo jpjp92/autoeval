@@ -5,7 +5,7 @@
 export const API_BASE = '';
 
 // 파일 업로드는 Vercel 4.5MB 제한을 우회하여 백엔드에 직접 전송
-const UPLOAD_BASE = import.meta.env.VITE_UPLOAD_BASE_URL ?? '';
+const UPLOAD_BASE = process.env.NEXT_PUBLIC_UPLOAD_BASE_URL ?? '';
 
 // ── 에러 메시지 매핑 ──────────────────────────────────────────────────────────
 
