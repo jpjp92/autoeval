@@ -1,37 +1,26 @@
-# 배포 구성 (Render + Vercel)
+# 배포 구성 요약
 
-> 내부 참고용 — 실제 서비스 URL 및 배포 설정 정보
+업데이트: 2026-11-09. 저장소 설정 기준. 실제 서비스 상태는 별도로 확인한다.
 
----
+| 구성 | 역할 | 설정 |
+| --- | --- | --- |
+| Render | FastAPI 백엔드 | `backend/Dockerfile`, 루트 빌드 컨텍스트 |
+| Vercel | Next.js 16.4.5 프론트 | Root Directory=frontend, Framework=Next.js |
+| 로컬 Docker | server + client | 8000 / 3000 포트 |
 
-## 플랫폼 구성
-
-| 플랫폼 | 역할             | 환경변수                                          |
-| ------ | ---------------- | ------------------------------------------------- |
-| Render | FastAPI 백엔드   | `CORS_ORIGINS=https://autoeval-v1.vercel.app`     |
-| Vercel | React 프론트엔드 | `VITE_API_URL=https://autoeval-uccr.onrender.com` |
-
-- Render는 `PORT` 환경변수를 자동 주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
-- 로컬 개발 시 Vite 프록시가 `/api/*`를 `localhost:8000`으로 포워딩 (`vite.config.ts`)
-- Vercel 배포 시 `vercel.json` rewrites가 `/api/*`를 Render로 서버사이드 포워딩 → CORS 불필요
-
-```
-브라우저 요청 흐름
-  로컬  : localhost:3000/api/... → Vite 프록시 → localhost:8000
-  Vercel: autoeval-v1.vercel.app/api/... → Vercel rewrites → autoeval-uccr.onrender.com
+```text
+로컬: localhost:3000/api/... → Next.js → 127.0.0.1:8000/api/...
+Docker: localhost:3000/api/... → Next.js → server:8000/api/...
+Vercel: 프론트 /api/... → Next.js → BACKEND_API_URL/api/...
 ```
 
----
+- 서버 전용 프록시 주소: BACKEND_API_URL.
+- 선택적 직접 업로드 주소: NEXT_PUBLIC_UPLOAD_BASE_URL (브라우저 공개).
+- API_BASE는 빈 문자열로 유지한다.
+- 루트 `.env`의 API 키·Supabase 키는 백엔드에서만 사용한다.
+- Render의 PORT는 main.py가 읽는다.
+- 외부 헬스 모니터링에는 `/health` GET 또는 HEAD를 사용할 수 있다.
+  이는 프로세스 확인이며 모델·DB 검증은 아니다.
 
-## Render 슬립 방지 (UptimeRobot)
-
-Render 무료 플랜은 **15분 비활성** 후 spin-down → 첫 요청시 15~20초 지연 발생.
-
-| 항목       | 내용                                                             |
-| ---------- | ---------------------------------------------------------------- |
-| 서비스     | [UptimeRobot](https://uptimerobot.com) 무료 플랜                 |
-| 모니터 URL | `https://autoeval-uccr.onrender.com/health`                      |
-| 폴링 간격  | 5분 (Render 15분 슬립 기준 충분)                                 |
-| 응답       | `{"status": "healthy", "timestamp": "..."}` 동적 타임스탬프 포함 |
-
-> HEAD 요청 허용 필요: UptimeRobot 무료 플랜은 기본값 HEAD 사용 → `backend/main.py`의 `/health`를 `@app.api_route(methods=["GET", "HEAD"])`로 설정
+상세 절차: [배포](REF_DEPLOYUSE.md), [Docker](SETUP_DOCKER.md),
+[모델](MODEL_CONFIGURATION.md), [프론트 보안](FRONTEND_SECURITY.md).

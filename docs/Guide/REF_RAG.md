@@ -1,7 +1,7 @@
 <!--
 파일: REF_RAG.md
 설명: 문서 인제스션(PDF/DOCX 추출 → LLM/Rule 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색)까지의 RAG 파이프라인 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함. 평가 파이프라인은 REF_EVAL.md 참조.
-업데이트: 2026-04-09
+업데이트: 2026-11-09
 -->
 
 # RAG Pipeline
@@ -76,7 +76,7 @@
   - doc_metadata에서 domain_profile 로드 (LLM 0회)
   - build_system_prompt() / build_user_template() 적응형 프롬프트 빌드
   - ThreadPoolExecutor 병렬 생성
-    Claude Sonnet 4.6 (workers=2) / Gemini 3 Flash (workers=5) / GPT-5.2 (workers=5)
+    Gemini 3.8 Flash (workers=5) / GPT-6 Luna (workers=5)
   - _dedup_across_chunks(sim_threshold=0.75) 중복 제거
   - total_qa == 0 → FAILED (DB 저장 건너뜀)
       │
@@ -387,7 +387,7 @@ POST /api/ingestion/analyze-hierarchy
   └─ sample_doc_chunks RPC → 전체 청크 풀에서 랜덤 40개 추출
   └─ __admin__ 청크 필터 제거 → 최대 30개 (filtered[:30])
   └─ 청크당 최대 글자 수 동적 조정: max(400, 20000 // len(anchor_chunks))
-  └─ LLM 1회 호출 (gemini-3-flash-preview)
+  └─ LLM 1회 호출 (gemini-2.5-flash)
   └─ H1(3~5개) + H2/H3 전체 master + domain_profile 동시 생성
   └─ doc_metadata upsert (h2_h3_master + domain_profile)
 
@@ -562,8 +562,8 @@ Response                     → qa_gen_results → 평가 파이프라인
 | `google-genai`             | Gemini 임베딩·청킹 LLM            | Gemini 2.5 Flash, Embedding 2 |
 | `langchain-text-splitters` | `RecursiveCharacterTextSplitter` | rule 청킹 경로에서만 사용     |
 | `supabase-py`              | pgvector DB 연동                   |                               |
-| `anthropic`                | Claude Sonnet 4.6 QA 생성          |                               |
-| `openai`                   | GPT-5.2 QA 생성                    |                               |
+| `anthropic`                | Claude 기존 호출 호환 (UI 보류)          |                               |
+| `openai`                   | GPT-6 Luna QA 생성                    |                               |
 | `numpy`                    | 임베딩 L2 정규화                   |                               |
 
 ---

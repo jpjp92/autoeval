@@ -1,7 +1,7 @@
 <!--
 파일: REF_FRONTFLOW.md
 설명: React 프론트엔드 컴포넌트 구조 및 API 연동 흐름 정리. 탭 라우팅, 문서 업로드·계층 태깅·QA 생성·평가 대시보드 각 화면의 상태 흐름과 API 호출 구조 포함.
-업데이트: 2026-04-06
+업데이트: 2026-11-09
 -->
 # Frontend Flow
 
@@ -9,8 +9,10 @@
 
 ```
 frontend/src/
-├── main.tsx          # React 앱 마운트
-├── App.tsx           # 탭 라우팅 + 레이아웃
+├── app/
+│   ├── layout.tsx    # 메타데이터·전역 CSS·초기 테마
+│   └── page.tsx      # Next.js App Router 진입점
+├── App.tsx           # 클라이언트 탭 상태 + 레이아웃
 └── lib/
     └── api.ts        # API 클라이언트 (API_BASE 설정)
 ```
@@ -20,9 +22,9 @@ frontend/src/
 export const API_BASE = '';  // 빈 문자열 고정
 ```
 - 로컬/Docker/Vercel 모두 동일하게 빈 문자열 사용
-- 로컬: Vite 프록시(`vite.config.ts`)가 `/api/*` → `http://localhost:8000` 포워딩
-- Docker: nginx가 `/api/*` → 백엔드 컨테이너 프록시
-- Vercel: `vercel.json` rewrites로 `/api/*` → Render URL 프록시
+- 로컬: Next.js rewrites(`next.config.ts`)가 `/api/*` → `http://127.0.0.1:8000` 포워딩
+- Docker: Next.js rewrites가 `/api/*` → `http://server:8000` 프록시
+- Vercel: BACKEND_API_URL을 대상으로 Next.js rewrites가 `/api/*`를 프록시
 
 ---
 
@@ -90,33 +92,47 @@ Step 2. 컨텍스트 분석 (버튼 1개로 2단계 순차 실행)
 
 ### QA Pipeline 탭 — QA 생성 (`QAGenerationPanel.tsx`)
 
+모델 목록·기본값은 `src/lib/models.ts`, 모델 선택 UI는 `ModelSelect.tsx`에서 관리한다.
+둥근 커스텀 드롭다운에 label·설명을 연결하고 기본 모델 배지와 선택 체크를 표시한다. 모바일에서는 한 열로 배치한다.
+생성 또는 평가 진행 중에는 두 모델 선택을 잠근다. Claude는 현재 선택지에서 제외한다.
+방향키·Home/End·Enter/Space·Escape·Tab을 지원하고 바깥 클릭 시 닫힌다.
+선택한 value를 model / evaluator_model에 그대로 전송한다.
+
+| 항목 | 화면 표시 | API 값 |
+| --- | --- | --- |
+| 생성 기본 | Gemini 3.8 Flash | gemini-3.8-flash |
+| 생성 선택 | GPT-6 Luna | gpt-6-luna |
+| 평가 선택 | Gemini 3.7 Flash | gemini-3.7-flash |
+| 평가 기본 | GPT-5.6 Luna | gpt-5.6-luna |
+
+
 ```
 계층 필터 로딩 (두 경로 중 하나)
   ├── taggingTreeData 있음 (태깅 직후): App.tsx에서 직접 props로 받아 반영 (API 호출 없음)
   └── taggingTreeData 없음 (탭 재진입 등): GET /api/ingestion/hierarchy-list?filename=...
 
 Step 1. 생성 설정
-  ├── 모델 선택 (Claude Sonnet / Gemini Flash / GPT 등)
-  ├── 언어 선택 (KO / EN)
-  ├── 샘플 수, QA per doc 설정
+  ├── QA 생성 모델: Gemini 3.8 Flash (기본) / GPT-6 Luna
+  ├── 평가 모델 (Judge): Gemini 3.7 Flash / GPT-5.6 Luna (기본)
+  ├── 청크 샘플 수 설정 (언어 ko, 프롬프트 v1)
   ├── H1/H2/H3 계층 필터 드롭다운 선택
   └── Auto-evaluate 토글 (생성 후 자동 평가 여부)
 
 Step 2. QA 생성 실행
   ├── POST /api/generate → job_id 수신
   │     body: { model, lang, samples, qa_per_doc, prompt_version,
-  │             filename, hierarchy_h1/h2/h3, doc_ids? }
-  ├── Polling: fetch `/api/generate/{job_id}/status` (직접 fetch, 1초 간격)
+  │             filename, hierarchy_h1/h2/h3, document_id? }
+  ├── Polling: fetch `/api/generate/{job_id}/status` (API 래퍼 사용, 1초 간격)
   │   → progress 바, 상태 메시지 표시
   └── 완료 시: fetch `/api/generate/{job_id}/preview?limit=3`
       → 샘플 3개 카드 표시 (컨텍스트 + Q/A + 의도 배지)
 
 Step 3. 자동 평가 (Auto-evaluate ON 시)
-  ├── POST /api/evaluate (직접 fetch)
+  ├── POST /api/evaluate (API 래퍼 사용)
   │     body: { result_filename, evaluator_model, generation_id }
   ├── Polling: fetch `/api/evaluate/{job_id}/status`
   └── 완료 시: onEvalComplete(evalJobId) → App.tsx의 lastEvalJobId 갱신
-      → onGoToEvaluation() → Evaluation 탭으로 이동
+      → 사용자가 결과 보기 클릭 시 onGoToEvaluation() → Evaluation 탭으로 이동
 ```
 
 **의도 배지 한국어 레이블** (`intentLabel` 함수)

@@ -195,9 +195,9 @@ autoeval/
 │     ├── supabase_client.py # re-export wrapper → backend/db/ 위임
 │     └── models.py # 모델 alias → model_id, cost 매핑
 ├── frontend/
-│ ├── Dockerfile # Node 빌드 → nginx:alpine (프로덕션)
-│ ├── Dockerfile.dev # Node 20-alpine Vite dev server (HMR)
-│ ├── nginx.conf # SPA 라우팅 + /api/ 리버스 프록시
+│ ├── Dockerfile # Next.js standalone Node 서버 (프로덕션)
+│ ├── Dockerfile.dev # Node 22-alpine Next.js 개발 서버
+│ ├── next.config.ts # API rewrites + standalone 출력
 │ └── src/
 │ ├── App.tsx # 탭 라우팅 + 알림 + 테마 (light/dark)
 │ ├── types/
@@ -243,7 +243,7 @@ autoeval/
 │ └── PipelineFlow.tsx # ReactFlow 5-스텝 파이프라인 시각화
 │
 ├── docker-compose.yml # 프로덕션: server(8000) + client(3000), healthcheck
-├── docker-compose.dev.yml # 개발 오버라이드: 소스 볼륨 마운트 + Vite HMR
+├── docker-compose.dev.yml # 개발 오버라이드: 소스 볼륨 마운트 + Next.js Fast Refresh
 ├── .env.example # 환경 변수 템플릿 (ANTHROPIC / GOOGLE / OPENAI / SUPABASE)
 └── README.md
 ```
@@ -253,7 +253,7 @@ autoeval/
 
 | 영역            | 기술                                                                                                        |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Frontend**    | React 19, TypeScript, Tailwind CSS, Vite, Lucide icons, React Flow, Recharts                                |
+| **Frontend**    | React 19, TypeScript, Tailwind CSS, Next.js App Router, Lucide icons, React Flow, Recharts                                |
 | **UI Style**    | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
 | **Backend**     | FastAPI (Python 3.12+), Uvicorn                                                                             |
 | **Database**    | Supabase (PostgreSQL 17 + pgvector), service_role key                                                       |
@@ -271,24 +271,25 @@ autoeval/
 | ------------------------------- | ------------------------------------------------- | ---------------------------------------------- |
 | LLM 청킹                        | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 배치 단위, thinking OFF (`thinking_budget=0`)  |
 | Embedding                       | Gemini Embedding 2 (`gemini-embedding-2`)         | 1536차원, 청크/쿼리별 task prefix 사용         |
-| Hierarchy + domain_profile 분석 | Gemini 3 Flash (`gemini-3-flash-preview`)         | anchor 30청크 → 1회 호출                       |
+| Hierarchy + domain_profile 분석 | Gemini 2.5 Flash (`gemini-2.5-flash`)         | anchor 30청크 → 1회 호출                       |
 | 계층 태깅                       | Gemini 2.5 Flash (`gemini-2.5-flash`)             | 청크별 배치 분류 — 선택 task, 2.5 Flash로 충분 |
 
 ### QA 생성 모델
 
-| 모델                                      | RPM   | TPM  | Workers |
-| ----------------------------------------- | ----- | ---- | ------- |
-| GPT-5.2 (`gpt-5.2-2025-12-11`)            | 500   | 500K | 5       |
-| Gemini 3 Flash (`gemini-3-flash-preview`) | 1,000 | 2M   | 5       |
-| Claude Sonnet 4.6 (`claude-sonnet-4-6`)   | 50    | 30K  | 2       |
+| 모델 | Workers | 기본값 |
+| --- | ---: | --- |
+| Gemini 3.8 Flash (`gemini-3.8-flash`) | 5 | 기본 |
+| GPT-6 Luna (`gpt-6-luna`) | 5 | |
 
 ### 평가 모델
 
-| 모델                                  | RPM   | TPM  | Workers |
-| ------------------------------------- | ----- | ---- | ------- |
-| GPT-5.1 (`gpt-5.1-2025-11-13`)        | 500   | 500K | 8       |
-| Gemini 2.5 Flash (`gemini-2.5-flash`) | 1,000 | 1M   | 10      |
-| Claude Haiku 4.5 (`claude-haiku-4-5`) | 50    | 50K  | 2       |
+| 모델 | Workers | 기본값 |
+| --- | ---: | --- |
+| Gemini 3.7 Flash (`gemini-3.7-flash`) | 10 | |
+| GPT-5.6 Luna (`gpt-5.6-luna`) | 8 | 화면·API 공통 기본값 |
+
+실제 RPM/TPM은 계정별 한도에 따라 달라진다. Claude는 보류하여 화면 선택지에서 제외했다.
+모델 ID·비용·호환 옵션은 [모델 설정 가이드](docs/Guide/MODEL_CONFIGURATION.md)를 참고한다.
 
 ---
 
@@ -388,6 +389,9 @@ cd frontend && npm run dev
 
 ### Docker (로컬 환경 통일)
 
+Ubuntu 설치와 개발 환경 실행 절차: [Docker 설정 가이드](docs/Guide/SETUP_DOCKER.md).
+기존 로컬 서버가 있다면 8000/3000 포트를 먼저 비운다.
+
 ```bash
 # 1. 환경변수 준비
 cp .env.example .env   # API 키 입력
@@ -406,7 +410,7 @@ docker compose down
 ```
 
 ```bash
-# 개발 모드 (server --reload + client Vite HMR)
+# 개발 모드 (server --reload + client Next.js Fast Refresh)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
@@ -414,7 +418,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 # 유용한 명령어
 docker compose ps                    # 컨테이너 상태 확인
 docker compose logs server --tail=50 # server 로그
-docker compose logs client --tail=20 # client(nginx) 로그
+docker compose logs client --tail=20 # client(Next.js) 로그
 docker compose restart server        # server만 재시작
 docker compose build client          # client 이미지만 재빌드
 ```
@@ -426,7 +430,7 @@ docker compose build client          # client 이미지만 재빌드
 # Python(백엔드) 변경 시
 docker compose restart server
 
-# React/TSX(프론트엔드) 변경 시 — nginx가 컴파일된 정적 파일을 서빙하므로 재빌드 필요
+# React/TSX(프론트엔드) 변경 시 — 운영 이미지의 Next.js 빌드를 반영하려면 재빌드 필요
 docker compose build client && docker compose up -d client
 
 # 백엔드 + 프론트엔드 모두 변경 시
@@ -435,10 +439,9 @@ docker compose up -d --build
 
 | 서비스 | 포트 | 설명                                      |
 | ------ | ---- | ----------------------------------------- |
-| client | 3000 | Nginx → SPA +`/api/` 프록시 → server      |
+| client | 3000 | Next.js → `/api/` 프록시 → server      |
 | server | 8000 | FastAPI (직접 접근 가능, Swagger `/docs`) |
 
-> **참고**: nginx upstream DNS 지연 문제로 `resolver 127.0.0.11`(Docker 내장 DNS) + `set $upstream` 변수 사용 → 요청 시점 동적 조회
 
 ---
 

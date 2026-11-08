@@ -1,11 +1,11 @@
 <!--
 파일: REF_PROMPTS.md
 설명: 백엔드 LLM 호출 프롬프트 전체 목록. Ingestion(H1/H2/H3 분석·태깅), QA 생성(시스템·유저 템플릿, 정적 KO/EN·동적 빌더), 평가(RAG Triad·완전성) 단계별 프롬프트 위치·모델·경로 정리. P1~P8 패치 적용 현황 포함.
-업데이트: 2026-04-06
+업데이트: 2026-11-09
 -->
 # PROMPTS.md — 백엔드 프롬프트 목록
 
-> 마지막 업데이트: 2026-04-06
+> 마지막 업데이트: 2026-11-09
 > 백엔드에서 LLM을 호출하는 모든 프롬프트를 파이프라인 단계 순서로 정리.
 > P1~P8 패치 적용 현황 포함 — 파일 하단 "패치 현황" 섹션 참고.
 
@@ -15,17 +15,17 @@
 
 | # | 단계 | 파일 | 모델 | 경로 |
 |---|------|------|------|------|
-| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile) | `ingestion_api.py` | Gemini 3 Flash | — |
-| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 3 Flash | — |
-| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 3 Flash | fallback |
-| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | 설정 모델 (기본 GPT) | fallback |
+| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile) | `ingestion_api.py` | Gemini 2.5 Flash | — |
+| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 2.5 Flash | — |
+| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 2.5 Flash | fallback |
+| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | Gemini 2.5 Flash | fallback |
 | 5 | QA 생성 — System Prompt (Static KO v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 6 | QA 생성 — System Prompt (Static EN v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 7 | QA 생성 — System Prompt (Adaptive, Domain-Aware) | `prompts.py` | 생성 모델 | **주 경로** |
 | 8 | QA 생성 — User Template (Static KO v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 9 | QA 생성 — User Template (Static EN v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 10 | QA 생성 — User Template (Adaptive) | `prompts.py` | 생성 모델 | **주 경로** |
-| 11 | 평가 Layer 2 — RAG Triad (통합, 권장 경로) | `rag_triad.py` | 평가 모델 (기본 Gemini Flash) | — |
+| 11 | 평가 Layer 2 — RAG Triad (통합, 권장 경로) | `rag_triad.py` | 평가 모델 (기본 GPT-5.6 Luna) | — |
 | 12 | 평가 Layer 2 — Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 13 | 평가 Layer 2 — Groundedness (단독, CoT, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 14 | 평가 Layer 2 — Context Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
@@ -36,7 +36,7 @@
 ## 1. Pass1+2 통합 — H1/H2/H3 Master + domain_profile 생성
 
 **파일**: `backend/api/ingestion_api.py` (엔드포인트: `POST /analyze-hierarchy`)
-**모델**: `gemini-3-flash-preview`
+**모델**: `gemini-2.5-flash`
 **입력**: anchor 청크 30개 (content[:600]씩, 최대 18,000자)
 **출력**: `domain_profile`, `h2_h3_master` (→ `h1_candidates`는 서버에서 `list(h2_h3_master.keys())`로 도출)
 **임베딩**: Gemini Embedding 2, `output_dimensionality=1536` (L2 정규화)
@@ -88,7 +88,7 @@ Return a JSON object:
 ## 2. Pass3 — 청크 태깅 (h2_h3_master 있음)
 
 **파일**: `backend/api/ingestion_api.py` (엔드포인트: `POST /apply-granular-tagging`)
-**모델**: `gemini-3-flash-preview`
+**모델**: `gemini-2.5-flash`
 **입력**: 배치 청크 (content[:800] + section_path/section_title 조건부) + master_hierarchy
 **출력**: `[{ "idx": 0, "hierarchy": { "h1": "...", "h2": "...", "h3": "..." } }]`
 
@@ -122,7 +122,7 @@ Return ONLY a JSON array — no explanation:
 ## 3. Pass3 — 청크 태깅 (h2_h3_master 없음, fallback)
 
 **파일**: `backend/api/ingestion_api.py`
-**모델**: `gemini-3-flash-preview`
+**모델**: `gemini-2.5-flash`
 **입력**: 배치 청크 + H1 목록만
 
 ```
@@ -148,7 +148,7 @@ Return ONLY a JSON array — no explanation:
 ## 4. 도메인 분석 (Domain Profiler — 폴백 전용)
 
 **파일**: `backend/generators/domain_profiler.py`
-**모델**: 설정 모델 (기본 `gpt-5.1`)
+**모델**: 문서 처리 모델 (`gemini-2.5-flash`)
 **호출 조건**: `/analyze-hierarchy` 미실행으로 `doc_metadata`에 `domain_profile` 없을 때만 호출
 **입력**: anchor 청크 최대 10개 (content[:400] + H1/H2/chunk_type 메타)
 **출력**: domain_profile JSON
@@ -333,7 +333,7 @@ Analyze the samples above and return:
 ## 11. 평가 Layer 2 — RAG Triad 통합 (권장 경로)
 
 **파일**: `backend/evaluators/rag_triad.py` — `evaluate_all_with_reasons()`
-**모델**: 평가 모델 (기본 `gemini-2.5-flash`)
+**모델**: 평가 모델 (기본 `gpt-5.6-luna`)
 **입력**: question, answer, context (최대 8,000자)
 **출력**: `{ relevance, relevance_reason, groundedness, groundedness_reason, context_relevance, context_relevance_reason }`
 
@@ -430,7 +430,7 @@ Does the context contain sufficient information to answer the question?
 ## 15. 평가 Layer 3 — QA Quality (Completeness 단일 지표)
 
 **파일**: `backend/evaluators/qa_quality.py` — `evaluate_all()`
-**모델**: 평가 모델 (기본 `gemini-2.5-flash`)
+**모델**: 평가 모델 (기본 `gpt-5.6-luna`)
 **입력**: question, answer, context (최대 3,500자), intent
 **출력**: `{ completeness, coverage, missing_aspects, completeness_reason }`
 
@@ -523,3 +523,7 @@ rag_avg = relevance×0.3 + groundedness×0.5 + context_relevance×0.2
 | P8 | 수치 카테고리 중의성 방지 | — | ✅ | — | ✅ | ✅ | ✅ |
 
 > **#5 / #8 (KO Fallback)** 동기화 미완료 — 정상 경로(#7/#10)와 품질 차이 발생 가능. 차후 반영 예정.
+
+
+현재 모델 선택과 호출 호환 옵션: [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md).
+프롬프트의 과거 패치 기록은 당시 적용 이력으로 유지한다.

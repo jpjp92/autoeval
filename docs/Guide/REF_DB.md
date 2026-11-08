@@ -1,11 +1,11 @@
 <!--
 파일: REF_DB.md
 설명: Supabase(PostgreSQL + pgvector) DB 스키마 정의. 테이블 구조(doc_metadata·doc_chunks·qa_gen_results·qa_eval_results), FK 관계, 인덱스, RPC 함수 목록 포함.
-업데이트: 2026-04-09
+업데이트: 2026-11-09
 -->
 # DB Schema
 
-> **최종 업데이트**: 2026-04-09 — sample_doc_chunks 실제 Supabase 함수 정리 / NTILE 검토 불채택
+> **최종 업데이트**: 2026-11-09 — 모델 메타데이터 예시 갱신 (스키마 변경 없음)
 
 ---
 
@@ -96,7 +96,7 @@
 **metadata JSONB**
 ```json
 {
-  "generation_model": "gemini-3-flash",
+  "generation_model": "gemini-3.8-flash",
   "lang": "ko",
   "prompt_version": "v1",
   "source_doc": "파일명.pdf",
@@ -111,7 +111,7 @@
     "docId": "uuid",
     "hierarchy": ["H1명", "H2명", null],
     "text": "청크 원문",
-    "model": "gemini-3.1-flash",
+    "model": "gemini-3.8-flash",
     "qa_list": [
       { "q": "질문", "a": "답변", "intent": "fact", "answerable": true }
     ]

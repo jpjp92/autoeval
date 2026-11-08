@@ -1,11 +1,11 @@
 <!--
 파일: REF_EVAL.md
 설명: QA 평가 파이프라인 기준 정리. 최종 점수 계산식(구문·통계·RAG Triad·완전성), 등급 기준, Layer별 평가 지표(관련성·근거성·맥락성·완전성) 및 평가 모델 설정 포함.
-업데이트: 2026-04-09
+업데이트: 2026-11-09
 -->
 # 평가 기준 (Evaluation Criteria)
 
-> 마지막 업데이트: 2026-04-09
+> 마지막 업데이트: 2026-11-09
 
 ## 최종 점수 계산
 
@@ -218,12 +218,17 @@ pass = avg_quality >= 0.70
 
 ## 평가 모델
 
-기본값: Gemini 2.5 Flash. 요청 시 모델 지정 가능.
+기본값은 화면·API·평가 클래스 모두 `gpt-5.6-luna`로 통일한다.
+요청의 evaluator_model은 Layer 2와 Layer 3에 함께 적용한다.
 
-| Provider  | 기본 모델        | 최대 workers |
-| --------- | ---------------- | :----------: |
-| Google    | Gemini 2.5 Flash | 10           |
-| OpenAI    | GPT-5.1          | 8            |
-| Anthropic | Claude Haiku 4.5 | 2            |
+| Provider | 선택 모델 | 최대 workers |
+| --- | --- | ---: |
+| Google | Gemini 3.7 Flash (gemini-3.7-flash) | 10 |
+| OpenAI | GPT-5.6 Luna (gpt-5.6-luna) | 8 |
 
-파이프라인: `evaluators/pipeline.py` — Layer 1-A/B 순차, Layer 2/3 병렬 처리
+Claude는 현재 UI에서 보류한다. 계정별 실제 한도에 따라 동시성은 조정해야 한다.
+LangChain 응답은 AIMessage.text로 추출하여 문자열과 텍스트 블록 목록을 모두 처리한다.
+이 처리를 생략하면 Gemini 응답이 파싱되지 않고 기본 점수로 폴백할 수 있다.
+
+파이프라인: `evaluators/pipeline.py`. Layer 1-A, 2, 3은 ThreadPoolExecutor로 병렬 처리하며
+통계 레이어는 별도로 집계한다. 모델 ID·호환 옵션은 [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md)를 참고한다.

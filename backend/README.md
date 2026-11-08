@@ -128,7 +128,7 @@ API 문서: `http://localhost:8000/docs`
 
 ```json
 {
-  "model":           "gemini-3-flash",
+  "model":           "gemini-3.8-flash",
   "lang":            "ko",
   "samples":         8,
   "prompt_version":  "v1",
@@ -296,21 +296,21 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 
 ## 모델 구성
 
-### 생성 모델
+### 생성 모델 (기본값: `gemini-3.8-flash`)
 
-| alias                | model_id               | provider  | Workers |
-| -------------------- | ---------------------- | --------- | ------- |
-| `gemini-3-flash`   | gemini-3-flash-preview | google    | 5       |
-| `gpt-5.2`          | gpt-5.2-2025-12-11     | openai    | 5       |
-| `claude-sonnet`    | claude-sonnet-4-6      | anthropic | 2       |
+| alias / model_id | provider | Workers |
+| --- | --- | ---: |
+| `gemini-3.8-flash` | google | 5 |
+| `gpt-6-luna` | openai | 5 |
 
-### 평가 모델 (기본값: `gemini-flash`)
+### 평가 모델 (기본값: `gpt-5.6-luna`)
 
-| alias            | model_id           | provider  | Workers |
-| ---------------- | ------------------ | --------- | ------- |
-| `gemini-flash` | gemini-2.5-flash   | google    | 10      |
-| `gpt-5.1`      | gpt-5.1-2025-11-13 | openai    | 8       |
-| `claude-haiku` | claude-haiku-4-5   | anthropic | 2       |
+| alias / model_id | provider | Workers |
+| --- | --- | ---: |
+| `gemini-3.7-flash` | google | 10 |
+| `gpt-5.6-luna` | openai | 8 |
+
+Claude는 보류하여 UI에서 제외했다. 기존 모델 설정은 과거 결과와 명시적 API 호출의 호환을 위해 유지한다.
 
 ### 인제스션 모델
 
@@ -318,7 +318,7 @@ final_score = (Syntax×0.05) + (Stats×0.05) + (Triad_Avg×0.65) + (Completeness
 | ------------------------------- | -------------------------- | ------------------------------------------ |
 | LLM 청킹 (PDF/DOCX)             | gemini-2.5-flash           | thinking_budget=0, temperature=0.1         |
 | 임베딩                          | gemini-embedding-2         | 1536차원, 입력 prefix로 문서/쿼리 구분     |
-| Hierarchy + domain_profile 생성 | gemini-3-flash-preview     | H1/H2/H3 master + domain_profile 동시 생성 |
+| Hierarchy + domain_profile 생성 | gemini-2.5-flash     | H1/H2/H3 master + domain_profile 동시 생성 |
 | Hierarchy 태깅                  | gemini-2.5-flash           | batch=5, parallel=5, temperature=0         |
 
 ### domain_profile
