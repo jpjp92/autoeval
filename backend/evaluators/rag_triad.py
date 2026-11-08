@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 # 중앙 모델 설정
 try:
-    from backend.config.models import MODEL_CONFIG
+    from backend.config.models import MODEL_CONFIG, DEFAULT_EVALUATOR_MODEL
 except ImportError:
     try:
-        from config.models import MODEL_CONFIG
+        from config.models import MODEL_CONFIG, DEFAULT_EVALUATOR_MODEL
     except ImportError:
         MODEL_CONFIG = {}
+        DEFAULT_EVALUATOR_MODEL = "gpt-5.6-luna"
 
 try:
     from backend.exceptions import APIQuotaExceededError
@@ -44,7 +45,7 @@ def clean_markdown(text: str) -> str:
 class RAGTriadEvaluator:
     """RAG Triad 평가 로직 (Layer 2) — LangChain judge 직접 호출"""
 
-    def __init__(self, evaluator_model: str = "gemini-2.5-flash"):
+    def __init__(self, evaluator_model: str = DEFAULT_EVALUATOR_MODEL):
         self.judge_model = None
         self.evaluator_model = self._get_model_id(evaluator_model)
 
@@ -54,9 +55,17 @@ class RAGTriadEvaluator:
                 api_key = os.getenv("GOOGLE_API_KEY")
                 if api_key:
                     self.judge_model = ChatGoogleGenerativeAI(
-                        model=self.evaluator_model, google_api_key=api_key, temperature=0,
+                        model=self.evaluator_model, google_api_key=api_key,
+                        **({} if self.evaluator_model.startswith(("gemini-3.7", "gemini-3.8")) else {"temperature": 0}),
                         timeout=90,
                     )
+                    if self.evaluator_model.startswith(("gemini-3.7", "gemini-3.8")):
+                        # This SDK requires a float at construction. Clear legacy
+                        # sampling fields in the per-request config instead.
+                        self.judge_model = self.judge_model.bind(generation_config={
+                            "temperature": None, "top_p": None,
+                            "top_k": None, "candidate_count": None,
+                        })
                     logger.info(f"Judge model initialized (Google): {self.evaluator_model}")
                 else:
                     logger.warning("GOOGLE_API_KEY not set for evaluator")
@@ -77,7 +86,10 @@ class RAGTriadEvaluator:
                 api_key = os.getenv("OPENAI_API_KEY")
                 if api_key:
                     self.judge_model = ChatOpenAI(
-                        model=self.evaluator_model, api_key=api_key, temperature=0
+                        model=self.evaluator_model, api_key=api_key,
+                        temperature=None if self.evaluator_model in ("gpt-6-luna", "gpt-5.6-luna") else 0,
+                        **({"reasoning_effort": MODEL_CONFIG[self.evaluator_model]["reasoning_effort"]}
+                           if self.evaluator_model in ("gpt-6-luna", "gpt-5.6-luna") else {}),
                     )
                     logger.info(f"Judge model initialized (OpenAI): {self.evaluator_model}")
                 else:
@@ -156,7 +168,7 @@ Step 4: Rate relevance:
   - 0-3: Irrelevant or entirely outside context scope
 </task>"""
             response = self.judge_model.invoke(prompt)
-            return self._extract_score(response.content)
+            return self._extract_score(response.text)
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
@@ -204,7 +216,7 @@ Step 4: DETERMINE GROUNDING LEVEL:
   - 10: All strong / 7-9: Mostly supported / 5-6: Partial / 0-4: Mostly hallucinated
 </task>"""
             response = self.judge_model.invoke(prompt)
-            return self._extract_score(response.content)
+            return self._extract_score(response.text)
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
@@ -243,7 +255,7 @@ Rate context relevance on a 0-10 scale:
 - 0-3: Context does not contain the required information (including wrong date/period)
 </task>"""
             response = self.judge_model.invoke(prompt)
-            return self._extract_score(response.content)
+            return self._extract_score(response.text)
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
@@ -358,7 +370,7 @@ Return ONLY valid JSON:
 {{"relevance": <0-10>, "relevance_reason": "<1 sentence in Korean>", "groundedness": <0-10>, "groundedness_reason": "<1 concise Korean prose sentence with context quote, no bullets>", "context_relevance": <0-10>, "context_relevance_reason": "<1 sentence in Korean>"}}
 </task>"""
             response = self.judge_model.invoke(prompt)
-            return self._parse_rag_json(response.content or "")
+            return self._parse_rag_json(response.text or "")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():

@@ -40,7 +40,7 @@ logging.getLogger("alembic").setLevel(logging.WARNING)
 logger = logging.getLogger("autoeval.evaluation")
 
 # ============= evaluators 패키지에서 import =============
-from config.models import MODEL_CONFIG
+from config.models import MODEL_CONFIG, DEFAULT_EVALUATOR_MODEL
 from evaluators import (
     EvalJobStatus,
     EvalJob,
@@ -76,7 +76,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
         Request body:
         {
             "result_filename": "qa_model_lang_v1_timestamp.json",
-            "evaluator_model": optional(str, default="gemini-2.5-flash"),
+            "evaluator_model": optional(str, default="gpt-5.6-luna"),
             "generation_id": optional(str, Supabase ID from generation),
             "limit": optional(int)
         }
@@ -88,7 +88,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 body = {}
 
             result_filename = body.get("result_filename") if isinstance(body, dict) else None
-            _default_eval_model = MODEL_CONFIG["gemini-flash"]["model_id"]
+            _default_eval_model = DEFAULT_EVALUATOR_MODEL
             evaluator_model = body.get("evaluator_model", _default_eval_model) if isinstance(body, dict) else _default_eval_model
             generation_id   = body.get("generation_id") if isinstance(body, dict) else None
             limit           = body.get("limit")         if isinstance(body, dict) else None

@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
+from config.models import DEFAULT_GENERATION_MODEL
 
 from config.supabase_client import get_qa_generation_from_supabase, is_supabase_available
 from generators.job_manager import JobStatus, job_manager
@@ -41,7 +42,7 @@ logger = logging.getLogger("autoeval.generation")
 # ============================================================================
 
 class GenerateRequest(BaseModel):
-    model: str = "gemini-3-flash"
+    model: str = DEFAULT_GENERATION_MODEL
     lang: str = "ko"
     samples: int = 10
     qa_per_doc: Optional[int] = None
@@ -78,7 +79,7 @@ def setup_generation_routes(app: FastAPI):
 
         Usage:
             POST /api/generate
-            {"model": "gemini-3-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
+            {"model": "gemini-3.8-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
         """
         try:
             job_id = f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"

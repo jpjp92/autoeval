@@ -19,6 +19,11 @@ import logging
 import os
 from typing import Optional
 
+try:
+    from backend.config.models import DOCUMENT_MODEL
+except ImportError:
+    from config.models import DOCUMENT_MODEL
+
 logger = logging.getLogger("autoeval.domain_profiler")
 
 # ============= Generic Fallback =============
@@ -129,7 +134,7 @@ async def analyze_domain(
     hierarchy_h1: Optional[str] = None,
     hierarchy_h2: Optional[str] = None,
     hierarchy_h3: Optional[str] = None,
-    model: str = "gpt-5.1",
+    model: str = DOCUMENT_MODEL,
 ) -> dict:
     """
     doc_chunks에서 샘플을 조회하고 LLM으로 도메인을 분석한다.
