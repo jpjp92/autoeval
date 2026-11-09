@@ -15,6 +15,9 @@ wheels/
 .env.local
 .env.*.local
 
+# Local agent instructions
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
+
 # ref
 ref/
 
