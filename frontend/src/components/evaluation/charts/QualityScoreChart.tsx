@@ -89,7 +89,7 @@ export function QualityScoreChart({ data }: { data: Array<{ name: string; nameEn
                 <span className="px-2 py-0.5 rounded-md text-[9px] font-black tracking-widest uppercase border backdrop-blur-sm shadow-sm bg-purple-500/10 text-purple-500 border-purple-500/20">
                   품질
                 </span>
-                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200">{item.name}</span>
+                <span className="text-[12px] lg:text-[13px] font-bold text-slate-700 dark:text-slate-200">{item.name}</span>
               </div>
               <span className={cn("font-mono text-sm font-black transition-colors duration-500", isHigh ? 'text-emerald-500' : isMid ? 'text-amber-500' : 'text-rose-500')}>
                 {item.score.toFixed(3)}

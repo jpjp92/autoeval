@@ -247,7 +247,7 @@ export function DashboardOverview({
                               <td className="px-4 py-3 font-mono text-[11px] text-slate-400 dark:text-slate-500 truncate" title={job.job_id}>
                                 {job.job_id}
                               </td>
-                              <td className="px-4 py-3 text-slate-700 dark:text-slate-200 text-[13px] font-medium truncate" title={job.source_doc}>
+                              <td className="px-4 py-3 text-slate-700 dark:text-slate-200 text-[12px] lg:text-[13px] font-medium truncate" title={job.source_doc}>
                                 {job.source_doc || "—"}
                               </td>
                               <td className="px-4 py-3" title={job.model || "—"}>
@@ -255,7 +255,7 @@ export function DashboardOverview({
                                   {job.model || "—"}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-center font-medium text-slate-600 dark:text-slate-300 text-[13px] truncate">
+                              <td className="px-4 py-3 text-center font-medium text-slate-600 dark:text-slate-300 text-[12px] lg:text-[13px] truncate">
                                 {job.total_qa}
                               </td>
                               <td className="px-4 py-3 text-center truncate">
@@ -264,15 +264,15 @@ export function DashboardOverview({
                                     "inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border shadow-sm",
                                     GRADE_COLORS[job.eval_grade] || "bg-slate-100 text-slate-600 border-slate-200"
                                   )}>
-                                    <span className={cn("text-[12px] leading-none tracking-tight", job.eval_grade.includes('+') && "translate-x-px")}>
+                                    <span className={cn("text-[11px] lg:text-[12px] leading-none tracking-tight", job.eval_grade.includes('+') && "translate-x-px")}>
                                       {job.eval_grade}
                                     </span>
                                   </span>
                                 ) : (
-                                  <span className="text-[12px] text-slate-400">대기</span>
+                                  <span className="text-[11px] lg:text-[12px] text-slate-400">대기</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-center text-slate-400 text-[12px] truncate">
+                              <td className="px-4 py-3 text-center text-slate-400 text-[11px] lg:text-[12px] truncate">
                                 {formatRelativeTime(job.created_at)}
                               </td>
                             </tr>

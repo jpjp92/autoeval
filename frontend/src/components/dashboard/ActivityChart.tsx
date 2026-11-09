@@ -18,9 +18,9 @@ function CustomTooltip({ active, payload }: any) {
   if (!point) return null;
   return (
     <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-black/50 p-3 text-sm animate-in zoom-in-95 duration-200">
-      <p className="text-slate-500 dark:text-slate-400 font-medium mb-1 text-[13px]">{point.dateLabel}</p>
+      <p className="text-slate-500 dark:text-slate-400 font-medium mb-1 text-[12px] lg:text-[13px]">{point.dateLabel}</p>
       {point.doc && (
-        <p className="text-slate-700 dark:text-slate-200 mb-1 max-w-[220px] break-all text-[13px] leading-tight">
+        <p className="text-slate-700 dark:text-slate-200 mb-1 max-w-[220px] break-all text-[12px] lg:text-[13px] leading-tight">
           {point.doc}
         </p>
       )}
@@ -101,14 +101,14 @@ export function ActivityChart({ scoreTrend, loading }: ScoreTrendProps) {
                 dataKey="idx"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 'var(--chart-font-size, 12px)' }}
                 dy={10}
                 tickFormatter={xTickFormatter}
               />
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 'var(--chart-font-size, 12px)' }}
                 domain={[0, 100]}
                 tickFormatter={(v) => `${v}%`}
               />
