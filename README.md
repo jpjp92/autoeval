@@ -15,6 +15,7 @@ PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질
 5. [DB 스키마](#-db-스키마)
 6. [빠른 시작](#-빠른-시작)
 7. [API 엔드포인트](#-api-엔드포인트)
+8. [문서 안내](#문서-안내)
 
 ---
 
@@ -485,6 +486,37 @@ docker compose up -d --build
 | ------ | ------------------------ | ------------------------------------------------------------------------- |
 | `GET`  | `/health`                | 헬스체크                                                                  |
 | `GET`  | `/api/dashboard/metrics` | 대시보드 집계 데이터 (summary, recent_jobs, grade_dist, model_benchmarks) |
+
+---
+
+## 문서 안내
+
+현재 구성 기준: 2026-11-09. 현재 동작은 `docs/Guide`를 우선한다.
+
+### Guide — 현재 기준 가이드
+
+| 문서 | 내용 |
+| --- | --- |
+| [모델 구성](docs/Guide/MODEL_CONFIGURATION.md) | 생성·Judge·문서 처리·임베딩 모델, UI 기본값, 공식 자료 |
+| [프론트 흐름](docs/Guide/REF_FRONTFLOW.md) | Next.js App Router, 탭 상태, 모델 선택과 API 전송 |
+| [백엔드 흐름](docs/Guide/REF_BACKFLOW.md) | API와 작업 처리 |
+| [RAG](docs/Guide/REF_RAG.md) | 인제스션·임베딩·검색 |
+| [평가](docs/Guide/REF_EVAL.md) | 평가 지표와 Judge 처리 |
+| [프롬프트](docs/Guide/REF_PROMPTS.md) | 단계별 프롬프트와 적용 모델 |
+| [DB](docs/Guide/REF_DB.md) | 저장 구조와 메타데이터 |
+| [Docker 설치·실행](docs/Guide/SETUP_DOCKER.md) | Ubuntu 설치 명령과 개발·운영 검증 |
+| [Docker 구성](docs/Guide/REF_DOCKERUSE.md) | 이미지, 포트, 볼륨, 환경변수 |
+| [배포 가이드](docs/Guide/REF_DEPLOYUSE.md) | Render + Vercel 설정 |
+| [배포 요약](docs/Guide/DEPLOY_CONFIG.md) | 프록시와 플랫폼 역할 |
+| [프론트 보안](docs/Guide/FRONTEND_SECURITY.md) | Next.js 패치 버전과 남은 audit 항목 |
+
+### 기타 디렉토리
+
+| 경로 | 내용 |
+| --- | --- |
+| `docs/History/` | 날짜별 개발일지(`DEV_*.md`). 작성 당시의 변경·실험 기록이며 최신은 [DEV_261109.md](docs/History/DEV_261109.md) |
+| `docs/Plan/` | 미구현 설계(`PLAN_*.md`). 각 문서 상단의 현재 상태를 확인 |
+| `docs/Samples/` | 생성·평가 결과 샘플 JSON |
 
 ---
 

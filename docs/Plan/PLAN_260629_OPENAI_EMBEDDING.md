@@ -1,7 +1,7 @@
 # OpenAI Embedding Provider 도입 기획 (2026-06-29)
 
 > 2026-11-09 상태: 운영 임베딩은 Gemini Embedding 2 / 1536차원을 유지한다. OpenAI 임베딩과 자동 fallback은 미도입이며, 아래 내용은 도입 검토안과 당시 벤치마크 기록이다.
-> 현재 모델 설정: [MODEL_CONFIGURATION.md](Guide/MODEL_CONFIGURATION.md).
+> 현재 모델 설정: [MODEL_CONFIGURATION.md](../Guide/MODEL_CONFIGURATION.md).
 
 
 > Gemini Embedding 2 quota/routing 이슈에 대비해 OpenAI embedding을 선택 가능한 대안으로 도입하는 방안 검토

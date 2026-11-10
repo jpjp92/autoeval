@@ -1,7 +1,7 @@
 # 내부 QA셋 생성 프로젝트 기획 (2026-06-29)
 
 > 2026-11-09 검토 방향: 내부 발화셋에 기준 프롬프트·판단 규칙·실제 응답을 결합해 Judge가 규칙별 판정과 근거를 반환하는 평가 흐름을 우선 검토한다. 이 내부 발화 평가 파이프라인은 아직 미구현이며, 현재 운영되는 문서 QA 평가와 구분한다.
-> 현재 모델 설정: [MODEL_CONFIGURATION.md](Guide/MODEL_CONFIGURATION.md).
+> 현재 모델 설정: [MODEL_CONFIGURATION.md](../Guide/MODEL_CONFIGURATION.md).
 
 
 > 외부 문서 기반 AutoEval 프로덕션과 별도로, 회사 내부망에서 실사용자 발화 로그와 내부 컨텍스트를 기반으로 QA/라우팅/응답 평가셋을 생성하는 프로젝트 구상
