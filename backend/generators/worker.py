@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from config.models import MODEL_CONFIG
+from config.models import MODEL_CONFIG, DOCUMENT_MODEL
 from config.supabase_client import is_supabase_available, save_qa_generation_to_supabase
 from generators.job_manager import JobStatus, job_manager
 from generators.prompts import build_system_prompt, build_user_template
@@ -54,10 +54,7 @@ def _embed_config(google_genai: Any):
     )
 
 # ── provider별 최대 동시 workers ───────────────────────────────────────────────
-# 추정: input ~1,600 + output ~700 tokens, 호출 1회 ~25초
-#   - gemini-3-flash: RPM 1,000 / TPM 2M  → workers=5
-#   - claude-sonnet-4.6: RPM 50 / TPM 30K   → workers=2 (429 방지)
-#   - gpt-5.2:           RPM 500 / TPM 500K → workers=5
+# 계정별 실제 RPM/TPM에 맞춰 조정하는 보수적인 동시성 기본값.
 GENERATION_MAX_WORKERS: Dict[str, int] = {
     "anthropic": 2,
     "google":    5,
@@ -354,7 +351,7 @@ async def run_qa_generation_real(
             hierarchy_h1=h1,
             hierarchy_h2=h2,
             hierarchy_h3=h3,
-            model=model,
+            model=DOCUMENT_MODEL,
         )
         logger.info(
             f"[{job_id}] Domain profile (LLM): '{domain_profile.get('domain', '?')}' | "
@@ -494,19 +491,11 @@ async def run_qa_generation_real(
             input_tokens = output_data["statistics"].get("total_input_tokens", 0)
             output_tokens = output_data["statistics"].get("total_output_tokens", 0)
 
-            cost_per_1m_input = {
-                "gemini-3-flash": 0.3,
-                "claude-sonnet": 3.0,
-                "gpt-5.2": 1.75,
-            }.get(model, 0)
-            cost_per_1m_output = {
-                "gemini-3-flash": 1.2,
-                "claude-sonnet": 15.0,
-                "gpt-5.2": 14.0,
-            }.get(model, 0)
+            model_config = MODEL_CONFIG.get(model, {})
             estimated_cost = (
-                input_tokens * cost_per_1m_input + output_tokens * cost_per_1m_output
-            ) / 1_000_000
+                input_tokens * model_config.get("cost_input", 0)
+                + output_tokens * model_config.get("cost_output", 0)
+            )
 
             supabase_id = await save_qa_generation_to_supabase(
                 job_id=job_id,

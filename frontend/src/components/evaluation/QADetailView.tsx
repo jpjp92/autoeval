@@ -173,7 +173,7 @@ export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => 
             <div className="divide-y divide-slate-100 dark:divide-white/5 border-t border-slate-200 dark:border-white/5">
               {/* 테두리 헤더(옵션)가 없으므로 첫 행 패딩 조정 */}
               {allDimensions.map(({ label, score, reason }) => (
-                <div key={label} className="flex items-start gap-4 px-4 py-3 text-[12px] group hover:bg-white/40 dark:hover:bg-white/5 transition-colors">
+                <div key={label} className="flex items-start gap-4 px-4 py-3 text-[11px] lg:text-[12px] group hover:bg-white/40 dark:hover:bg-white/5 transition-colors">
                   <span className="shrink-0 font-bold text-slate-500 dark:text-slate-400 w-16">{label}</span>
                   <span className={cn('shrink-0 font-mono font-bold w-14 text-center', score != null ? scoreColor(score) : 'text-slate-300 dark:text-slate-600')}>
                     {score != null ? score.toFixed(3) : '-'}

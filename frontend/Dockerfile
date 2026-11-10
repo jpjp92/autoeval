@@ -1,27 +1,23 @@
-# ── Stage 1: 빌드 ─────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
-
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-# 의존성 레이어 (package.json/lock만 먼저 복사해 캐시 활용)
-COPY package*.json ./
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
 RUN npm ci
-
-# 소스 복사
 COPY . ./
-
-# VITE_API_URL: 빌드 시 주입 (빈값이면 /api/... 상대경로 → nginx 프록시)
-ARG VITE_API_URL=""
-ENV VITE_API_URL=$VITE_API_URL
-
+ARG BACKEND_API_URL=http://server:8000
+ARG NEXT_PUBLIC_UPLOAD_BASE_URL=""
+ENV BACKEND_API_URL=$BACKEND_API_URL
+ENV NEXT_PUBLIC_UPLOAD_BASE_URL=$NEXT_PUBLIC_UPLOAD_BASE_URL
 RUN npm run build
 
-# ── Stage 2: 서빙 ──────────────────────────────────────────────────────────────
-FROM nginx:alpine
-
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

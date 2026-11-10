@@ -1,6 +1,6 @@
 # Agen Q Frontend
 
-> 마지막 업데이트: 2026-05-07
+> 마지막 업데이트: 2026-11-08
 
 LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론트엔드.
 
@@ -9,11 +9,43 @@ LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론�
 ## 실행
 
 ```bash
-npm install
+npm ci
 npm run dev      # Dev 서버 (http://localhost:3000)
 npm run build    # 프로덕션 빌드
+npm start        # 프로덕션 서버
 npm run lint     # tsc --noEmit 타입 검사
 ```
+
+---
+
+## 환경변수와 배포
+
+Node.js 22 권장. 로컬에서는 FastAPI를 8000 포트로 실행하면 추가 설정 없이 연결된다.
+현재 실행 환경의 Turbopack 내부 포트 제한을 피하기 위해 공식 Webpack 옵션으로 개발·빌드한다.
+프론트에 별도 설정이 필요하면 `frontend/.env.local`을 사용한다.
+백엔드 API 키와 Supabase 키는 루트 `.env`에만 둔다.
+
+```dotenv
+# Next.js 서버 전용: API 프록시 대상
+BACKEND_API_URL=http://127.0.0.1:8000
+# 선택: 대용량 파일을 백엔드로 직접 업로드 (브라우저에 공개됨)
+NEXT_PUBLIC_UPLOAD_BASE_URL=
+```
+
+운영 rewrites와 NEXT_PUBLIC 값은 빌드 시 결정되므로 변경 후 재빌드한다.
+Docker 빌드는 BACKEND_API_URL=http://server:8000을 주입한다.
+Vercel은 Root Directory를 frontend, Framework Preset을 Next.js로 선택한다.
+기존 Render 연결은 vercel.json에 유지하며, 서버 변경 시 해당 환경변수도 수정한다.
+Vercel의 두 주소는 build.env로 주입하며 outputDirectory는 자동 감지한다.
+Vercel 업로드는 Render로 직접 전송하고, Render CORS에 프론트 주소를 허용해야 한다.
+업로드 플랫폼 제한을 초과하는 파일은 NEXT_PUBLIC_UPLOAD_BASE_URL로 직접 전송하고
+백엔드 CORS_ORIGINS에 프론트 주소를 추가한다.
+
+기존 탭은 App 클라이언트 컴포넌트에서 상태를 유지한다.
+새 페이지는 src/app 아래에 추가할 수 있다. Docker 운영 이미지는 standalone Node 서버를 실행한다.
+
+자체 호스팅 API 프록시는 300초·200MB 한도를 사용한다. 회귀 검증은 `npm run test:proxy`로
+실행하며 12MB 본문 보존과 31초 지연 응답을 검사한다. 테스트에는 사용자 데이터나 DB를 사용하지 않는다.
 
 ---
 
@@ -22,7 +54,7 @@ npm run lint     # tsc --noEmit 타입 검사
 | 구분 | 라이브러리 |
 |------|-----------|
 | UI | React 19, TypeScript, Tailwind CSS v4 |
-| 빌드 | Vite 6 |
+| 프레임워크 | Next.js 16 App Router |
 | 차트 | Recharts |
 | 내보내기 | xlsx, jszip |
 | 플로우 다이어그램 | @xyflow/react |
@@ -35,7 +67,9 @@ npm run lint     # tsc --noEmit 타입 검사
 ```
 frontend/src/
 ├── App.tsx                          # 루트 컴포넌트 — 탭 네비게이션, 알림, 테마
-├── main.tsx
+├── app/
+│   ├── layout.tsx                   # 메타데이터·글로벌 CSS·초기 테마
+│   └── page.tsx                     # 대시보드 진입점
 ├── index.css
 │
 ├── lib/
@@ -154,8 +188,8 @@ frontend/src/
 
 | 상수 | 환경변수 | 용도 |
 |------|---------|------|
-| `API_BASE` | — (항상 `''`) | 모든 API 호출 — Vite 프록시 / `vercel.json` rewrites 경유 |
-| `UPLOAD_BASE` | `VITE_UPLOAD_BASE_URL` (미설정 시 `''`) | `POST /api/ingestion/upload` 전용 별도 base URL 지정 가능 |
+| `API_BASE` | — (항상 `''`) | 모든 API 호출 — Next.js rewrites 경유 |
+| `UPLOAD_BASE` | `NEXT_PUBLIC_UPLOAD_BASE_URL` (미설정 시 `''`) | `POST /api/ingestion/upload` 전용 별도 base URL 지정 가능 |
 
 ### 공통 래퍼
 

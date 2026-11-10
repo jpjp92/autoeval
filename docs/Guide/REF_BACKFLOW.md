@@ -1,11 +1,11 @@
 <!--
 파일: REF_BACKFLOW.md
 설명: FastAPI 백엔드 진입점(main.py)부터 Ingestion·Generation·Evaluation API 라우팅 흐름 정리. 각 엔드포인트 요청/응답 구조 및 주요 처리 단계 포함.
-업데이트: 2026-04-06
+업데이트: 2026-11-09
 -->
 # Backend Flow
 
-> 마지막 업데이트: 2026-04-06
+> 마지막 업데이트: 2026-11-09
 
 ## 진입점
 
@@ -101,7 +101,7 @@ backend/main.py
 
 ## Generation API (`/api/generation`)
 
-### POST `/api/generation/generate` — QA 생성
+### POST `/api/generate/generate` — QA 생성
 
 ```
 1. job_id 생성: gen_YYYYMMDD_HHMMSS_μs
@@ -123,11 +123,10 @@ backend/main.py
 
    [10~90%] 병렬 QA 생성 (ThreadPoolExecutor)
         ├─ 모델별 worker 수:
-        │   ├─ Claude Sonnet (Anthropic): 2 workers
-        │   ├─ Gemini Flash (Google):     5 workers
-        │   └─ GPT-5.x (OpenAI):         5 workers
+        │   ├─ Gemini 3.8 Flash (Google): 5 workers
+        │   └─ GPT-6 Luna (OpenAI):       5 workers
         ├─ per item: generate_qa(system_prompt, user_template) → JSON 파싱 → qa_list 추출
-        ├─ 429 에러 시 provider fallback 모델로 전환
+        ├─ 429 에러 시 즉시 실패 처리 (provider 자동 전환 없음)
         └─ 401 에러 시 즉시 중단
 
    [92%] _dedup_across_chunks(sim_threshold=0.75)
@@ -138,20 +137,18 @@ backend/main.py
    [100%] 완료
 ```
 
-**429 Quota Fallback 매핑**
+**429 / 인증 오류 처리**
 
-| 원래 모델 | Fallback |
-|-----------|----------|
-| Anthropic (Claude) | gemini-flash |
-| Google (Gemini) | gpt-5.2 |
-| OpenAI (GPT) | gemini-flash |
+할당량·인증 오류는 작업을 중단하며 다른 provider로 자동 전환하지 않는다.
+사용자가 모델을 변경하고 새 작업을 실행해야 한다. 청킹·태깅·계층·도메인 분석은
+Gemini 2.5 Flash를 사용한다. 생성·Judge 기본값은 [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md)를 참고한다.
 
-### GET `/api/generation/{job_id}/status`
+### GET `/api/generate/{job_id}/status`
 ```
 인메모리 job 상태 반환: status, progress, message, error, result_id
 ```
 
-### GET `/api/generation/{job_id}/preview`
+### GET `/api/generate/{job_id}/preview`
 ```
 1. result_id로 Supabase qa_gen_results 조회
 2. qa_list 평탄화 (최대 limit개)

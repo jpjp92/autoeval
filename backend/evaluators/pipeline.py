@@ -11,6 +11,11 @@ from datetime import datetime
 from threading import Lock
 from typing import Dict, List, Optional, Any
 
+try:
+    from backend.config.models import DEFAULT_EVALUATOR_MODEL
+except ImportError:
+    from config.models import DEFAULT_EVALUATOR_MODEL
+
 from .job_manager import EvalJobStatus, EvaluationManager
 from .syntax_validator import SyntaxValidator
 from .dataset_stats import DatasetStats
@@ -23,8 +28,8 @@ logger = logging.getLogger(__name__)
 # ============= Rate Limit 기반 프로바이더별 최대 워커 수 =============
 PROVIDER_MAX_WORKERS: Dict[str, int] = {
     "anthropic": 2,   # 50 RPM / 50K TPM — claude-haiku/sonnet (Tier 1은 TPM이 낮아 2가 안전)
-    "google":    10,  # 1,000 RPM — gemini-2.5-flash / 3.1-flash (Tier 1 Paid)
-    "openai":    8,   # 500 RPM — gpt-5.1 / gpt-5.2
+    "google":    10,  # 보수적인 동시성 기본값; 실제 한도는 계정에 따라 다름
+    "openai":    8,   # 보수적인 동시성 기본값; 실제 한도는 계정에 따라 다름
 }
 # Layer 1-A: API 없음, 순수 Python 연산
 # 주의: os.cpu_count()는 컨테이너 환경(Render/Railway free tier)에서
@@ -214,7 +219,7 @@ def _quality_worker(args):
 def run_full_evaluation_pipeline(
     qa_list: List[Dict],
     layers: List[str] = None,
-    evaluator_model: str = "gemini-2.5-flash",
+    evaluator_model: str = DEFAULT_EVALUATOR_MODEL,
     eval_manager: Optional[Any] = None,
     job_id: Optional[str] = None,
 ) -> Dict:
@@ -472,7 +477,7 @@ def run_evaluation(
     job_id: str,
     result_filename: str,
     limit: Optional[int] = None,
-    evaluator_model: str = "gemini-2.5-flash",
+    evaluator_model: str = DEFAULT_EVALUATOR_MODEL,
     eval_manager: Optional[EvaluationManager] = None,
     generation_id: Optional[str] = None,
 ):

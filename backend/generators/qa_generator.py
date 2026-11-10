@@ -138,6 +138,8 @@ def generate_qa_openai(model_id: str, system_prompt: str, user_prompt: str) -> D
         response = client.chat.completions.create(
             model=model_id,
             max_completion_tokens=2048,
+            **({"reasoning_effort": MODEL_CONFIG[model_id]["reasoning_effort"]}
+               if model_id in ("gpt-6-luna", "gpt-5.6-luna") else {}),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

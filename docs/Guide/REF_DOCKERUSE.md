@@ -1,229 +1,59 @@
-<!--
-파일: REF_DOCKERUSE.md
-설명: Docker Compose 기반 로컬/프로덕션 개발환경 구성 가이드. docker-compose.yml·dev 차이, 백엔드·프론트엔드 Dockerfile 구조, nginx 프록시 설정, 환경변수 관리 포함.
-업데이트: 2026-04-06
--->
 # Docker 구성
 
-## 파일 구조
+업데이트: 2026-11-09. 설치·실행 명령은 [SETUP_DOCKER.md](SETUP_DOCKER.md)를 참고한다.
 
-```
-autoeval/
-├── docker-compose.yml          # 프로덕션
-├── docker-compose.dev.yml      # 개발 오버라이드
-├── .env                        # 환경변수 (git 제외)
-├── .env.example                # 환경변수 템플릿
-├── backend/
-│   └── Dockerfile              # FastAPI 백엔드
-└── frontend/
-    ├── Dockerfile              # React → nginx (프로덕션)
-    ├── Dockerfile.dev          # Vite dev server (개발)
-    └── nginx.conf              # SPA + API 프록시
-```
+## 파일과 역할
 
----
+| 파일 | 역할 |
+| --- | --- |
+| `docker-compose.yml` | FastAPI + Next.js 운영 구성 |
+| `docker-compose.dev.yml` | 소스 마운트, backend reload, Next.js Fast Refresh |
+| `backend/Dockerfile` | Python 3.12, uv lock 기반 의존성 설치 |
+| `frontend/Dockerfile` | Node 22 빌드 → Next.js standalone 실행 |
+| `frontend/Dockerfile.dev` | Node 22, npm ci, npm run dev |
+| `frontend/next.config.ts` | API 프록시와 standalone 출력 |
 
-## 프로덕션 구성
+## 운영 구성
 
-### `docker-compose.yml`
+| 서비스 | 컨테이너 포트 | 호스트 포트 | 실행 |
+| --- | ---: | ---: | --- |
+| server | 8000 | 8000 | `/app/.venv/bin/python backend/main.py` |
+| client | 3000 | 3000 | `node server.js` |
 
-```yaml
-services:
-  server:                              # FastAPI 백엔드
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: server
-    ports:
-      - "8000:8000"
-    env_file: .env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+백엔드는 빌드 시 `uv sync --frozen --no-dev`로 설치한 환경을 직접 실행한다.
+프론트는 `.next/standalone`과 `.next/static`을 복사하고 node 사용자로 실행한다.
+API 요청은 Next.js rewrites → `http://server:8000`으로 전달한다.
 
-  client:                              # nginx + React 빌드
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        VITE_API_URL: ""               # 빈 문자열 → nginx 프록시 사용
-    container_name: client
-    ports:
-      - "3000:80"
-    restart: unless-stopped
-    depends_on:
-      server:
-        condition: service_healthy
-```
+문서 처리 API의 이전 nginx 설정과 맞춰 Next.js 프록시 대기 시간은 300초,
+본문 버퍼 한도는 200MB로 설정한다. 본문이 메모리에 버퍼링되므로 대용량 업로드의
+동시 처리 수와 컨테이너 메모리도 함께 고려한다. 이 설정은 Vercel 등 플랫폼의
+별도 요청 제한을 변경하지 않는다.
 
-### `backend/Dockerfile`
-
-```dockerfile
-FROM python:3.12-slim
-ENV TZ=Asia/Seoul
-RUN apt-get update && apt-get install -y --no-install-recommends curl tzdata \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
-COPY backend/ ./backend/
-ENV PYTHONPATH=/app
-EXPOSE 8000
-CMD ["uv", "run", "python", "backend/main.py"]
-```
-
-### `frontend/Dockerfile` (멀티스테이지)
-
-```dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ ./
-ARG VITE_API_URL=""
-ENV VITE_API_URL=$VITE_API_URL
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-### `frontend/nginx.conf`
-
-```nginx
-server {
-    listen 80;
-    root /usr/share/nginx/html;
-    index index.html;
-
-    resolver 127.0.0.11 valid=30s ipv6=off;  # Docker 내부 DNS
-
-    location / {
-        try_files $uri $uri/ /index.html;    # SPA 라우팅
-    }
-
-    location /api/ {
-        set $upstream http://server:8000;    # 동적 DNS 조회 (startup 오류 방지)
-        proxy_pass $upstream;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 300s;
-    }
-}
-```
-
-> **nginx upstream 주의**: `set $upstream` 변수를 사용해야 Docker 시작 시 DNS 조회 실패(`host not found in upstream`) 방지
-
----
+백엔드 `/health`가 정상일 때 운영 client가 시작된다. client 헬스체크는 `/` 응답을
+검사하며 `/health`는 프론트에서 백엔드까지의 프록시 확인에 사용한다.
 
 ## 개발 구성
 
-### `docker-compose.dev.yml` (오버라이드)
+- 백엔드: `./backend:/app/backend`를 마운트하고 `/app/backend`만 감시한다.
+- 프론트: `./frontend:/app`를 마운트한다.
+- `/app/node_modules`, `/app/.next`는 컨테이너 전용 익명 볼륨으로 분리한다.
+- 개발 client는 server 프로세스 시작 후 실행하며, 준비 여부는 헬스체크로 확인한다.
+- 개발·운영 모두 client 포트는 3000이다.
 
-```yaml
-services:
-  server:
-    volumes:
-      - ./backend:/app/backend        # 소스 마운트 (핫 리로드)
-    environment:
-      LOG_LEVEL: DEBUG
-    command: ["uv", "run", "uvicorn", "backend.main:app",
-              "--host", "0.0.0.0", "--port", "8000", "--reload"]
-    healthcheck:
-      start_period: 60s
+## 환경변수
 
-  client:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev      # Vite dev server 사용
-    ports:
-      - "3000:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules             # node_modules 마운트 제외
-    depends_on:
-      - server
-```
+루트 `.env`는 Compose의 server.env_file로 주입한다. API 키와 Supabase 키를
+프론트에 복사하지 않는다. 양쪽 `.dockerignore`가 `.env` 파일을 빌드에서 제외한다.
 
-### `frontend/Dockerfile.dev`
+| 설정 | 위치 | 적용 시점 |
+| --- | --- | --- |
+| `GOOGLE_API_KEY`, `OPENAI_API_KEY` | 루트 `.env` → server | 컨테이너 생성 시 |
+| `SUPABASE_URL`, `SUPABASE_API_KEY` | 루트 `.env` → server | 컨테이너 생성 시 |
+| `BACKEND_API_URL=http://server:8000` | client 빌드 인자 / 개발 environment | 운영 빌드 시 / 개발 서버 시작 시 |
+| `NEXT_PUBLIC_UPLOAD_BASE_URL` | client 빌드 인자, 선택 사항 | 빌드 시, 브라우저에 공개 |
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm install
-COPY . .
-EXPOSE 5173
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-```
+임베딩은 `gemini-embedding-2`, 1536차원을 유지한다.
+의존성 변경 시 재빌드하고, 프론트 패키지 변경 시 `--renew-anon-volumes`도 사용한다.
+백엔드 `.env` 변경 시 server를 재생성한다. 프론트 빌드 인자 변경 시 client를 재빌드한다.
 
-> `--host 0.0.0.0` 필수: 컨테이너 외부에서 HMR 접근 가능
-
----
-
-## 주요 명령어
-
-```bash
-# 프로덕션 빌드 및 실행
-docker compose build
-docker compose up -d
-
-# 로그 확인
-docker compose logs -f
-docker compose logs -f server    # 백엔드만
-
-# 중지 (컨테이너 유지)
-docker compose stop
-docker compose start
-
-# 완전 종료 (컨테이너 삭제)
-docker compose down
-
-# 개발 모드 (HMR, 소스 마운트)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-
-# 이미지 재빌드 (코드 변경 시)
-docker compose build --no-cache
-docker compose up -d
-
-# 컨테이너 초기화 후 재시작
-docker rm -f server client
-docker compose up -d
-```
-
----
-
-## 포트 정리
-
-| 서비스 | 내부 포트 | 외부 포트 |
-|--------|----------|----------|
-| FastAPI (server) | 8000 | 8000 |
-| nginx (client) — 프로덕션 | 80 | 3000 |
-| Vite dev (client) — 개발 | 5173 | 3000 |
-
----
-
-## 환경변수 (`.env`)
-
-```env
-# LLM API Keys
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
-OPENAI_API_KEY=
-
-# Supabase
-SUPABASE_URL=
-SUPABASE_KEY=
-
-# Server
-LOG_LEVEL=INFO
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-```
+실제 Docker 이미지 빌드·컨테이너 실행은 Docker 설치 후 별도 검증이 필요하다.

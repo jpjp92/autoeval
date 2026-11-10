@@ -1,141 +1,90 @@
-<!--
-파일: REF_DEPLOYUSE.md
-설명: Render(FastAPI 백엔드) + Vercel(React 프론트엔드) 프로덕션 배포 환경 설정 가이드. 환경변수, Dockerfile 경로, 빌드 명령, Supabase 연동 설정 포함.
-업데이트: 2026-04-06
--->
 # 배포 가이드 (Render + Vercel)
 
-## 구성 개요
+업데이트: 2026-11-09. 저장소 설정 기준이며 실제 원격 배포 완료를 의미하지 않는다.
 
-| 플랫폼 | 역할 | URL |
-|--------|------|-----|
-| **Render** | FastAPI 백엔드 | `https://autoeval-uccr.onrender.com` |
-| **Vercel** | React 프론트엔드 | `https://autoeval-v1.vercel.app` |
-| **Supabase** | PostgreSQL + pgvector | Supabase 대시보드 |
+## 구성
 
----
+| 플랫폼 | 역할 | 기존 대상 주소 |
+| --- | --- | --- |
+| Render | FastAPI | `https://autoeval-uccr.onrender.com` |
+| Vercel | Next.js App Router | `https://autoeval-v1.vercel.app` |
+| Supabase | PostgreSQL + pgvector | 환경변수로 지정 |
 
-## Render (백엔드)
+## Render
 
-### 배포 설정
+- Build Type: Docker
+- Dockerfile: `backend/Dockerfile`
+- Build Context: 저장소 루트
+- 실행: 이미지의 `/app/.venv/bin/python backend/main.py`
+- PORT는 플랫폼이 주입하며 main.py가 사용한다.
 
-- **Build Type**: Docker
-- **Dockerfile Path**: `backend/Dockerfile`
-- **Build Context**: 루트 (`/`)
+| 환경변수 | 용도 |
+| --- | --- |
+| `GOOGLE_API_KEY` | Gemini 생성·Judge·문서 처리·임베딩 |
+| `OPENAI_API_KEY` | GPT 생성·Judge |
+| `ANTHROPIC_API_KEY` | 보류 중, 현재 UI 모델 선택에 사용하지 않음 |
+| `SUPABASE_URL` | DB 주소 |
+| `SUPABASE_API_KEY` | 백엔드 DB 인증 |
+| `CORS_ORIGINS` | 브라우저가 직접 백엔드를 호출할 프론트 주소 |
 
-### 환경변수
-
-| 키 | 값 |
-|----|-----|
-| `ANTHROPIC_API_KEY` | Anthropic API 키 |
-| `GOOGLE_API_KEY` | Google API 키 |
-| `OPENAI_API_KEY` | OpenAI API 키 |
-| `SUPABASE_URL` | Supabase 프로젝트 URL |
-| `SUPABASE_KEY` | Supabase service_role 키 |
-| `CORS_ORIGINS` | `https://autoeval-v1.vercel.app` |
-| `PORT` | Render가 자동 주입 (설정 불필요) |
-
-> `PORT`는 Render가 동적으로 할당·주입 → `main.py`에서 `os.getenv("PORT", 8000)`으로 대응
-
-### Cold Start 주의
-
-Render 무료 티어는 비활성 시 컨테이너 종료 → 첫 요청 시 30~60초 대기
-→ 첫 CORS preflight가 실패처럼 보일 수 있음 (실제 CORS 설정 문제 아님)
-→ 재시도 시 정상 응답 (프론트에서 재시도 로직 적용 권장)
-
----
-
-## Vercel (프론트엔드)
-
-### 배포 설정
+## Vercel
 
 | 항목 | 값 |
-|------|-----|
-| Framework Preset | Vite |
+| --- | --- |
+| Framework Preset | Next.js |
 | Root Directory | `frontend` |
 | Build Command | `npm run build` |
-| Output Directory | `dist` |
+| Output Directory | Next.js 기본값 사용, 별도 override 해제 |
 
-### 환경변수
+`frontend/vercel.json`의 framework는 nextjs이고 outputDirectory는 null로 자동 감지한다.
+기존 dist 출력 설정 대신 Next.js 기본 출력을 사용한다.
+build.env에 BACKEND_API_URL과 NEXT_PUBLIC_UPLOAD_BASE_URL을 기존 Render 주소로 지정한다.
+두 값은 빌드 시 필요하므로 런타임 전용 env 설정으로 대체하지 않는다.
+배포 대상 주소를 변경하면 Vercel 프로젝트 설정과 저장소 설정을 함께 확인한다.
 
-| 키 | 값 |
-|----|-----|
-| `VITE_API_URL` | `https://autoeval-uccr.onrender.com` |
-
-> `VITE_` 접두사 필수: Vite 빌드 시점에 번들에 정적 삽입됨
-
-### 환경변수 미설정 시 동작
+| 환경변수 | 용도 |
+| --- | --- |
+| `BACKEND_API_URL` | Next.js 서버의 API 프록시 대상 |
+| `NEXT_PUBLIC_UPLOAD_BASE_URL` | Vercel에서는 Render 주소로 지정하여 업로드를 직접 전송 |
 
 ```ts
 // frontend/src/lib/api.ts
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-```
-- Vercel 배포: `VITE_API_URL` → Render URL 사용
-- 로컬 개발: fallback → `http://localhost:8000`
-- Docker 프로덕션: 빈 문자열 → nginx `/api/` 프록시 사용
-
----
-
-## CORS 설정
-
-### 백엔드 (`backend/main.py`)
-
-```python
-origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins.split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+export const API_BASE = '';
+const UPLOAD_BASE = process.env.NEXT_PUBLIC_UPLOAD_BASE_URL ?? '';
 ```
 
-### 환경별 CORS_ORIGINS 값
+일반 요청은 `/api/*` 상대 경로를 사용하고 next.config.ts rewrites가 백엔드에 전달한다.
+업로드 주소가 비어 있으면 업로드도 같은 프록시를 사용한다. 플랫폼 업로드 제한을 초과하는
+파일은 직접 업로드 주소를 설정하고 백엔드 CORS_ORIGINS에 프론트 주소를 허용한다.
+현재 Vercel 설정은 직접 업로드를 기본으로 사용한다. 로컬·Docker의 빈 업로드 주소는
+Next.js 프록시를 사용하며 자체 호스팅 프록시 한도는 300초·200MB이다.
+플랫폼 자체의 요청 한도나 실제 서비스 메모리까지 검증한 것은 아니다.
 
-| 환경 | CORS_ORIGINS |
-|------|-------------|
-| 로컬 | `http://localhost:3000,http://localhost:5173` |
-| Render (웹 배포) | `https://autoeval-v1.vercel.app` |
-| Docker 프로덕션 | `.env`에서 설정 |
+2026-11-10 확인 시 문서의 프론트 주소 `https://autoeval-v1.vercel.app`로 보낸
+Render 업로드 사전 요청(OPTIONS)은 CORS 400을 반환했다. 배포 전에 Render의
+`CORS_ORIGINS`에 실제 프론트 origin을 추가하고 백엔드를 재배포한다.
+기존 허용 주소는 유지하며, origin에는 경로나 마지막 `/`를 넣지 않는다.
+해당 origin의 사전 요청에서 `Access-Control-Allow-Origin`이 반환되는지 확인한다.
 
----
+BACKEND_API_URL과 NEXT_PUBLIC_UPLOAD_BASE_URL 변경 후에는 프론트를 재빌드한다.
+API 키·Supabase 키를 NEXT_PUBLIC 변수로 만들지 않는다.
 
-## 배포 흐름
+## 환경별 주소
 
-```
-코드 push → GitHub main
-  ├── Render: backend/Dockerfile로 자동 빌드·배포
-  └── Vercel: frontend/ 자동 빌드·배포
-```
+| 항목 | 로컬 | Docker | Render + Vercel |
+| --- | --- | --- | --- |
+| 프론트 | localhost:3000 | localhost:3000 | Vercel 주소 |
+| 백엔드 | 127.0.0.1:8000 | server:8000 (내부) | Render 주소 |
+| 프록시 | Next.js rewrites | Next.js rewrites | Next.js rewrites |
+| BACKEND_API_URL | 기본값 사용 | Compose가 지정 | Render 주소 |
 
-### 수동 재배포
+## 배포 확인
 
-- **Render**: 대시보드 → Manual Deploy
-- **Vercel**: 대시보드 → Redeploy 또는 `vercel --prod`
+1. Next.js 보안 기준과 lock 파일을 확인한다: [FRONTEND_SECURITY.md](FRONTEND_SECURITY.md).
+2. Render 환경변수, Dockerfile 경로, DB 연결을 확인한다.
+3. Vercel의 기존 정적 프론트 출력 설정을 해제하고 Next.js로 배포한다.
+4. `/`, 정적 JS/CSS, `/health`, 문서 업로드와 생성·평가를 확인한다.
+5. `/health`는 프로세스 응답 확인이며 DB·모델 호출 성공을 보장하지 않는다.
 
----
-
-## 로컬 vs Docker vs 웹 비교
-
-| 항목 | 로컬 개발 | Docker 프로덕션 | Render+Vercel |
-|------|----------|----------------|---------------|
-| 백엔드 URL | `localhost:8000` | `server:8000` (내부) | Render URL |
-| 프론트 접근 | `localhost:5173` | `localhost:3000` | Vercel URL |
-| API 라우팅 | 직접 접근 | nginx 프록시 | Vercel → Render 직접 |
-| CORS 설정 | localhost 허용 | 불필요 (same-origin) | Vercel URL 허용 |
-| VITE_API_URL | 미설정 | 빈 문자열 | Render URL |
-
----
-
-## 체크리스트
-
-**Render 배포 전**
-- [ ] `CORS_ORIGINS`에 Vercel URL 포함 여부
-- [ ] `SUPABASE_URL`, `SUPABASE_KEY` 설정
-- [ ] LLM API 키 모두 설정
-- [ ] Dockerfile 경로: `backend/Dockerfile`
-
-**Vercel 배포 전**
-- [ ] `VITE_API_URL`에 Render URL 설정
-- [ ] Root Directory: `frontend`
-- [ ] Build Command: `npm run build`
+현재 모델과 기본값은 [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md)를 참고한다.
+로컬 Docker 명령은 [SETUP_DOCKER.md](SETUP_DOCKER.md)를 참고한다.

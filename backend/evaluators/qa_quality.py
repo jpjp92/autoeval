@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 # 중앙 모델 설정
 try:
-    from backend.config.models import MODEL_CONFIG
+    from backend.config.models import MODEL_CONFIG, DEFAULT_EVALUATOR_MODEL
 except ImportError:
     try:
-        from config.models import MODEL_CONFIG
+        from config.models import MODEL_CONFIG, DEFAULT_EVALUATOR_MODEL
     except ImportError:
         MODEL_CONFIG = {}
+        DEFAULT_EVALUATOR_MODEL = "gpt-5.6-luna"
 
 try:
     from backend.exceptions import APIQuotaExceededError
@@ -38,7 +39,7 @@ except ImportError:
 class QAQualityEvaluator:
     """QA 품질 평가 (Layer 3) - LLM CoT 기반, 멀티 프로바이더"""
 
-    def __init__(self, model: str = "gpt-5.1"):
+    def __init__(self, model: str = DEFAULT_EVALUATOR_MODEL):
         self.model_display = model
         self.model_id = self._get_model_id(model)
         self.client = None       # OpenAI native client
@@ -60,9 +61,17 @@ class QAQualityEvaluator:
                 api_key = os.getenv("GOOGLE_API_KEY")
                 if api_key:
                     self.judge_model = ChatGoogleGenerativeAI(
-                        model=self.model_id, google_api_key=api_key, temperature=0,
+                        model=self.model_id, google_api_key=api_key,
+                        **({} if self.model_id.startswith(("gemini-3.7", "gemini-3.8")) else {"temperature": 0}),
                         timeout=90,
                     )
+                    if self.model_id.startswith(("gemini-3.7", "gemini-3.8")):
+                        # This SDK requires a float at construction. Clear legacy
+                        # sampling fields in the per-request config instead.
+                        self.judge_model = self.judge_model.bind(generation_config={
+                            "temperature": None, "top_p": None,
+                            "top_k": None, "candidate_count": None,
+                        })
                     logger.info(f"QAQualityEvaluator initialized (Google): {self.model_id}")
                 else:
                     logger.warning("GOOGLE_API_KEY not set for QAQualityEvaluator")
@@ -132,7 +141,8 @@ Return ONLY valid JSON:
                         {"role": "system", "content": sys_msg},
                         {"role": "user",   "content": prompt},
                     ],
-                    temperature=0,
+                    **({"reasoning_effort": MODEL_CONFIG[self.model_id]["reasoning_effort"]}
+                       if self.model_id in ("gpt-6-luna", "gpt-5.6-luna") else {"temperature": 0}),
                     max_completion_tokens=600,
                 )
                 if not response or not response.choices:
@@ -146,7 +156,7 @@ Return ONLY valid JSON:
                     SystemMessage(content=sys_msg),
                     HumanMessage(content=prompt),
                 ])
-                return (response.content or "{}").strip()
+                return (response.text or "{}").strip()
 
         except Exception as e:
             err_str = str(e)

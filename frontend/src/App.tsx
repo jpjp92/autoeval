@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect } from "react";
 import type { HierarchyTree } from "./types/hierarchy";
 import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "lucide-react";
@@ -19,9 +21,8 @@ function App() {
   const [taggingVersion, setTaggingVersion] = useState(0);
   const [taggingTreeData, setTaggingTreeData] = useState<HierarchyTree | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(undefined);
-  const [theme, setTheme] = useState<'light' | 'dark'>(
-    () => (localStorage.getItem('theme') as 'light' | 'dark') ?? 'dark'
-  );
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [themeReady, setThemeReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   function addNotification(n: Omit<Notification, 'id' | 'time' | 'read'>) {
@@ -32,9 +33,19 @@ function App() {
   }
 
   useEffect(() => {
+    try {
+      setTheme(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
+    } catch {
+      // Storage may be unavailable in private or restricted browser contexts.
+    }
+    setThemeReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady) return;
     document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    try { localStorage.setItem('theme', theme); } catch {}
+  }, [theme, themeReady]);
 
   const getHeaderInfo = () => {
     switch (activeTab) {

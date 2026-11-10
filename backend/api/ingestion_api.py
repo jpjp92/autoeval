@@ -33,7 +33,7 @@ from pydantic import BaseModel
 
 import asyncio
 
-from config.models import MODEL_CONFIG
+from config.models import MODEL_CONFIG, DOCUMENT_MODEL
 from config.supabase_client import (
     get_document_chunks,
     get_doc_chunks_sampled,
@@ -255,7 +255,7 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
 
     try:
         response = await gemini_client.aio.models.generate_content(
-            model=MODEL_CONFIG["gemini-3-flash"]["model_id"],
+            model=MODEL_CONFIG[DOCUMENT_MODEL]["model_id"],
             contents=prompt,
             config=google_genai.types.GenerateContentConfig(
                 response_mime_type="application/json",

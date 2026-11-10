@@ -12,6 +12,11 @@ wheels/
 # env
 .env
 .envlocal
+.env.local
+.env.*.local
+
+# Local agent instructions
+[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
 
 # ref
 ref/
@@ -29,6 +34,9 @@ validated_output/
 
 # package
 frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
 backend/default.sqlite
 
 # test
@@ -40,6 +48,8 @@ sample/
 .python-version
 .claude/CLAUDE.md
 scripts/
+!backend/scripts/
+!backend/scripts/compare_embedding_providers.py
 results/
 .env copy
 .claude/
@@ -58,3 +68,5 @@ scripts/parser_block_merge_analysis.md
 scripts/parser_heading_comparison.md
 scripts/test_parser_fixes.py
 scripts/test_parser_heading.py
+docs/Samples/internal_qa_dataset_sample.json
+docs/AgenQ_main_flow_2slides.pptx
