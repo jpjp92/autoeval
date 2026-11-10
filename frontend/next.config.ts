@@ -5,6 +5,11 @@ const backendUrl = (process.env.BACKEND_API_URL || 'http://127.0.0.1:8000').repl
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  experimental: {
+    // Preserve the previous nginx limits for document upload and sync tagging.
+    proxyTimeout: 300_000,
+    proxyClientMaxBodySize: '200mb',
+  },
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${backendUrl}/api/:path*` },

@@ -7,7 +7,8 @@
     "dev": "next dev --webpack --hostname 0.0.0.0 --port 3000",
     "build": "next build --webpack",
     "start": "node start.mjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:proxy": "node --import tsx --test tests/proxy-limits.test.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",

@@ -36,13 +36,16 @@
 | Build Command | `npm run build` |
 | Output Directory | Next.js 기본값 사용, 별도 override 해제 |
 
-`frontend/vercel.json`의 framework는 nextjs이고 BACKEND_API_URL에 기존 Render 주소를
-설정한다. 배포 대상 주소를 변경하면 Vercel 프로젝트 설정과 저장소 설정을 함께 확인한다.
+`frontend/vercel.json`의 framework는 nextjs이고 outputDirectory는 null로 자동 감지한다.
+기존 dist 출력 설정 대신 Next.js 기본 출력을 사용한다.
+build.env에 BACKEND_API_URL과 NEXT_PUBLIC_UPLOAD_BASE_URL을 기존 Render 주소로 지정한다.
+두 값은 빌드 시 필요하므로 런타임 전용 env 설정으로 대체하지 않는다.
+배포 대상 주소를 변경하면 Vercel 프로젝트 설정과 저장소 설정을 함께 확인한다.
 
 | 환경변수 | 용도 |
 | --- | --- |
 | `BACKEND_API_URL` | Next.js 서버의 API 프록시 대상 |
-| `NEXT_PUBLIC_UPLOAD_BASE_URL` | 선택 사항. 업로드 요청을 백엔드로 직접 전송 |
+| `NEXT_PUBLIC_UPLOAD_BASE_URL` | Vercel에서는 Render 주소로 지정하여 업로드를 직접 전송 |
 
 ```ts
 // frontend/src/lib/api.ts
@@ -53,6 +56,15 @@ const UPLOAD_BASE = process.env.NEXT_PUBLIC_UPLOAD_BASE_URL ?? '';
 일반 요청은 `/api/*` 상대 경로를 사용하고 next.config.ts rewrites가 백엔드에 전달한다.
 업로드 주소가 비어 있으면 업로드도 같은 프록시를 사용한다. 플랫폼 업로드 제한을 초과하는
 파일은 직접 업로드 주소를 설정하고 백엔드 CORS_ORIGINS에 프론트 주소를 허용한다.
+현재 Vercel 설정은 직접 업로드를 기본으로 사용한다. 로컬·Docker의 빈 업로드 주소는
+Next.js 프록시를 사용하며 자체 호스팅 프록시 한도는 300초·200MB이다.
+플랫폼 자체의 요청 한도나 실제 서비스 메모리까지 검증한 것은 아니다.
+
+2026-11-10 확인 시 문서의 프론트 주소 `https://autoeval-v1.vercel.app`로 보낸
+Render 업로드 사전 요청(OPTIONS)은 CORS 400을 반환했다. 배포 전에 Render의
+`CORS_ORIGINS`에 실제 프론트 origin을 추가하고 백엔드를 재배포한다.
+기존 허용 주소는 유지하며, origin에는 경로나 마지막 `/`를 넣지 않는다.
+해당 origin의 사전 요청에서 `Access-Control-Allow-Origin`이 반환되는지 확인한다.
 
 BACKEND_API_URL과 NEXT_PUBLIC_UPLOAD_BASE_URL 변경 후에는 프론트를 재빌드한다.
 API 키·Supabase 키를 NEXT_PUBLIC 변수로 만들지 않는다.

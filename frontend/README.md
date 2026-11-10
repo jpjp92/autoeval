@@ -36,11 +36,16 @@ NEXT_PUBLIC_UPLOAD_BASE_URL=
 Docker 빌드는 BACKEND_API_URL=http://server:8000을 주입한다.
 Vercel은 Root Directory를 frontend, Framework Preset을 Next.js로 선택한다.
 기존 Render 연결은 vercel.json에 유지하며, 서버 변경 시 해당 환경변수도 수정한다.
+Vercel의 두 주소는 build.env로 주입하며 outputDirectory는 자동 감지한다.
+Vercel 업로드는 Render로 직접 전송하고, Render CORS에 프론트 주소를 허용해야 한다.
 업로드 플랫폼 제한을 초과하는 파일은 NEXT_PUBLIC_UPLOAD_BASE_URL로 직접 전송하고
 백엔드 CORS_ORIGINS에 프론트 주소를 추가한다.
 
 기존 탭은 App 클라이언트 컴포넌트에서 상태를 유지한다.
 새 페이지는 src/app 아래에 추가할 수 있다. Docker 운영 이미지는 standalone Node 서버를 실행한다.
+
+자체 호스팅 API 프록시는 300초·200MB 한도를 사용한다. 회귀 검증은 `npm run test:proxy`로
+실행하며 12MB 본문 보존과 31초 지연 응답을 검사한다. 테스트에는 사용자 데이터나 DB를 사용하지 않는다.
 
 ---
 
