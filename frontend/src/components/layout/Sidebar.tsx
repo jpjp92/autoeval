@@ -42,7 +42,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
   return (
     <div className={cn(
-      "h-screen p-3 shrink-0 transition-all duration-300 ease-in-out",
+      "hidden lg:block h-dvh p-3 shrink-0 transition-all duration-300 ease-in-out",
       width
     )}>
       {/* 
