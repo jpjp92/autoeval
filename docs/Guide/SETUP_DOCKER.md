@@ -34,7 +34,22 @@ docker compose version
 ```
 
 systemd가 없는 컨테이너/제한 실행 환경에서는 호스트에 설치해야 한다.
+
+WSL2에서는 `/etc/wsl.conf`에 아래 설정이 있어야 `systemctl`이 동작한다.
+없으면 추가한 뒤 Windows에서 `wsl --shutdown` 후 다시 연다.
+
+```ini
+[boot]
+systemd=true
+```
+
 이 문서의 Docker 명령은 sudo로 실행하며, docker 그룹 추가는 필수가 아니다.
+sudo 없이 쓰려면 아래를 실행하고 터미널을 새로 연다. 이후 명령의 `sudo`는 생략한다.
+
+```bash
+sudo usermod -aG docker $USER
+# 새 터미널을 열기 전 현재 세션에서 쓰려면: sg docker -c "docker ps"
+```
 
 ## 프로젝트 실행
 
@@ -48,7 +63,7 @@ Compose가 백엔드에만 주입하므로 프론트엔드에 키를 복사하�
 # 프로젝트 루트에서 설정 검사 (환경변수 값은 출력하지 않음)
 sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
 
-# 최초 빌드 및 실행 (두 서비스의 헬스체크 완료까지 대기)
+# 최초 빌드 및 실행 (두 서비스의 헬스체크 완료까지 대기, 첫 빌드는 10분 이상 소요될 수 있음)
 sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --wait --wait-timeout 180
 
 # 상태 및 로그

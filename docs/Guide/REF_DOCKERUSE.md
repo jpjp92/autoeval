@@ -49,6 +49,9 @@ API 요청은 Next.js rewrites → `http://server:8000`으로 전달한다.
 | --- | --- | --- |
 | `GOOGLE_API_KEY`, `OPENAI_API_KEY` | 루트 `.env` → server | 컨테이너 생성 시 |
 | `SUPABASE_URL`, `SUPABASE_API_KEY` | 루트 `.env` → server | 컨테이너 생성 시 |
+| `ANTHROPIC_API_KEY` | 루트 `.env` → server, 선택 사항 | 컨테이너 생성 시 (Claude 보류 중, 과거 결과 호환용) |
+| `LANGCHAIN_TRACING_V2`, `LANGCHAIN_ENDPOINT`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` | 루트 `.env` → server, 선택 사항 | 컨테이너 생성 시 (LangSmith 추적) |
+| `LOG_LEVEL`, `CORS_ORIGINS` | 루트 `.env` → server, 선택 사항 | 컨테이너 생성 시 (개발 모드는 `LOG_LEVEL=DEBUG` 고정) |
 | `BACKEND_API_URL=http://server:8000` | client 빌드 인자 / 개발 environment | 운영 빌드 시 / 개발 서버 시작 시 |
 | `NEXT_PUBLIC_UPLOAD_BASE_URL` | client 빌드 인자, 선택 사항 | 빌드 시, 브라우저에 공개 |
 
@@ -56,4 +59,12 @@ API 요청은 Next.js rewrites → `http://server:8000`으로 전달한다.
 의존성 변경 시 재빌드하고, 프론트 패키지 변경 시 `--renew-anon-volumes`도 사용한다.
 백엔드 `.env` 변경 시 server를 재생성한다. 프론트 빌드 인자 변경 시 client를 재빌드한다.
 
-실제 Docker 이미지 빌드·컨테이너 실행은 Docker 설치 후 별도 검증이 필요하다.
+## 검증 기록
+
+2026-11-11, WSL2 Ubuntu 24.04 / Docker 29.9.3 / Compose v5.7.0에서 개발 구성을 검증했다.
+`config --quiet` 통과, `up -d --build --wait` 후 server·client 모두 healthy,
+`localhost:8000/health`, `localhost:3000/health`(프록시), `localhost:3000/` 모두 200.
+첫 빌드는 의존성 설치 때문에 10분 이상 걸릴 수 있다. 운영 구성은 아직 별도 검증 전이다.
+
+`backend/Dockerfile`은 `ghcr.io/astral-sh/uv:latest`를 사용하므로 빌드 시점마다 uv 버전이
+달라질 수 있다. 재현성이 필요하면 태그를 고정한다.
