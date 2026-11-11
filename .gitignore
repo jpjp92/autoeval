@@ -71,3 +71,5 @@ scripts/test_parser_fixes.py
 scripts/test_parser_heading.py
 docs/Samples/internal_qa_dataset_sample.json
 docs/AgenQ_main_flow_2slides.pptx
+frontend/test-results/
+frontend/playwright-report/
