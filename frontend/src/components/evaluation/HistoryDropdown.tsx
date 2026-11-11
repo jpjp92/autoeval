@@ -6,13 +6,15 @@ import { GRADE_COLOR } from '@/src/types/evaluation';
 import { formatKST } from '@/src/lib/evalChartUtils';
 
 export function HistoryDropdown({
-  historyList, selectedHistoryId, showMenu, setShowMenu, onSelect,
+  historyList, selectedHistoryId, showMenu, setShowMenu, onSelect, mobileAlign = 'left',
 }: {
   historyList: HistoryItem[];
   selectedHistoryId: string | null;
   showMenu: boolean;
   setShowMenu: (v: boolean) => void;
   onSelect: (item: HistoryItem) => void;
+  /** Which edge the menu hugs below md, matching where the button sits. */
+  mobileAlign?: 'left' | 'right';
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -37,7 +39,13 @@ export function HistoryDropdown({
         <ChevronDown className={cn('w-3 h-3 transition-transform', showMenu && 'rotate-180')} />
       </button>
       {showMenu && (
-        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-[60] overflow-hidden">
+        <div
+          data-role="history-menu"
+          className={cn(
+            'absolute md:left-auto md:right-0 mt-2 w-[min(20rem,calc(100vw-2rem))] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-[60] overflow-hidden',
+            mobileAlign === 'left' ? 'left-0' : 'right-0',
+          )}
+        >
           <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/60">
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">평가 히스토리 ({historyList.length})</p>
           </div>
