@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight, Check } from "lucide-react";
+import { Upload, FileText, CheckCircle2, Loader2, Database, AlertCircle, Sparkles, ChevronRight, ArrowRight } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { getHierarchyList, uploadDocument, getIngestionStatus, analyzeHierarchy, applyGranularTagging, mapErrorToMessage } from "@/src/lib/api";
 import type { AnalyzeHierarchyResponse } from "@/src/lib/api";
 import type { HierarchyTree } from "@/src/types/hierarchy";
+import { StepCard } from "@/src/components/common/StepCard";
 
 interface HierarchyData { h1: string; h2: string; h3: string; }
 interface TaggingSample { id: string; content_preview: string; hierarchy: HierarchyData; }
@@ -201,6 +202,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         icon={<Database className="w-4 h-4" />}
         status={uploadDone ? "done" : "active"}
         isLast={false}
+        clip
       >
         {uploadDone ? (
           /* 완료 상태 — 파일명 표시 */
@@ -212,7 +214,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             </div>
             <button
               onClick={() => { setUploadedFilename(null); setUploadMessage(null); setAnalysis(null); setTaggingSamples([]); setHierarchyTree(null); }}
-              className="text-xs text-emerald-600 hover:text-emerald-800 underline underline-offset-2 flex-shrink-0"
+              className="min-h-11 px-1 text-xs text-emerald-600 hover:text-emerald-800 underline underline-offset-2 flex-shrink-0"
             >
               변경
             </button>
@@ -222,7 +224,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {/* Dropzone */}
             <div
               className={cn(
-                "border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all",
+                "border-2 border-dashed rounded-xl p-5 sm:p-8 flex flex-col items-center justify-center cursor-pointer transition-all",
                 isDragging
                   ? "border-indigo-500 bg-indigo-50/80 dark:bg-indigo-500/20 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)] scale-[1.01]"
                   : file
@@ -244,7 +246,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                   <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center mb-3">
                     <FileText className="w-5 h-5 text-indigo-600" />
                   </div>
-                  <p className="text-sm font-semibold text-indigo-700">{file.name}</p>
+                  <p className="max-w-full text-center text-sm font-semibold text-indigo-700 [overflow-wrap:anywhere]">{file.name}</p>
                   <p className="text-xs text-indigo-400 mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                   <button
                     onClick={e => { e.stopPropagation(); setFile(null); }}
@@ -256,7 +258,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                   <div className="w-10 h-10 bg-slate-100 dark:bg-white/10 rounded-xl flex items-center justify-center mb-3">
                     <Upload className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                   </div>
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-300">클릭하여 파일 선택 또는 드래그 앤 드롭</p>
+                  <p className="text-center text-sm font-medium text-slate-600 dark:text-slate-300">클릭하여 파일 선택 또는 드래그 앤 드롭</p>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">PDF, DOCX · 최대 100MB</p>
                 </>
               )}
@@ -302,6 +304,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         icon={<Sparkles className="w-4 h-4" />}
         status={!uploadDone ? "pending" : hierarchyDone ? "done" : "active"}
         isLast={true}
+        clip
       >
         {!uploadDone ? (
           <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/8 rounded-xl">
@@ -313,7 +316,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
         ) : (
           <div className="space-y-4">
             {/* 파일명 + 분석 버튼 */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/8 rounded-xl min-w-0">
                 <FileText className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
                 <span className="text-sm text-slate-600 dark:text-slate-300 truncate">{uploadedFilename}</span>
@@ -322,7 +325,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                 onClick={handleAnalyze}
                 disabled={isAnalyzing || isTagging}
                 className={cn(
-                  "min-w-[168px] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0",
+                  "w-full sm:w-auto sm:min-w-[168px] px-4 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0",
                   isAnalyzing || isTagging
                     ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 active:scale-[0.99]"
@@ -345,10 +348,10 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             {(isAnalyzing || isTagging) && (
               <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-500 flex-shrink-0" />
-                <p className="text-sm text-indigo-700 dark:text-indigo-400 inline-flex items-baseline">
+                <p className="min-w-0 text-sm text-indigo-700 dark:text-indigo-400">
                   {isAnalyzing
-                    ? <span className="inline-flex items-baseline gap-[1px]">문서 구조를 분석하고 카테고리를 분류하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>
-                    : <span className="inline-flex items-baseline gap-[1px]">분류된 카테고리를 문서에 적용하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>}
+                    ? <span>문서 구조를 분석하고 카테고리를 분류하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>
+                    : <span>분류된 카테고리를 문서에 적용하는 중입니다&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>}
                 </p>
               </div>
             )}
@@ -394,9 +397,9 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                     }
                     return picked;
                   })().map((s, i) => (
-                    <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/8 rounded-lg">
+                    <div key={i} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 px-3 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/8 rounded-lg">
                       <p className="flex-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 min-w-0">{s.content_preview}</p>
-                      <div className="flex items-center gap-1 flex-shrink-0 text-[10px] font-medium">
+                      <div className="flex flex-wrap items-center gap-1 min-w-0 sm:flex-shrink-0 sm:max-w-[55%] text-[10px] font-medium">
                         <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded">{s.hierarchy.h1}</span>
                         <ChevronRight className="w-3 h-3 text-slate-300 dark:text-slate-600" />
                         <span className="px-1.5 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 rounded">{s.hierarchy.h2}</span>
@@ -417,9 +420,9 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
               return (
                 <div className="space-y-2 animate-in fade-in duration-400">
                   {/* 헤더: 제목 + 레벨 칩 */}
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">카테고리 구조</p>
-                    <div className="flex items-center gap-1.5 text-[11px] font-medium">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium whitespace-nowrap">
                       <span className="px-2.5 py-0.5 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/30 rounded-full">H1 · {hierarchyTree.h1_list.length}</span>
                       <span className="px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/30 rounded-full">H2 · {totalH2}</span>
                       <span className="px-2.5 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 rounded-full">H3 · {totalH3}</span>
@@ -440,19 +443,19 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                           {/* H1 행 */}
                           <button
                             onClick={() => setExpandedH1(prev => ({ ...prev, [h1]: !isH1Open }))}
-                            className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors text-left"
+                            className="w-full flex items-center gap-2.5 px-3 sm:px-4 py-3 hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors text-left"
                           >
                             <ChevronRight className={cn("w-3.5 h-3.5 text-slate-300 dark:text-slate-600 transition-transform flex-shrink-0", isH1Open && "rotate-90")} />
                             <span className={cn("w-2 h-2 rounded-full flex-shrink-0", dotColor)} />
-                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex-1">{h1}</span>
-                            <span className="text-[11px] text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-white/8 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-full">{h2s.length} H2</span>
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex-1 min-w-0 break-keep [overflow-wrap:anywhere]">{h1}</span>
+                            <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-white/8 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-full">{h2s.length} H2</span>
                           </button>
 
                           {/* H2 목록 */}
                           {isH1Open && h2s.length > 0 && (
-                            <div className="relative pl-10 pr-4 pb-2">
+                            <div className="relative pl-8 pr-2 sm:pl-10 sm:pr-4 pb-2">
                               {/* H1 세로 가이드라인 */}
-                              <div className="absolute left-[21px] top-0 bottom-6 w-px bg-violet-200" />
+                              <div className="absolute left-[17px] sm:left-[21px] top-0 bottom-6 w-px bg-violet-200" />
 
                               {h2s.map((h2: string) => {
                                 const h3Key = `${h1}__${h2}`;
@@ -462,7 +465,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                                 return (
                                   <div key={h2} className="relative mb-0.5">
                                     {/* H2 가로 브랜치 */}
-                                    <div className="absolute left-[-13px] top-[18px] w-3 h-px bg-violet-200" />
+                                    <div className="absolute left-[-15px] sm:left-[-13px] top-[18px] w-3 h-px bg-violet-200" />
 
                                     {/* H2 행 */}
                                     <button
@@ -477,15 +480,15 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                                         h3s.length > 0 ? "text-slate-300" : "text-transparent",
                                         isH2Open && "rotate-90"
                                       )} />
-                                      <span className="text-sm text-indigo-600 flex-1">{h2}</span>
+                                      <span className="text-sm text-indigo-600 flex-1 min-w-0 break-keep [overflow-wrap:anywhere]">{h2}</span>
                                       {h3s.length > 0 && (
-                                        <span className="text-[10px] text-slate-400">{h3s.length} H3</span>
+                                        <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-400">{h3s.length} H3</span>
                                       )}
                                     </button>
 
                                     {/* H3 목록 */}
                                     {isH2Open && h3s.length > 0 && (
-                                      <div className="relative pl-6 mb-1">
+                                      <div className="relative pl-5 sm:pl-6 mb-1">
                                         {/* H2 세로 가이드라인 */}
                                         <div className="absolute left-[10px] top-0 bottom-4 w-px bg-emerald-200" />
 
@@ -494,7 +497,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                                             {/* H3 가로 브랜치 */}
                                             <div className="absolute left-[-14px] top-1/2 -translate-y-1/2 w-3 h-px bg-emerald-200 dark:bg-emerald-500/30" />
                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                                            <span className="text-xs text-emerald-700 dark:text-emerald-400">{h3}</span>
+                                            <span className="min-w-0 break-keep [overflow-wrap:anywhere] text-xs text-emerald-700 dark:text-emerald-400">{h3}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -514,11 +517,11 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
 
             {/* QA 생성 이동 */}
             {hierarchyDone && setActiveTab && (
-              <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex items-center justify-between animate-in fade-in duration-300">
+              <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-in fade-in duration-300">
                 <p className="text-xs text-slate-400 dark:text-slate-500">카테고리 분류가 완료되었습니다.</p>
                 <button
                   onClick={() => setActiveTab("generation")}
-                  className="min-w-[168px] flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-all shadow-sm active:scale-[0.99]"
+                  className="w-full sm:w-auto sm:min-w-[168px] flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-all shadow-sm active:scale-[0.99]"
                 >
                   QA 생성으로 이동
                   <ArrowRight className="w-4 h-4" />
@@ -528,79 +531,6 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
           </div>
         )}
       </StepCard>
-    </div>
-  );
-}
-
-/* ── StepCard 공통 컴포넌트 ───────────────────────────────────── */
-type StepStatus = "pending" | "active" | "done";
-
-function StepCard({
-  step, title, subtitle, icon, status, isLast, children,
-}: {
-  step: number; title: string; subtitle: string;
-  icon: React.ReactNode; status: StepStatus; isLast: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex gap-0">
-      {/* 왼쪽: 스텝 번호 + 연결선 */}
-      <div className="flex flex-col items-center pt-6 mr-5">
-        {/* 스텝 원 */}
-        <div className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 transition-all",
-          status === "done"
-            ? "bg-indigo-600 border-indigo-600 text-white"
-            : status === "active"
-            ? "bg-white dark:bg-slate-800 border-indigo-500 text-indigo-600"
-            : "bg-white dark:bg-slate-800 border-slate-200 dark:border-white/15 text-slate-400 dark:text-slate-500"
-        )}>
-          {status === "done" ? <Check className="w-4 h-4" /> : step}
-        </div>
-        {/* 연결선 */}
-        {!isLast && (
-          <div className={cn(
-            "w-0.5 flex-1 mt-2 mb-0 min-h-[2rem]",
-            status === "done" ? "bg-indigo-200" : "bg-slate-100"
-          )} />
-        )}
-      </div>
-
-      {/* 오른쪽: 카드 */}
-      <div className={cn(
-        "flex-1 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden mb-4 transition-all",
-        status === "pending" ? "border-white/60 dark:border-white/5 opacity-60" : "border-white/60 dark:border-white/8"
-      )}>
-        {/* 헤더 */}
-        <div className={cn(
-          "px-6 py-4 border-b flex items-center gap-3",
-          status === "active"
-            ? "border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/5"
-            : "border-slate-100 dark:border-white/8 bg-slate-50/30 dark:bg-white/3"
-        )}>
-          <div className={cn(
-            "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
-            status === "done" ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400"
-            : status === "active" ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-500"
-            : "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
-          )}>
-            {icon}
-          </div>
-          <div>
-            <h3 className={cn(
-              "text-sm font-semibold",
-              status === "pending" ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"
-            )}>{title}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>
-          </div>
-          {status === "done" && (
-            <span className="ml-auto px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold rounded-full">완료</span>
-          )}
-        </div>
-
-        {/* 본문 */}
-        <div className="p-6">{children}</div>
-      </div>
     </div>
   );
 }

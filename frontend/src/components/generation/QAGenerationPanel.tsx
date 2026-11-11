@@ -15,6 +15,7 @@ import { generateQA, getGenStatus, getGenPreview, getEvalStatus, evaluateQA, get
 import type { HierarchyTree } from "@/src/types/hierarchy";
 import { GENERATION_MODELS, EVALUATOR_MODELS, DEFAULT_GENERATION_MODEL, DEFAULT_EVALUATOR_MODEL } from "@/src/lib/models";
 import { ModelSelect } from "./ModelSelect";
+import { StepCard, type StepStatus } from "@/src/components/common/StepCard";
 
 interface QaPreviewItem {
   context: string;
@@ -103,64 +104,7 @@ function CustomSelect({ value, onChange, options, disabled }: {
 }
 
 // ── 공통 버튼 사이즈 ──────────────────────────────────────────────────────────
-const btnBase = "min-w-[148px] flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all active:scale-[0.98] flex-shrink-0";
-
-// ── StepCard ─────────────────────────────────────────────────────────────────
-type StepStatus = "pending" | "active" | "done";
-
-function StepCard({
-  step, title, subtitle, icon, status, isLast, children,
-}: {
-  step: number; title: string; subtitle: string;
-  icon: ReactNode; status: StepStatus; isLast: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="relative flex gap-0" style={{ zIndex: 10 - step }}>
-      <div className="flex flex-col items-center pt-6 mr-5">
-        <div className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 transition-all",
-          status === "done"   ? "bg-indigo-600 border-indigo-600 text-white" :
-          status === "active" ? "bg-white dark:bg-slate-800 border-indigo-500 text-indigo-600" :
-                                "bg-white dark:bg-slate-800 border-slate-200 dark:border-white/15 text-slate-400 dark:text-slate-500"
-        )}>
-          {status === "done" ? <Check className="w-4 h-4" /> : step}
-        </div>
-        {!isLast && (
-          <div className={cn(
-            "w-0.5 flex-1 mt-2 min-h-[2rem]",
-            status === "done" ? "bg-indigo-200" : "bg-slate-100"
-          )} />
-        )}
-      </div>
-      <div className={cn(
-        "flex-1 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-visible mb-4 transition-all",
-        status === "pending" ? "border-white/60 dark:border-white/5 opacity-60" : "border-white/60 dark:border-white/8"
-      )}>
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/8 bg-slate-50/50 dark:bg-white/5 rounded-t-2xl flex items-center gap-3">
-          <div className={cn(
-            "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0",
-            status === "done"   ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" :
-            status === "active" ? "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-500" :
-                                  "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
-          )}>
-            {icon}
-          </div>
-          <div>
-            <h3 className={cn("text-sm font-semibold", status === "pending" ? "text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100")}>
-              {title}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>
-          </div>
-          {status === "done" && (
-            <span className="ml-auto px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold rounded-full">완료</span>
-          )}
-        </div>
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
-  );
-}
+const btnBase = "w-full sm:w-auto sm:min-w-[148px] flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all active:scale-[0.98] flex-shrink-0";
 
 // ── Select 공통 스타일 ────────────────────────────────────────────────────────
 const selectCls = (disabled: boolean) => cn(
@@ -252,6 +196,12 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
   const [evalReport, setEvalReport] = useState<any>(null);
 
   const [qaPreview, setQaPreview] = useState<QaPreviewItem[]>([]);
+  const [expandedPreview, setExpandedPreview] = useState<Set<number>>(new Set());
+  const togglePreview = (i: number) => setExpandedPreview(prev => {
+    const next = new Set(prev);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    return next;
+  });
   const [qaPreviewTotal, setQaPreviewTotal] = useState(0);
 
   const prevLayerStatuses = useRef<Record<string, string>>({});
@@ -418,6 +368,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     setResultFile(null);
     setResultId(null);
     setQaPreview([]);
+    setExpandedPreview(new Set());
     setQaPreviewTotal(0);
     try {
       // localStorage에서 document_id 조회
@@ -458,6 +409,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     setEvalReport(null);
     setProgress(0);
     setQaPreview([]);
+    setExpandedPreview(new Set());
     setQaPreviewTotal(0);
     setEvalLayers({
       syntax:  { status: "pending", progress: 0, message: "" },
@@ -599,8 +551,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5 min-w-0">
                   <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">H1 대분류</label>
                   <CustomSelect
                     value={selectedH1}
@@ -648,7 +600,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             )}
           </div>
 
-          <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-slate-100 dark:border-white/8 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3">
             {settingsConfirmed && (
               <button
                 onClick={() => setSettingsConfirmed(false)}
@@ -682,8 +634,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
       >
         {phase === "idle" ? (
           /* 대기 */
-          <div className="flex items-center gap-4">
-            <div className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <div className="flex-1 min-w-0 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
               <p className="text-xs text-slate-400">설정 완료 후 생성을 시작할 수 있습니다.</p>
             </div>
             <button onClick={handleStart} className={cn(btnBase, "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200")}>
@@ -702,9 +654,9 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             )}
 
             {/* 진행 상태 */}
-            <div className="flex items-center gap-4">
-              <div className="flex-1 space-y-2">
-                <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex justify-between gap-3 text-xs text-slate-500">
                   <span>
                     {phase === "generating"
                       ? (statusMessage ? renderWithBounceDots(statusMessage) : <span className="inline-flex items-baseline gap-[1px]">QA 생성 중&nbsp;<span className="inline-block animate-bounce" style={{ animationDelay: "0ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "150ms" }}>.</span><span className="inline-block animate-bounce" style={{ animationDelay: "300ms" }}>.</span></span>)
@@ -756,7 +708,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             {/* QA Preview 카드 */}
             {step2Status === "done" && qaPreview.length > 0 && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">QA 미리보기</p>
                   <span className="text-xs text-slate-400">
                     총 <span className="font-semibold text-indigo-600">{qaPreviewTotal}개</span> 생성 · 상위 {qaPreview.length}개 표시
@@ -764,7 +716,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                 </div>
                 <div className="space-y-2.5">
                   {qaPreview.map((item, i) => (
-                    <div key={i} className="rounded-xl border border-slate-100 dark:border-white/8 bg-slate-50/60 dark:bg-white/5 p-4 space-y-2.5">
+                    <div key={i} className="rounded-xl border border-slate-100 dark:border-white/8 bg-slate-50/60 dark:bg-white/5 p-3 sm:p-4 space-y-2.5">
                       {/* context */}
                       <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed line-clamp-2 font-mono">
                         {item.context}
@@ -773,12 +725,26 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                       {/* Q */}
                       <div className="flex items-start gap-2">
                         <span className="mt-0.5 text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-500/20 px-1.5 py-0.5 rounded flex-shrink-0">Q</span>
-                        <p className="text-sm text-slate-700 dark:text-slate-200 font-medium leading-snug">{item.q}</p>
+                        <p className="min-w-0 text-sm text-slate-700 dark:text-slate-200 font-medium leading-snug">{item.q}</p>
                       </div>
                       {/* A */}
                       <div className="flex items-start gap-2">
                         <span className="mt-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded flex-shrink-0">A</span>
-                        <p className="text-sm text-slate-600 dark:text-slate-300 leading-snug">{item.a}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className={cn(
+                            "text-sm text-slate-600 dark:text-slate-300 leading-snug",
+                            !expandedPreview.has(i) && "line-clamp-4 lg:line-clamp-none"
+                          )}>{item.a}</p>
+                          {item.a.length > 120 && (
+                            <button
+                              onClick={() => togglePreview(i)}
+                              aria-expanded={expandedPreview.has(i)}
+                              className="lg:hidden mt-1 min-h-8 text-xs font-semibold text-indigo-600 dark:text-indigo-400"
+                            >
+                              {expandedPreview.has(i) ? "접기" : "더보기"}
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {/* intent */}
                       {item.intent && (
@@ -829,8 +795,8 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
             {/* 수동 평가 시작 (autoEvaluate=false + 생성 완료) */}
             {phase === "complete" && !evalReport && resultFile && (
-              <div className="flex items-center gap-4">
-                <div className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
                   <p className="text-xs text-slate-400">QA 생성이 완료되었습니다. 평가를 시작하세요.</p>
                 </div>
                 <button
@@ -903,7 +869,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 평가 결과
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(() => {
                     const s = evalReport.summary;
                     const m = evalReport.metadata ?? {};
@@ -921,14 +887,14 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                     ];
                   })().map(({ label, value, ok }) => (
                     <div key={label} className={cn(
-                      "rounded-xl border flex flex-col items-center justify-center py-3 gap-1 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm",
+                      "min-w-0 rounded-xl border flex flex-col items-center justify-center px-2 py-3 gap-1 text-center cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm",
                       ok === 'highlight' ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 hover:border-indigo-300 dark:hover:bg-indigo-500/25 dark:hover:border-indigo-400/50 hover:shadow-indigo-100 dark:hover:shadow-indigo-500/10" :
                       ok === true        ? "bg-white dark:bg-white/5 border-emerald-200 dark:border-emerald-500/30 hover:bg-emerald-50 hover:border-emerald-300 dark:hover:bg-emerald-500/15 dark:hover:border-emerald-400/50 hover:shadow-emerald-100 dark:hover:shadow-emerald-500/10" :
                       ok === false       ? "bg-white dark:bg-white/5 border-amber-200 dark:border-amber-500/30 hover:bg-amber-50 hover:border-amber-300 dark:hover:bg-amber-500/15 dark:hover:border-amber-400/50 hover:shadow-amber-100 dark:hover:shadow-amber-500/10" :
                                           "bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-50 hover:border-slate-300 dark:hover:bg-white/10 dark:hover:border-white/20 hover:shadow-slate-100 dark:hover:shadow-white/5"
                     )}>
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">{label}</p>
-                      <p className={cn("text-sm font-bold",
+                      <p className={cn("text-sm font-bold break-words max-w-full",
                         ok === 'highlight' ? "text-indigo-700 dark:text-indigo-400" :
                         ok === true        ? "text-emerald-700 dark:text-emerald-400" :
                         ok === false       ? "text-amber-600 dark:text-amber-400"  : "text-slate-700 dark:text-slate-200"

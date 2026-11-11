@@ -1,4 +1,4 @@
-import { Sun, Moon, Bell, CheckCircle2, XCircle, Info } from "lucide-react";
+import { Sun, Moon, Bell, CheckCircle2, XCircle, Info, Settings } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 import React from "react";
@@ -18,6 +18,7 @@ interface HeaderProps {
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
   onProfileClick: () => void;
+  settingsActive?: boolean;
   notifications: Notification[];
   onClearAll: () => void;
   onMarkAllRead: () => void;
@@ -39,7 +40,7 @@ const typeConfig = {
   info:    { icon: Info,           color: 'text-indigo-500 dark:text-indigo-400'   },
 };
 
-export function Header({ title, icon: Icon, theme, setTheme, notifications, onClearAll, onMarkAllRead }: HeaderProps) {
+export function Header({ title, icon: Icon, theme, setTheme, onProfileClick, settingsActive, notifications, onClearAll, onMarkAllRead }: HeaderProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const unread = notifications.filter(n => !n.read).length;
@@ -68,23 +69,26 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
   }
 
   return (
-    <header className="mx-3 mt-3 mb-1 sticky top-3 z-40">
-      <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between px-5 py-2">
-        <div className="flex items-center gap-2">
+    <header className="mx-3 mt-[max(0.75rem,env(safe-area-inset-top,0px))] mb-1 sticky top-3 z-40">
+      <div className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-xl rounded-full border border-white/60 dark:border-white/8 shadow-[0_8px_40px_-12px_rgba(99,102,241,0.12)] dark:shadow-[0_8px_30px_-8px_rgba(0,0,0,0.5)] flex items-center justify-between gap-2 pl-4 pr-1.5 py-1 lg:px-5 lg:py-2">
+        <div className="flex items-center gap-2 min-w-0">
           {Icon && <Icon className="w-5 h-5 text-indigo-500/70 dark:text-indigo-400/80 shrink-0" />}
-          <h1 className="text-lg font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500 dark:from-indigo-400 dark:to-purple-400">
+          <h1 className="truncate text-lg font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500 dark:from-indigo-400 dark:to-purple-400">
             {title}
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 lg:gap-2 shrink-0">
 
-          {/* Notification Bell */}
-          <div className="relative" ref={ref}>
+          {/* Notification Bell — below lg the panel anchors to the full header width */}
+          <div className="lg:relative" ref={ref}>
             <button
               onClick={handleBellClick}
-              className="relative p-2.5 text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
+              className="relative w-11 h-11 text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
               title="Notifications"
+              aria-label="Notifications"
+              aria-expanded={open}
+              aria-haspopup="dialog"
             >
               <Bell className="w-5 h-5" />
               {unread > 0 && (
@@ -93,7 +97,7 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
             </button>
 
             {open && (
-              <div className="absolute right-0 top-full mt-2 w-80 z-[9999] bg-white dark:bg-slate-800 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl shadow-slate-300/50 dark:shadow-black/80 overflow-hidden">
+              <div role="dialog" aria-label="Notifications" className="absolute left-0 right-0 lg:left-auto lg:w-80 top-full mt-2 z-[9999] bg-white dark:bg-slate-800 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl shadow-slate-300/50 dark:shadow-black/80 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/8">
                   <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notifications</span>
                   {notifications.length > 0 && (
@@ -160,6 +164,17 @@ export function Header({ title, icon: Icon, theme, setTheme, notifications, onCl
               </div>
             )}
           </div>
+
+          {/* Settings lives in the desktop Sidebar; the mobile tab bar has no slot for it */}
+          <button
+            onClick={onProfileClick}
+            className={`lg:hidden w-11 h-11 rounded-full flex items-center justify-center transition-colors ${settingsActive ? "text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-500/20" : "text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10"}`}
+            aria-label="Settings"
+            aria-current={settingsActive ? "page" : undefined}
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
 
         </div>
       </div>

@@ -5,6 +5,8 @@ const backendUrl = (process.env.BACKEND_API_URL || 'http://127.0.0.1:8000').repl
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // The dev badge sits bottom-left and covers the mobile tab bar.
+  devIndicators: false,
   experimental: {
     // Preserve the previous nginx limits for document upload and sync tagging.
     proxyTimeout: 300_000,

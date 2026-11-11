@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type { HierarchyTree } from "./types/hierarchy";
 import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "lucide-react";
 import { Sidebar } from "./components/layout/Sidebar";
+import { MobileTabBar } from "./components/layout/MobileTabBar";
 import { Header, type Notification } from "./components/layout/Header";
 import { DashboardOverview } from "./components/dashboard/DashboardOverview";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -63,11 +64,11 @@ function App() {
   const darkBg  = "linear-gradient(135deg, #0f1117 0%, #13152b 40%, #0e1a2e 70%, #0f1117 100%)";
 
   return (
-    <div className="flex h-screen relative overflow-hidden"
+    <div className="flex h-dvh relative overflow-hidden"
       style={{ background: theme === 'dark' ? darkBg : lightBg }}
     >
       {/* Gradient blobs */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         {theme === 'dark' ? (<>
           <div className="absolute -top-32 right-0 w-[600px] h-[600px] bg-indigo-900/30 rounded-full blur-3xl" />
           <div className="absolute bottom-0 -left-24 w-[500px] h-[500px] bg-blue-900/20 rounded-full blur-3xl" />
@@ -81,19 +82,20 @@ function App() {
 
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Header
             title={headerTitle}
             icon={HeaderIcon}
             theme={theme}
             setTheme={setTheme}
             onProfileClick={() => setActiveTab("settings")}
+            settingsActive={activeTab === "settings"}
             notifications={notifications}
             onClearAll={() => setNotifications([])}
             onMarkAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
           />
 
-        <main className={`flex-1 ${activeTab === "settings" ? "overflow-hidden px-4" : "overflow-y-scroll px-4 pb-4 pt-6"}`}>
+        <main className={`flex-1 min-w-0 ${activeTab === "settings" ? "overflow-hidden px-3 lg:px-4" : "overflow-y-auto lg:overflow-y-scroll overflow-x-hidden px-3 pb-4 pt-4 lg:px-4 lg:pt-6"}`}>
           <ErrorBoundary>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
@@ -149,6 +151,8 @@ function App() {
           </div>
           </ErrorBoundary>
         </main>
+
+        <MobileTabBar activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
     </div>
   );

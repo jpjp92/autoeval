@@ -1,9 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import '../index.css';
 
 export const metadata: Metadata = {
   title: 'Agen Q',
   description: '문서 기반 QA 생성 및 평가',
+};
+
+// viewport-fit=cover makes env(safe-area-inset-*) report real values on iOS.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
