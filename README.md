@@ -514,7 +514,7 @@ docker compose up -d --build
 
 | 경로 | 내용 |
 | --- | --- |
-| `docs/History/` | 날짜별 개발일지(`DEV_*.md`). 작성 당시의 변경·실험 기록이며 최신은 [DEV_261109.md](docs/History/DEV_261109.md) |
+| `docs/History/` | 날짜별 개발일지(`DEV_*.md`). 작성 당시의 변경·실험 기록이며 최신은 [DEV_261112.md](docs/History/DEV_261112.md) |
 | `docs/Plan/` | 미구현 설계(`PLAN_*.md`). 각 문서 상단의 현재 상태를 확인 |
 | `docs/Samples/` | 생성·평가 결과 샘플 JSON |
 
