@@ -64,6 +64,8 @@ test.describe('mobile Settings toggle (375px)', () => {
     await open(page);
     const main = page.locator('main');
     await tabbar(page).getByRole('button', { name: 'Dashboard', exact: true }).click();
+    // Wait for the dashboard data so its height is final before measuring.
+    await page.locator('[data-role="job-list"], [data-role="bench-header"]').first().waitFor({ timeout: 20_000 }).catch(() => {});
     const max = await main.evaluate(el => el.scrollHeight - el.clientHeight);
     test.skip(max < 100, 'Dashboard is too short to scroll');
     await main.evaluate(el => { el.scrollTop = 100; });

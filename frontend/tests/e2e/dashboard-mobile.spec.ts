@@ -104,6 +104,21 @@ for (const width of [360, 375, 390, 430]) {
       });
     }
 
+    test('content at the end of the scroll is not covered by the tab bar', async ({ page }) => {
+      await openDashboard(page);
+      const main = page.locator('main');
+      await main.evaluate(el => { el.scrollTop = el.scrollHeight; });
+      const tabTop = await page.getByRole('navigation', { name: 'Main navigation' })
+        .evaluate(el => el.getBoundingClientRect().top);
+      // Last visible block inside the active tab.
+      const lastBottom = await main.evaluate(el => {
+        const panel = Array.from(el.querySelectorAll(':scope > * > div')).find(d => !d.classList.contains('hidden'));
+        const blocks = panel ? Array.from(panel.querySelectorAll('*')) : [];
+        return Math.max(...blocks.map(b => b.getBoundingClientRect()).filter(r => r.height > 0).map(r => r.bottom));
+      });
+      expect(lastBottom).toBeLessThanOrEqual(tabTop + 0.5);
+    });
+
     test('detail shows full IDs without opening the evaluation', async ({ page }) => {
       await openDashboard(page);
       const first = page.locator('[data-role="job-list"] > li').first();
