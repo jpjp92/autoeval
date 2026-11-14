@@ -254,9 +254,9 @@ export function DashboardOverview({
                                 onClick={() => hasEval && onEvalSelect!(job.eval_id!)}
                                 className={cn("flex-1 min-w-0 text-left pl-4 pr-1 py-3 space-y-1.5", hasEval ? "active:bg-indigo-50 dark:active:bg-white/10" : "cursor-default")}
                               >
-                                <span data-part="row1" className="flex items-center gap-2 min-w-0">
+                                {/* Grade lives in the ⓘ detail and the Evaluation tab; the list stays doc/model/time. */}
+                                <span data-part="row1" className="flex items-center min-w-0">
                                   <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-slate-700 dark:text-slate-200">{job.source_doc || "—"}</span>
-                                  <GradeBadge grade={job.eval_id ? job.eval_grade : null} />
                                 </span>
                                 <span data-part="row2" className="flex items-center gap-2 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
                                   <span className={cn("min-w-0 truncate font-medium px-1.5 py-0.5 rounded border", modelColors(job.model).chip)}>{modelLabel(job.model)}</span>
@@ -279,6 +279,8 @@ export function DashboardOverview({
                                 <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.job_id}</dd>
                                 <dt className="text-slate-400">모델 ID</dt>
                                 <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.model || "—"}</dd>
+                                <dt className="text-slate-400 self-center">평가 등급</dt>
+                                <dd data-part="detail-grade"><GradeBadge grade={job.eval_id ? job.eval_grade : null} /></dd>
                                 <dt className="text-slate-400">문서</dt>
                                 <dd className="text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.source_doc || "—"}</dd>
                               </dl>
@@ -523,7 +525,7 @@ export function DashboardOverview({
                     )}
 
                     {/* Rank + name on one row; Best and run count on a meta row (stacked on mobile). */}
-                    <div data-role="bench-header" className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 lg:mb-3">
+                    <div data-role="bench-header" className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-2 lg:mb-3">
                       <div className="flex items-center gap-3 min-w-0 basis-full sm:basis-0 sm:flex-1">
                         <div data-part="bench-rank" className={cn(
                           'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0',
