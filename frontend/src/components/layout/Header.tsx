@@ -1,4 +1,4 @@
-import { Sun, Moon, Bell, CheckCircle2, XCircle, Info, Settings } from "lucide-react";
+import { Sun, Moon, Bell, CheckCircle2, XCircle, Info, Settings, ArrowLeft } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 import React from "react";
@@ -165,15 +165,14 @@ export function Header({ title, icon: Icon, theme, setTheme, onProfileClick, set
             )}
           </div>
 
-          {/* Settings lives in the desktop Sidebar; the mobile tab bar has no slot for it */}
+          {/* Settings lives in the desktop Sidebar; on mobile this button toggles it */}
           <button
             onClick={onProfileClick}
             className={`lg:hidden w-11 h-11 rounded-full flex items-center justify-center transition-colors ${settingsActive ? "text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-500/20" : "text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/10"}`}
-            aria-label="Settings"
-            aria-current={settingsActive ? "page" : undefined}
-            title="Settings"
+            aria-label={settingsActive ? "이전 화면으로 돌아가기" : "설정 열기"}
+            title={settingsActive ? "이전 화면으로 돌아가기" : "설정 열기"}
           >
-            <Settings className="w-5 h-5" />
+            {settingsActive ? <ArrowLeft className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
           </button>
 
         </div>

@@ -182,7 +182,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
     model: DEFAULT_GENERATION_MODEL, lang: "ko", samples: 2,
     promptVersion: "v1", autoEvaluate: true, evaluatorModel: DEFAULT_EVALUATOR_MODEL,
   });
-  const [sampleInputValue, setSampleInputValue] = useState("");
+  const [sampleInputValue, setSampleInputValue] = useState(String(formValues.samples));
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [phase, setPhase] = useState<"idle" | "generating" | "evaluating" | "complete">("idle");

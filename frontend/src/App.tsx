@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import type { HierarchyTree } from "./types/hierarchy";
 import { LayoutDashboard, Database, FilePlus, Target, Settings, Zap } from "lucide-react";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -25,6 +25,51 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [themeReady, setThemeReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Settings is a secondary screen: remember the last main tab so the header
+  // button can toggle back to it. Never "settings" itself.
+  const [lastMainTab, setLastMainTab] = useState("overview");
+  const activeTabRef = useRef(activeTab);
+  const lastMainTabRef = useRef(lastMainTab);
+  const pendingTabRef = useRef<string | null>(null); // target while history.back() is in flight
+  const mainRef = useRef<HTMLElement>(null);
+  const scrollPos = useRef<Record<string, number>>({});
+
+  const applyTab = useCallback((tab: string) => {
+    if (mainRef.current) scrollPos.current[activeTabRef.current] = mainRef.current.scrollTop;
+    activeTabRef.current = tab;
+    if (tab !== "settings") { lastMainTabRef.current = tab; setLastMainTab(tab); }
+    setActiveTab(tab);
+  }, []);
+
+  const navigate = useCallback((tab: string) => {
+    const current = activeTabRef.current;
+    if (tab === current) return;
+    if (tab === "settings") {
+      // One history entry for Settings, so browser Back closes it.
+      window.history.pushState({ agenqSettings: true }, "");
+    } else if (current === "settings" && window.history.state?.agenqSettings) {
+      pendingTabRef.current = tab;
+      window.history.back(); // popstate applies the tab
+      return;
+    }
+    applyTab(tab);
+  }, [applyTab]);
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      if (e.state?.agenqSettings) { applyTab("settings"); return; }
+      const target = pendingTabRef.current ?? lastMainTabRef.current;
+      pendingTabRef.current = null;
+      if (activeTabRef.current === "settings") applyTab(target);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [applyTab]);
+
+  useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = scrollPos.current[activeTab] ?? 0;
+  }, [activeTab]);
 
   function addNotification(n: Omit<Notification, 'id' | 'time' | 'read'>) {
     setNotifications(prev => [
@@ -80,7 +125,7 @@ function App() {
         </>)}
       </div>
 
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={navigate} />
 
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <Header
@@ -88,28 +133,28 @@ function App() {
             icon={HeaderIcon}
             theme={theme}
             setTheme={setTheme}
-            onProfileClick={() => setActiveTab("settings")}
+            onProfileClick={() => navigate(activeTab === "settings" ? lastMainTab : "settings")}
             settingsActive={activeTab === "settings"}
             notifications={notifications}
             onClearAll={() => setNotifications([])}
             onMarkAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
           />
 
-        <main className={`flex-1 min-w-0 ${activeTab === "settings" ? "overflow-hidden px-3 lg:px-4" : "overflow-y-auto lg:overflow-y-scroll overflow-x-hidden px-3 pb-4 pt-4 lg:px-4 lg:pt-6"}`}>
+        <main ref={mainRef} className={`flex-1 min-w-0 ${activeTab === "settings" ? "overflow-hidden px-3 lg:px-4" : "overflow-y-auto lg:overflow-y-scroll overflow-x-hidden px-3 pb-4 pt-4 lg:px-4 lg:pt-6"}`}>
           <ErrorBoundary>
           {/* 컴포넌트 항상 마운트 유지 — hidden으로 세션 상태 보존 */}
           <div className={activeTab === "overview" ? "max-w-7xl mx-auto" : "hidden"}>
             <DashboardOverview
-              setActiveTab={setActiveTab}
+              setActiveTab={navigate}
               isActive={activeTab === "overview"}
-              onEvalSelect={(evalId) => { setLastEvalDbId(evalId); setActiveTab("evaluation"); }}
-              onPipelineClick={() => { setSettingsSection("pipeline"); setActiveTab("settings"); }}
+              onEvalSelect={(evalId) => { setLastEvalDbId(evalId); navigate("evaluation"); }}
+              onPipelineClick={() => { setSettingsSection("pipeline"); navigate("settings"); }}
             />
           </div>
 
           <div className={activeTab === "standardization" ? "max-w-7xl mx-auto" : "hidden"}>
             <DataStandardizationPanel
-              setActiveTab={setActiveTab}
+              setActiveTab={navigate}
               onUploadComplete={(filename) => {
                 setCurrentFilename(filename);
                 addNotification({ title: '문서 분석 완료', sub: filename, type: 'success' });
@@ -134,7 +179,7 @@ function App() {
                 setLastEvalJobId(evalJobId);
                 addNotification({ title: '평가 완료', type: 'success' });
               }}
-              onGoToEvaluation={() => setActiveTab("evaluation")}
+              onGoToEvaluation={() => navigate("evaluation")}
             />
           </div>
 
@@ -142,7 +187,7 @@ function App() {
             <QAEvaluationDashboard 
               evalJobId={lastEvalJobId} 
               initialEvalDbId={lastEvalDbId} 
-              setActiveTab={setActiveTab}
+              setActiveTab={navigate}
             />
           </div>
 
@@ -152,7 +197,7 @@ function App() {
           </ErrorBoundary>
         </main>
 
-        <MobileTabBar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <MobileTabBar activeTab={activeTab} setActiveTab={navigate} />
       </div>
     </div>
   );
