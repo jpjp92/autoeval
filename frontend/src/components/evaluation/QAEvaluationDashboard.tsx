@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight, Bot,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import { modelLabel } from '@/src/lib/models';
 import { useState, useRef } from 'react';
 import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/exportUtils';
 import { getEvalExport, getEvalExportById } from '@/src/lib/api';
@@ -255,14 +256,14 @@ export function QAEvaluationDashboard({
           <div className="flex flex-col gap-1.5">
             {/* 1행: Model · Dataset · 평가 일시 */}
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-slate-600 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
+              <div className="flex items-center gap-1.5 px-2.5 lg:px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-slate-600 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
                 <Bot className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{getGenerationModel()}</span></span>
+                <span title={getGenerationModel()}>Model: <span className="font-semibold text-slate-800 dark:text-slate-200">{modelLabel(getGenerationModel())}</span></span>
               </div>
               {(activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc) && (
                 <div
                   title={activeReport?.metadata.source_doc || activeItem?.metadata?.source_doc}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-[280px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-500/40 cursor-default"
+                  className="flex items-center gap-1.5 px-2.5 lg:px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-emerald-600 dark:text-emerald-500 shadow-sm overflow-hidden max-w-full lg:max-w-[280px] min-w-0 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-500/40 cursor-default"
                 >
                   <FileText className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">
@@ -270,7 +271,7 @@ export function QAEvaluationDashboard({
                   </span>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
+              <div className="flex items-center gap-1.5 px-2.5 lg:px-3 py-1 bg-white/60 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-full backdrop-blur-sm text-[11px] lg:text-[12px] font-medium text-slate-500 dark:text-slate-400 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 dark:hover:border-white/20 cursor-default">
                 <Clock className="w-3.5 h-3.5" />
                 <span>평가 일시: {formatKST(activeReport?.timestamp ?? activeItem?.created_at ?? '')}</span>
               </div>

@@ -258,7 +258,7 @@ export function DashboardOverview({
                                   <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-slate-700 dark:text-slate-200">{job.source_doc || "—"}</span>
                                   <GradeBadge grade={job.eval_id ? job.eval_grade : null} />
                                 </span>
-                                <span data-part="row2" className="flex items-center gap-2 min-w-0 text-[11px] text-slate-400 dark:text-slate-500">
+                                <span data-part="row2" className="flex items-center gap-2 min-w-0 text-[11px] text-slate-500 dark:text-slate-400">
                                   <span className={cn("min-w-0 truncate font-medium px-1.5 py-0.5 rounded border", modelColors(job.model).chip)}>{modelLabel(job.model)}</span>
                                   <span className="shrink-0 whitespace-nowrap">{job.total_qa} QA · {formatRelativeTime(job.created_at)}</span>
                                 </span>
@@ -378,7 +378,7 @@ export function DashboardOverview({
                 </div>
                 {totalPages > 1 && (
                   <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/3 flex items-center justify-between">
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
                       {jobPage * JOBS_PAGE_SIZE + 1}–{Math.min((jobPage + 1) * JOBS_PAGE_SIZE, rawJobs.length)} / {rawJobs.length}건
                     </span>
                     <div className="flex items-center gap-1">
@@ -500,7 +500,7 @@ export function DashboardOverview({
               <p className="text-xs">QA 생성 및 평가를 실행하면 모델별 성능이 표시됩니다</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2 lg:space-y-3">
               {data.model_benchmarks.map((bench, idx) => {
                 const isTop = idx === 0;
                 const scorePct = Math.min(bench.avg_score * 100, 100);
@@ -523,7 +523,7 @@ export function DashboardOverview({
                     )}
 
                     {/* Rank + name on one row; Best and run count on a meta row (stacked on mobile). */}
-                    <div data-role="bench-header" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-3">
+                    <div data-role="bench-header" className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 lg:mb-3">
                       <div className="flex items-center gap-3 min-w-0 basis-full sm:basis-0 sm:flex-1">
                         <div data-part="bench-rank" className={cn(
                           'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0',
@@ -545,7 +545,7 @@ export function DashboardOverview({
                             <Zap className="w-2.5 h-2.5" /> Best
                           </span>
                         )}
-                        <span className="text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{bench.run_count}회 테스트</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{bench.run_count}회 테스트</span>
                       </div>
                     </div>
 
@@ -572,7 +572,7 @@ export function DashboardOverview({
                       </div>
                       {/* QA 통과 수량 */}
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400 dark:text-slate-500">통과 QA</span>
+                        <span className="text-slate-500 dark:text-slate-400">통과 QA</span>
                         <span className="font-mono font-medium text-slate-600 dark:text-slate-300">
                           {bench.valid_qa.toLocaleString()}
                           <span className="text-slate-400 dark:text-slate-500 mx-1">/</span>
