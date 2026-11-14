@@ -199,8 +199,12 @@ autoeval/
 │ ├── Dockerfile # Next.js standalone Node 서버 (프로덕션)
 │ ├── Dockerfile.dev # Node 22-alpine Next.js 개발 서버
 │ ├── next.config.ts # API rewrites + standalone 출력
+│ ├── playwright.config.ts # E2E 설정 (실행 중인 앱 대상, 기본 http://localhost:3000)
+│ ├── tests/
+│ │ ├── proxy-limits.test.mjs # API 프록시 한도 회귀 테스트 (npm run test:proxy)
+│ │ └── e2e/ # Playwright 모바일·데스크톱 레이아웃 검사 (npm run test:e2e)
 │ └── src/
-│ ├── App.tsx # 탭 라우팅 + 알림 + 테마 (light/dark)
+│ ├── App.tsx # 탭 라우팅(navigate) + Settings 토글·뒤로 가기 + 탭별 스크롤 + 알림 + 테마
 │ ├── types/
 │ │ ├── evaluation.ts # QAStatus, QAPreviewItem, EvalReport, HistoryItem 등
 │ │ └── hierarchy.ts # HierarchyTree 공통 타입 (h1_list/h2_by_h1/h3_by_h1_h2)
@@ -208,6 +212,7 @@ autoeval/
 │ │ ├── api.ts # API 클라이언트 — apiFetch<T extends ApiResponse> flat JSON 직접 반환
 │ │ ├── evalChartUtils.ts # 차트 데이터 빌더 + formatKST + SummaryStat/TooltipItem 타입
 │ │ ├── evalScoreUtils.ts # 점수 임계값 + getQAStatus
+│ │ ├── models.ts # 모델 선택 목록 + modelLabel() 표시명
 │ │ ├── utils.ts # cn (clsx + tailwind-merge)
 │ │ └── exportUtils/ # 내보내기 유틸 (4파일 분리)
 │ │ ├── types.ts # EvaluationData 인터페이스
@@ -217,8 +222,11 @@ autoeval/
 │ └── components/
 │ ├── ErrorBoundary.tsx # 앱 루트 래핑 — TypeError 시 화면 소멸 방지
 │ ├── layout/
-│ │ ├── Sidebar.tsx # 글래스 사이드바 (bg-slate-900/95 backdrop-blur-xl)
-│ │ └── Header.tsx # 글래스 헤더 + 테마 토글 + 알림 드롭다운
+│ │ ├── Sidebar.tsx # 데스크톱(lg 이상) 글래스 사이드바
+│ │ ├── MobileTabBar.tsx # 모바일(lg 미만) 하단 탭바 4개
+│ │ └── Header.tsx # 글래스 헤더 + 테마 토글 + 알림 + 모바일 Settings 토글
+│ ├── common/
+│ │ └── StepCard.tsx # Documents·QA Pipeline 공용 단계 카드
 │ ├── dashboard/
 │ │ ├── DashboardOverview.tsx # 실시간 대시보드 (Supabase 집계 데이터)
 │ │ ├── StatsCards.tsx # 통계 카드 (accent border + glass)
@@ -255,6 +263,8 @@ autoeval/
 | 영역            | 기술                                                                                                        |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
 | **Frontend**    | React 19, TypeScript, Tailwind CSS, Next.js App Router, Lucide icons, React Flow, Recharts                                |
+| **반응형**      | `lg`(1024px) 미만은 하단 탭바와 모바일 카드 레이아웃, 이상은 Sidebar와 기존 데스크톱 레이아웃                  |
+| **E2E**         | Playwright 1.64 — 360~430px·1024/1440px 레이아웃 겹침, Settings 토글, Dashboard 로그 검사                     |
 | **UI Style**    | Glassmorphism (light/dark) — Gradient blob 배경(indigo/blue/purple), backdrop-blur-xl, frosted glass border |
 | **Backend**     | FastAPI (Python 3.12+), Uvicorn                                                                             |
 | **Database**    | Supabase (PostgreSQL 17 + pgvector), service_role key                                                       |
@@ -491,7 +501,7 @@ docker compose up -d --build
 
 ## 문서 안내
 
-현재 구성 기준: 2026-11-09. 현재 동작은 `docs/Guide`를 우선한다.
+현재 구성 기준: 2026-11-14. 현재 동작은 `docs/Guide`를 우선한다.
 
 ### Guide — 현재 기준 가이드
 
@@ -520,4 +530,4 @@ docker compose up -d --build
 
 ---
 
-**Last Updated**: 2026-04-14 | **Branch**: main
+**Last Updated**: 2026-11-14 | **Branch**: main
