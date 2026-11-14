@@ -3,12 +3,41 @@ import { StatsGrid } from "./StatsCards";
 // import { ActivityChart } from "./ActivityChart"; // Phase 8.2: 리더보드로 대체 (필요 시 복구)
 import { getDashboardMetrics } from "@/src/lib/api";
 import type { DashboardMetricsResponse } from "@/src/lib/api";
-import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trophy, Zap, ScrollText, Rocket } from "lucide-react";
+import { Play, FileText, ArrowRight, Database, BarChart3, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Trophy, Zap, ScrollText, Rocket, Info, ArrowUpDown } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { modelLabel } from "@/src/lib/models";
 
 type SortColumn = 'job_id' | 'source_doc' | 'model' | 'total_qa' | 'eval_grade' | 'created_at';
 
 const JOBS_PAGE_SIZE = 5;
+
+// Brand colors for a model ID (chip text/border + score bar).
+function modelColors(model: string | null | undefined) {
+  const m = (model || "").toLowerCase();
+  if (m.includes('gpt') || m.includes('openai'))
+    return { chip: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20', bar: 'bg-emerald-500' };
+  if (m.includes('claude') || m.includes('anthropic'))
+    return { chip: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20', bar: 'bg-orange-500' };
+  if (m.includes('gemini') || m.includes('google'))
+    return { chip: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20', bar: 'bg-blue-500' };
+  return { chip: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-white/10', bar: 'bg-slate-400' };
+}
+
+function GradeBadge({ grade }: { grade: string | null | undefined }) {
+  if (!grade) return <span className="shrink-0 text-[11px] lg:text-[12px] text-slate-400">대기</span>;
+  return (
+    <span className={cn(
+      "shrink-0 inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border shadow-sm",
+      GRADE_COLORS[grade] || "bg-slate-100 text-slate-600 border-slate-200"
+    )}>
+      <span className={cn("text-[11px] lg:text-[12px] leading-none tracking-tight", grade.includes('+') && "translate-x-px")}>{grade}</span>
+    </span>
+  );
+}
+
+const SORT_LABELS: Record<SortColumn, string> = {
+  created_at: '시간', source_doc: '문서', model: '모델', total_qa: 'QA 수', eval_grade: '평가', job_id: '작업 ID',
+};
 
 interface DashboardData {
   summary: {
@@ -87,6 +116,7 @@ export function DashboardOverview({
   
   const [sortField, setSortField] = useState<SortColumn>('created_at');
   const [sortDesc, setSortDesc] = useState(true);
+  const [openJobDetail, setOpenJobDetail] = useState<string | null>(null);
 
   const handleSort = (field: SortColumn) => {
     if (sortField === field) setSortDesc(!sortDesc);
@@ -124,7 +154,7 @@ export function DashboardOverview({
         style={{ animationDelay: '300ms', animationFillMode: 'both' }}
       >
         <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 dark:border-white/8 flex items-center justify-between">
+          <div className="p-4 lg:p-6 border-b border-slate-100 dark:border-white/8 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <ScrollText className="w-5 h-5 text-slate-400 dark:text-slate-500" />
               <div>
@@ -176,7 +206,91 @@ export function DashboardOverview({
 
             return (
               <>
-                <div className="overflow-x-auto min-h-[300px]">
+                {/* Mobile (< lg): two-line log cards. Same sorted/paged data as the table. */}
+                <div className="lg:hidden min-h-[300px]">
+                  <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 text-xs text-slate-500 dark:text-slate-400">
+                    <label htmlFor="job-sort" className="shrink-0">정렬</label>
+                    <select
+                      id="job-sort"
+                      value={sortField}
+                      onChange={e => { setSortField(e.target.value as SortColumn); setJobPage(0); }}
+                      className="min-w-0 bg-transparent border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-slate-700 dark:text-slate-200"
+                    >
+                      {(Object.keys(SORT_LABELS) as SortColumn[]).map(f => (
+                        <option key={f} value={f}>{SORT_LABELS[f]}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setSortDesc(d => !d); setJobPage(0); }}
+                      aria-label={sortDesc ? '내림차순' : '오름차순'}
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" /> {sortDesc ? '내림차순' : '오름차순'}
+                    </button>
+                  </div>
+                  {loading ? (
+                    <ul className="divide-y divide-slate-100 dark:divide-white/5">
+                      {Array.from({ length: JOBS_PAGE_SIZE }).map((_, i) => (
+                        <li key={i} className="px-4 py-3 space-y-2">
+                          <div className="h-4 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-2/3" />
+                          <div className="h-3 bg-slate-100 dark:bg-white/10 rounded animate-pulse w-1/2" />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : !rawJobs.length ? (
+                    <p className="px-4 py-10 text-center text-slate-400 text-sm">아직 실행 기록이 없습니다</p>
+                  ) : (
+                    <ul data-role="job-list" className="divide-y divide-slate-100 dark:divide-white/5">
+                      {pagedJobs.map(job => {
+                        const hasEval = !!job.eval_id && !!onEvalSelect;
+                        const detailOpen = openJobDetail === job.job_id;
+                        return (
+                          <li key={job.job_id} className="relative">
+                            <div className="flex items-stretch">
+                              <button
+                                type="button"
+                                disabled={!hasEval}
+                                onClick={() => hasEval && onEvalSelect!(job.eval_id!)}
+                                className={cn("flex-1 min-w-0 text-left pl-4 pr-1 py-3 space-y-1.5", hasEval ? "active:bg-indigo-50 dark:active:bg-white/10" : "cursor-default")}
+                              >
+                                <span data-part="row1" className="flex items-center gap-2 min-w-0">
+                                  <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-slate-700 dark:text-slate-200">{job.source_doc || "—"}</span>
+                                  <GradeBadge grade={job.eval_id ? job.eval_grade : null} />
+                                </span>
+                                <span data-part="row2" className="flex items-center gap-2 min-w-0 text-[11px] text-slate-400 dark:text-slate-500">
+                                  <span className={cn("min-w-0 truncate font-medium px-1.5 py-0.5 rounded border", modelColors(job.model).chip)}>{modelLabel(job.model)}</span>
+                                  <span className="shrink-0 whitespace-nowrap">{job.total_qa} QA · {formatRelativeTime(job.created_at)}</span>
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setOpenJobDetail(detailOpen ? null : job.job_id); }}
+                                aria-expanded={detailOpen}
+                                aria-label="작업 상세 정보"
+                                className="shrink-0 w-11 flex items-center justify-center text-slate-400"
+                              >
+                                <Info className={cn("w-4 h-4", detailOpen && "text-indigo-500")} />
+                              </button>
+                            </div>
+                            {detailOpen && (
+                              <dl data-role="job-detail" className="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg bg-slate-50 dark:bg-white/5 px-3 py-2 text-[11px]">
+                                <dt className="text-slate-400">작업 ID</dt>
+                                <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.job_id}</dd>
+                                <dt className="text-slate-400">모델 ID</dt>
+                                <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.model || "—"}</dd>
+                                <dt className="text-slate-400">문서</dt>
+                                <dd className="text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.source_doc || "—"}</dd>
+                              </dl>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="hidden lg:block overflow-x-auto min-h-[300px]">
                   <table className="w-full text-left text-sm table-fixed">
                     <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 select-none">
                       <tr>
@@ -221,16 +335,7 @@ export function DashboardOverview({
                         pagedJobs.map((job) => {
                           const hasEval = !!job.eval_id;
                           
-                          // 칩 테마 다이나믹 할당
-                          const m = (job.model || "").toLowerCase();
-                          let modelColor = 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/20';
-                          if (m.includes('gpt') || m.includes('openai')) {
-                            modelColor = 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
-                          } else if (m.includes('claude') || m.includes('anthropic')) {
-                            modelColor = 'bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20';
-                          } else if (m.includes('gemini') || m.includes('google')) {
-                            modelColor = 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20';
-                          }
+                          const modelColor = modelColors(job.model).chip;
 
                           return (
                             <tr
@@ -250,27 +355,16 @@ export function DashboardOverview({
                               <td className="px-4 py-3 text-slate-700 dark:text-slate-200 text-[12px] lg:text-[13px] font-medium truncate" title={job.source_doc}>
                                 {job.source_doc || "—"}
                               </td>
-                              <td className="px-4 py-3" title={job.model || "—"}>
-                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border max-w-[140px] truncate inline-block", modelColor)}>
-                                  {job.model || "—"}
+                              <td className="px-4 py-3 min-w-0" title={job.model || "—"}>
+                                <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded border max-w-full truncate inline-block align-middle", modelColor)}>
+                                  {modelLabel(job.model)}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-center font-medium text-slate-600 dark:text-slate-300 text-[12px] lg:text-[13px] truncate">
                                 {job.total_qa}
                               </td>
                               <td className="px-4 py-3 text-center truncate">
-                                {hasEval && job.eval_grade ? (
-                                  <span className={cn(
-                                    "inline-flex items-center justify-center w-8 py-0.5 rounded font-bold border shadow-sm",
-                                    GRADE_COLORS[job.eval_grade] || "bg-slate-100 text-slate-600 border-slate-200"
-                                  )}>
-                                    <span className={cn("text-[11px] lg:text-[12px] leading-none tracking-tight", job.eval_grade.includes('+') && "translate-x-px")}>
-                                      {job.eval_grade}
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[11px] lg:text-[12px] text-slate-400">대기</span>
-                                )}
+                                <GradeBadge grade={hasEval ? job.eval_grade : null} />
                               </td>
                               <td className="px-4 py-3 text-center text-slate-400 text-[11px] lg:text-[12px] truncate">
                                 {formatRelativeTime(job.created_at)}
@@ -291,7 +385,7 @@ export function DashboardOverview({
                       <button
                         onClick={() => setJobPage(p => Math.max(0, p - 1))}
                         disabled={jobPage === 0}
-                        className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+                        className="p-3 lg:p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                       >
                         <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                       </button>
@@ -299,7 +393,7 @@ export function DashboardOverview({
                       <button
                         onClick={() => setJobPage(p => Math.min(totalPages - 1, p + 1))}
                         disabled={jobPage === totalPages - 1}
-                        className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+                        className="p-3 lg:p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
                       >
                         <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                       </button>
@@ -384,8 +478,8 @@ export function DashboardOverview({
             <ActivityChart scoreTrend={data?.score_trend} loading={loading} />
           </div>
         */}
-        <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-6">
-          <div className="flex items-center gap-2 mb-6">
+        <div className="lg:col-span-2 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-2xl border border-white/60 dark:border-white/8 shadow-lg shadow-slate-200/40 dark:shadow-black/20 p-4 lg:p-6">
+          <div className="flex items-center gap-2 mb-4 lg:mb-6">
             <Trophy className="w-5 h-5 text-amber-500" />
             <div>
               <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">생성 모델 성능 비교</h3>
@@ -411,26 +505,13 @@ export function DashboardOverview({
                 const isTop = idx === 0;
                 const scorePct = Math.min(bench.avg_score * 100, 100);
 
-                // 모델 브랜드 컬러
-                const m = bench.model.toLowerCase();
-                let modelColor = 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10';
-                let barColor   = 'bg-slate-400';
-                if (m.includes('gpt') || m.includes('openai')) {
-                  modelColor = 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20';
-                  barColor   = 'bg-emerald-500';
-                } else if (m.includes('claude') || m.includes('anthropic')) {
-                  modelColor = 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-500/20';
-                  barColor   = 'bg-orange-500';
-                } else if (m.includes('gemini') || m.includes('google')) {
-                  modelColor = 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20';
-                  barColor   = 'bg-blue-500';
-                }
+                const { chip: modelColor, bar: barColor } = modelColors(bench.model);
 
                 return (
                   <div
                     key={bench.model}
                     className={cn(
-                      'relative rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5',
+                      'relative rounded-xl border p-3 lg:p-4 transition-all duration-300 hover:-translate-y-0.5',
                       isTop
                         ? 'bg-gradient-to-r from-amber-50/80 to-indigo-50/80 dark:from-amber-500/5 dark:to-indigo-500/5 border-amber-200 dark:border-amber-500/20 shadow-md shadow-amber-100/50 dark:shadow-amber-900/20'
                         : 'bg-white/60 dark:bg-white/3 border-white/60 dark:border-white/8 hover:shadow-sm'
@@ -441,28 +522,30 @@ export function DashboardOverview({
                       <div className="absolute -top-px left-0 right-0 h-0.5 bg-gradient-to-r from-amber-400 via-indigo-500 to-purple-500 rounded-t-xl" />
                     )}
 
-                    <div className="flex items-center gap-3 mb-3">
-                      {/* 순위 */}
-                      <div className={cn(
-                        'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0',
-                        isTop ? 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-amber-900' : 'bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-400'
-                      )}>
-                        {isTop ? <Trophy className="w-3.5 h-3.5" /> : idx + 1}
-                      </div>
-
-                      {/* 모델명 */}
-                      <span className={cn('text-xs font-bold px-2.5 py-1 rounded-lg border', modelColor)}>
-                        {bench.model}
-                      </span>
-
-                      {isTop && (
-                        <span className="ml-auto text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20 flex items-center gap-1">
-                          <Zap className="w-2.5 h-2.5" /> Best
+                    {/* Rank + name on one row; Best and run count on a meta row (stacked on mobile). */}
+                    <div data-role="bench-header" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-3">
+                      <div className="flex items-center gap-3 min-w-0 basis-full sm:basis-0 sm:flex-1">
+                        <div data-part="bench-rank" className={cn(
+                          'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0',
+                          isTop ? 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-amber-900' : 'bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-400'
+                        )}>
+                          {isTop ? <Trophy className="w-3.5 h-3.5" /> : idx + 1}
+                        </div>
+                        <span
+                          data-part="bench-name"
+                          title={bench.model}
+                          className={cn('min-w-0 max-w-full truncate text-xs font-bold px-2.5 py-1 rounded-lg border', modelColor)}
+                        >
+                          {modelLabel(bench.model)}
                         </span>
-                      )}
-
-                      <div className={cn("ml-auto text-right", !isTop && "")}>
-                        <p className="text-[11px] text-slate-400 dark:text-slate-500">{bench.run_count}회 테스트</p>
+                      </div>
+                      <div data-part="bench-meta" className="flex items-center gap-2 shrink-0 pl-10 sm:pl-0">
+                        {isTop && (
+                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20 flex items-center gap-1">
+                            <Zap className="w-2.5 h-2.5" /> Best
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{bench.run_count}회 테스트</span>
                       </div>
                     </div>
 
