@@ -83,8 +83,8 @@ for (const width of [360, 375, 390, 430]) {
         await expect(items).toHaveCount(5);
         for (let i = 0; i < 5; i++) {
           const item = items.nth(i);
-          // row1: name + grade; row2: model + "QA · time"; plus the detail button
-          await expectNoCollisions(item, '[data-part="row1"] > *', `log ${i} row1`);
+          // row1: document name only (grade moved to ⓘ); row2: model + "QA · time"; plus the detail button
+          await expect(item.locator('[data-part="row1"] > *')).toHaveCount(1);
           await expectNoCollisions(item, '[data-part="row2"] > *', `log ${i} row2`);
           await expectNoCollisions(item, '[data-part="row1"], [data-part="row2"], button[aria-label="작업 상세 정보"]', `log ${i}`);
         }
@@ -126,10 +126,16 @@ for (const width of [360, 375, 390, 430]) {
       const detail = first.locator('[data-role="job-detail"]');
       await expect(detail).toContainText(jobs[0].job_id);
       await expect(detail).toContainText(jobs[0].model);
+      await expect(detail.locator('[data-part="detail-grade"]')).toHaveText(jobs[0].eval_grade!);
+      // A job without an evaluation shows "대기" in the detail.
+      const pending = page.locator('[data-role="job-list"] > li').nth(3); // GRADES[3] is null
+      await pending.getByRole('button', { name: '작업 상세 정보' }).click();
+      await expect(pending.locator('[data-part="detail-grade"]')).toHaveText('대기');
       // Still on the dashboard: the detail tap did not trigger evaluation navigation.
       await expect(page.getByRole('navigation', { name: 'Main navigation' })
         .locator('button[aria-current="page"]')).toHaveText('Dashboard');
-      const box = await detail.boundingBox();
+      await expect(detail).toBeHidden(); // one detail open at a time
+      const box = await pending.locator('[data-role="job-detail"]').boundingBox();
       expect(box!.x + box!.width).toBeLessThanOrEqual(width + 0.5);
     });
 
