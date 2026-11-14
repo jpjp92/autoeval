@@ -1,6 +1,6 @@
 # Agen Q Frontend
 
-> 마지막 업데이트: 2026-11-08
+> 마지막 업데이트: 2026-11-14
 
 LLM 기반 QA 데이터셋 자동 생성 및 다층 평가 플랫폼의 프론트엔드.
 
@@ -14,6 +14,18 @@ npm run dev      # Dev 서버 (http://localhost:3000)
 npm run build    # 프로덕션 빌드
 npm start        # 프로덕션 서버
 npm run lint     # tsc --noEmit 타입 검사
+npm run test:proxy  # API 프록시 한도 회귀 테스트
+npm run test:e2e    # Playwright 레이아웃 검사 (앱이 실행 중이어야 함)
+```
+
+E2E는 실행 중인 앱(기본 `http://localhost:3000`, `E2E_BASE_URL`로 변경)을 대상으로 한다.
+WSL처럼 브라우저 시스템 라이브러리가 없는 환경에서는 Playwright 공식 이미지로 실행한다.
+개발 서버 대상으로는 `--workers=2`를 권장한다(첫 컴파일 지연).
+
+```bash
+docker run --rm --network host --ipc=host -u $(id -u):$(id -g) -e HOME=/tmp \
+  -v $PWD:/work -w /work mcr.microsoft.com/playwright:v1.64.1-noble \
+  npx playwright test --workers=2
 ```
 
 ---
@@ -59,6 +71,7 @@ Vercel 업로드는 Render로 직접 전송하고, Render CORS에 프론트 주�
 | 내보내기 | xlsx, jszip |
 | 플로우 다이어그램 | @xyflow/react |
 | 아이콘 | lucide-react |
+| E2E | @playwright/test 1.64 |
 
 ---
 
@@ -76,6 +89,7 @@ frontend/src/
 │   ├── api.ts                       # API 클라이언트 (apiFetchWithRetry 공개 래퍼 + 내부 apiFetch)
 │   ├── evalChartUtils.ts            # 차트 데이터 빌더 + formatKST + SummaryStat/TooltipItem 타입
 │   ├── evalScoreUtils.ts            # 점수 임계값 + getQAStatus
+│   ├── models.ts                    # 모델 선택 목록 + modelLabel() 표시명 (gpt-5.2-2025-12-11 → GPT-5.2)
 │   ├── utils.ts                     # cn (clsx + tailwind-merge)
 │   └── exportUtils/                 # 내보내기 유틸 (4분리)
 │       ├── types.ts                 # EvaluationData 인터페이스
@@ -90,8 +104,12 @@ frontend/src/
 └── components/
     ├── ErrorBoundary.tsx            # 앱 루트 래핑 — TypeError 시 화면 소멸 방지
     ├── layout/
-    │   ├── Sidebar.tsx              # 글래스 사이드바 — 탭 메뉴 + Settings 버튼
-    │   └── Header.tsx               # 테마 토글, 알림 드롭다운
+    │   ├── Sidebar.tsx              # 데스크톱(lg 이상) 글래스 사이드바 — 탭 메뉴 + Settings 버튼
+    │   ├── MobileTabBar.tsx         # 모바일(lg 미만) 하단 탭바 — Dashboard/Documents/QA Pipeline/Evaluation
+    │   └── Header.tsx               # 테마 토글, 알림 드롭다운, 모바일 Settings 토글 버튼
+    │
+    ├── common/
+    │   └── StepCard.tsx             # Documents·QA Pipeline 공용 단계 카드 (모바일은 헤더 단계 배지)
     │
     ├── dashboard/
     │   ├── DashboardOverview.tsx    # 메인 대시보드 — 모델별 성능 리더보드 + 파이프라인 로그
@@ -136,9 +154,18 @@ frontend/src/
 | `standardization` | `DataStandardizationPanel` | 문서 업로드 + 계층 분석·태깅 |
 | `generation` | `QAGenerationPanel` | QA 생성 + 자동 평가 |
 | `evaluation` | `QAEvaluationDashboard` | 평가 결과 + 히스토리 |
-| `settings` | `SettingsPanel` | 사이드바 하단 Settings 버튼으로 접근 |
+| `settings` | `SettingsPanel` | 데스크톱은 사이드바 하단 Settings, 모바일은 헤더 톱니 버튼(다시 누르면 이전 탭) |
 
 > 모든 탭 컴포넌트는 항상 마운트 유지(`hidden` class 토글) — 세션 상태 보존을 위한 의도적 설계
+
+### 화면 전환과 모바일
+
+- 모든 전환은 `App.tsx`의 `navigate(tab)`을 거친다(Sidebar, 하단 탭바, 헤더, 대시보드·평가 이동).
+- Settings는 보조 화면이다. 진입 시 `history.pushState`로 기록 하나를 남겨 브라우저 뒤로 가기로 닫히고,
+  `lastMainTab`(Settings가 아닌 마지막 탭)으로 돌아간다. 일반 탭 전환은 히스토리에 남기지 않는다.
+- 모든 탭이 `main` 스크롤 하나를 공유하므로, 전환 시 탭별 `scrollTop`을 저장·복원한다.
+- `lg`(1024px) 미만: Sidebar 대신 `MobileTabBar`, Dashboard 로그·Evaluation 상세 결과는 표 대신 카드 목록.
+  뷰포트는 `viewportFit: 'cover'`이고 탭바 하단에 `env(safe-area-inset-bottom)` 여백을 둔다.
 
 ---
 
@@ -171,6 +198,7 @@ frontend/src/
 | state | 타입 | 역할 |
 |-------|------|------|
 | `activeTab` | `string` | 현재 활성 탭 |
+| `lastMainTab` | `string` | Settings에서 돌아갈 마지막 일반 탭 |
 | `currentFilename` | `string \| null` | 업로드된 문서 파일명 |
 | `lastEvalJobId` | `string \| null` | 마지막 생성 job UUID (Generation 세션 in-memory용) |
 | `lastEvalDbId` | `string \| null` | 마지막 평가 Supabase record ID (대시보드 로그 연동) |
