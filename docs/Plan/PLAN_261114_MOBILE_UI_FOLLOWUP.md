@@ -1,6 +1,6 @@
 # 모바일 UI 후속 개선 기획 (2026-11-14)
 
-> 상태: F1·F2·F3(b)·샘플 수 버그 구현 완료 (2026-11-14, 브랜치 `dev`). 결과는 [DEV_261114.md](../History/DEV_261114.md). F5(Dashboard) 구현 완료. 글꼴, 태블릿, next-env 소유권은 남음. 1차 작업은 [PLAN_261112_MOBILE_UI.md](PLAN_261112_MOBILE_UI.md), 결과는 [DEV_261112.md](../History/DEV_261112.md) (PR #2로 main 반영, iPhone 실기기 확인 완료).
+> 상태: F1·F2·F3(b)·샘플 수 버그 구현 완료 (2026-11-14, 브랜치 `dev`). 결과는 [DEV_261114.md](../History/DEV_261114.md). F5(Dashboard), F6(마무리) 구현 완료. 글꼴, 태블릿, next-env 소유권은 남음. 1차 작업은 [PLAN_261112_MOBILE_UI.md](PLAN_261112_MOBILE_UI.md), 결과는 [DEV_261112.md](../History/DEV_261112.md) (PR #2로 main 반영, iPhone 실기기 확인 완료).
 > 근거: 1차 작업의 남은 일, GPT 검토(모바일 Settings 토글 UX), 현재 소스 대조.
 
 ## 1. 현재 구조 (소스 확인)
@@ -67,6 +67,13 @@ GPT 검토(iPhone Safari 스크린샷 2장, main `034d09f`)에서 추가됐다. 
 - 모델 표시명: `lib/models.ts`에 `modelLabel(id)`를 추가한다. 선택 목록 라벨을 우선 쓰고, 없으면 날짜 접미사를 떼고 정리한다
   (`gpt-5.2-2025-12-11` → GPT-5.2, `claude-sonnet-4-6` → Claude Sonnet 4.6). 실제 ID는 데이터 키와 `title`에 그대로 둔다.
 - 두 영역에 따로 있던 모델 브랜드 색상 분기를 `modelColors()` 하나로 합친다.
+
+### F6. 마무리 (P1, PR #4 검토 후 추가)
+
+- 성능 비교 카드: 모바일 헤더 행 간격·하단 여백, 카드 사이 간격을 줄인다.
+- 보조 텍스트 대비: `n QA · 시간`, `n회 테스트`, `통과 QA`, 페이지 건수를 다크 `slate-400`, 라이트 `slate-500`으로 한 단계 올린다.
+- Evaluation 헤더: `Model:` 칩에 `modelLabel()` 표시명(원래 ID는 `title`), 모바일 칩 패딩 축소, 원천 문서 칩 최대폭을 모바일에서 `max-w-full`.
+- 하단 탭바: `main` 아래 형제 요소라 콘텐츠를 덮지 않는다. 스크롤 끝 노출을 E2E로 고정한다.
 
 ## 3. 검증
 
