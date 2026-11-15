@@ -73,3 +73,6 @@ docs/Samples/internal_qa_dataset_sample.json
 docs/AgenQ_main_flow_2slides.pptx
 frontend/test-results/
 frontend/playwright-report/
+
+# Editor
+.vscode/
