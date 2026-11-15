@@ -19,6 +19,11 @@ import logging
 import re
 import time
 
+try:
+    from ingestion.language import hangul_ratio
+except ImportError:  # backend 패키지 경로로 import될 때
+    from backend.ingestion.language import hangul_ratio
+
 logger = logging.getLogger("autoeval.ingestion.llm_chunker")
 
 # ──────────────────────────────────────────────────────────────
@@ -29,6 +34,7 @@ SYSTEM_PROMPT = """\
 <role>
 당신은 PDF 문서에서 추출된 텍스트 블록을 정리하고 의미 단위로 청킹하는 전문가입니다.
 문서 유형(연구보고서, 법령, 정책문서 등)에 관계없이 범용적으로 적용합니다.
+원문 언어를 유지하세요. 영문 용어·인용·문장은 번역하지 말고 원문 그대로 둡니다.
 </role>
 
 <input_format>
@@ -164,6 +170,7 @@ DOCX_SYSTEM_PROMPT = """\
 당신은 DOCX 문서에서 python-docx로 추출된 단락·표 블록을 의미 단위 청크로 재구성하는 전문가입니다.
 블록은 이미 구조화된 상태(단락/제목/표 분리 완료)이므로 노이즈 보정은 불필요합니다.
 문서 유형(연구보고서, 법령, 정책문서, 매뉴얼 등)에 관계없이 범용적으로 적용합니다.
+원문 언어를 유지하세요. 영문 용어·인용·문장은 번역하지 말고 원문 그대로 둡니다.
 </role>
 
 <input_format>
@@ -254,6 +261,124 @@ DOCX_SYSTEM_PROMPT = """\
 source_blocks에는 NEW 블록 인덱스만 기록합니다 (CTX 인덱스 포함 금지).
 </output_format>
 """
+
+# ──────────────────────────────────────────────────────────────
+# 영문 문서 전용 프롬프트 (source_language == "en")
+# 한국어 프롬프트와 같은 입출력 규약(CTX/NEW, JSON, [표] 마커, 200~800자)을 쓰고
+# 번역 금지·원문 언어 유지를 최우선 규칙으로 둔다.
+# ──────────────────────────────────────────────────────────────
+
+_EN_LANGUAGE_RULES = """\
+<language_rules>
+These rules override every other rule.
+- Do NOT translate. Every output "text" and "section_title" must stay in the source language (English).
+- Never write Korean or any other language that is not in the source blocks.
+- Preserve numbers, units, equations, citations (e.g. "(Devlin et al., 2019)", "[12]"), URLs,
+  named entities, model names, code and quotations exactly.
+- Only fix PDF extraction noise; do not paraphrase, summarize, or omit content.
+</language_rules>
+"""
+
+_EN_COMMON_RULES = """\
+<input_format>
+Two kinds of blocks are given:
+- [CTX-index] : context already processed in the previous batch. Reference only — never output it and never list it in source_blocks.
+- [NEW-index] : blocks of this batch. Every NEW block must end up in a chunk.
+</input_format>
+
+<chunking_rules>
+Headings
+- Do not emit a heading (e.g. "1 Introduction", "3.2 Fine-tuning", "Abstract", "References", "Appendix A") as its own chunk.
+  Put it as the first line of the following content chunk: "Heading\\nFirst sentence ..."
+
+Boundaries (meaning first, size second)
+- One chunk covers one complete topic, argument, method step, result, or example.
+- Start a new chunk when a new concept, claim, experiment, or section begins.
+- Split at paragraph or sentence boundaries. Never cut inside a sentence, citation, or equation.
+
+Size
+- Minimum 200 characters — merge short content with the related neighbouring chunk.
+- Maximum 800 characters — never exceed it. When reaching 800 characters, split at a sentence end (". ") or a list item boundary.
+- The 800-character limit has priority even if the following chunk becomes shorter than 200 characters.
+
+Endings
+- Each chunk must end with a complete sentence or a complete list item.
+- If a chunk would end with a connective such as "However", "Therefore", "Moreover", "In addition",
+  "Furthermore", "Thus", "For example", "In contrast", or "Finally", move that word to the start of the next chunk.
+</chunking_rules>
+
+<table_rules>
+A block may start with [표] followed by a markdown table (| header | ... / | --- | ... / | cell | ...).
+"[표]" is a structural marker used by this system. Keep it exactly as "[표]"; do not translate it.
+
+- If a table is the main content of a chunk, the first line must be "[표] <table title in English>".
+- Do not output markdown pipes (|) or separator rows (---).
+- Rewrite the table in English as sentences or a numbered list, keeping each row–column relation, value, and unit.
+  e.g. "[표] GLUE test results\\nBERT-Large scores 80.5 on average, compared with 75.1 for OpenAI GPT."
+- If the rewritten table exceeds 800 characters, split it; each following chunk starts with "[표] <title> (cont.)".
+</table_rules>
+
+<section_title_rules>
+- A short English title (at most 8 words) describing the chunk.
+- Prefer the explicit heading of the chunk (e.g. "3.1 Pre-training BERT") when present.
+- Be specific to the content, e.g. "Scaled Dot-Product Attention", "4.1 GLUE Results".
+</section_title_rules>
+
+<output_format>
+Respond with a pure JSON array only. Do not wrap it in markdown (```).
+
+[
+  {
+    "chunk_index": 0,
+    "text": "Heading\\ncleaned content text in English",
+    "section_title": "Specific English title",
+    "source_blocks": [30, 31, 32]
+  }
+]
+
+source_blocks lists NEW block indices only (never CTX indices).
+</output_format>
+"""
+
+SYSTEM_PROMPT_EN = """\
+<role>
+You clean up text blocks extracted from a PDF document and split them into meaning-based chunks.
+Apply this to any document type (research paper, report, manual, regulation).
+</role>
+
+""" + _EN_LANGUAGE_RULES + """
+<noise_correction>
+Fix these PDF extraction errors:
+1. Broken sentences — join a sentence split across blocks.
+2. Line-break hyphenation — "addi- tional" → "additional", but keep real hyphenated words ("pre-trained", "fine-tuning").
+3. Ligatures — "ﬁ" → "fi", "ﬂ" → "fl", "ﬀ" → "ff".
+4. Stray bullets or symbols (•, ∙, ■, □) used as standalone tokens — remove.
+5. Running headers, page numbers, and side margin stamps (e.g. "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023") — remove.
+6. Punctuation left alone at the start or end of a line — attach it to the previous sentence.
+</noise_correction>
+
+""" + _EN_COMMON_RULES
+
+DOCX_SYSTEM_PROMPT_EN = """\
+<role>
+You regroup paragraph and table blocks extracted from a DOCX document (python-docx) into meaning-based chunks.
+Blocks are already structured, so no noise correction is needed.
+Apply this to any document type (research paper, report, manual, regulation).
+</role>
+
+""" + _EN_LANGUAGE_RULES + "\n" + _EN_COMMON_RULES
+
+USER_TEMPLATE_EN = """\
+Process the blocks below according to the rules above.
+CTX blocks are for reference only; make chunks from NEW blocks only.
+Keep the source language. Do not translate.
+
+<blocks count="{count}" ctx="{ctx_count}" new="{new_count}">
+{blocks}
+</blocks>
+
+Respond with a pure JSON array only:"""
+
 
 try:
     from config.models import MODEL_CONFIG
@@ -469,6 +594,61 @@ def deduplicate_chunks(chunks: list[dict], threshold: float = 0.5) -> list[dict]
 
 
 # ──────────────────────────────────────────────────────────────
+# 언어 정책
+# ──────────────────────────────────────────────────────────────
+
+_TABLE_MARKER_RE = re.compile(r"\[표\]")
+# 출력의 한글 비율이 원문보다 이만큼 이상 높으면 번역으로 본다.
+_TRANSLATION_MARGIN = 0.05
+
+
+def _hangul_ratio_wo_marker(text: str) -> float:
+    return hangul_ratio(_TABLE_MARKER_RE.sub("", text or ""))
+
+
+def find_translated_chunks(chunks: list[dict], new_blocks: list[dict]) -> list[int]:
+    """영문 원문을 한국어로 바꾼 청크의 위치 목록.
+
+    원문(source_blocks)이 영문(한글 비율 < _TRANSLATION_MARGIN)인 청크만 검사한다.
+    청크 text 또는 section_title의 한글 비율이 원문보다 _TRANSLATION_MARGIN 이상 높으면
+    번역으로 판단한다. [표] 마커는 제외한다.
+    """
+    by_index = {b["index"]: b["text"] for b in new_blocks}
+    flagged = []
+    for pos, c in enumerate(chunks):
+        src = " ".join(by_index.get(i, "") for i in c.get("source_blocks", []))
+        src_ratio = _hangul_ratio_wo_marker(src)
+        if src_ratio >= _TRANSLATION_MARGIN:
+            continue  # 한국어가 섞인 원문 — 판단하지 않는다
+        limit = src_ratio + _TRANSLATION_MARGIN
+        if (_hangul_ratio_wo_marker(c.get("text", "")) > limit
+                or _hangul_ratio_wo_marker(c.get("section_title", "")) > limit):
+            flagged.append(pos)
+    return flagged
+
+
+def select_prompts(language: str, docx: bool) -> tuple[str, str]:
+    """(system_prompt, user_template). 영문 외에는 기존 한국어 프롬프트."""
+    if language == "en":
+        return (DOCX_SYSTEM_PROMPT_EN if docx else SYSTEM_PROMPT_EN), USER_TEMPLATE_EN
+    return (DOCX_SYSTEM_PROMPT if docx else SYSTEM_PROMPT), USER_TEMPLATE
+
+
+def _fallback_chunks(new_blocks: list[dict], **extra) -> list[dict]:
+    return [
+        {
+            "text": b["text"],
+            "section_title": b["text"].split("\n")[0].strip()[:30],
+            "source_blocks": [b["index"]],
+            "page": b["page"],
+            "fallback": True,
+            **extra,
+        }
+        for b in new_blocks
+    ]
+
+
+# ──────────────────────────────────────────────────────────────
 # LLM 호출
 # ──────────────────────────────────────────────────────────────
 
@@ -521,12 +701,19 @@ async def _process_batch(
     model: str,
     batch_size: int,
     system_prompt: str = SYSTEM_PROMPT,
+    user_template: str = USER_TEMPLATE,
+    language: str = "ko",
+    max_translation_retries: int = 1,
 ) -> tuple[int, list[dict]]:
-    """단일 배치 비동기 처리."""
+    """단일 배치 비동기 처리.
+
+    language == "en"이면 응답의 번역 여부를 검사해 max_translation_retries만큼 다시 요청하고,
+    그래도 번역되면 원문 블록으로 폴백한다(fallback_reason="translated").
+    """
     new_indices = {b["index"] for b in new_blocks}
     idx_to_page = {b["index"]: b["page"] for b in new_blocks}
 
-    user_msg = USER_TEMPLATE.format(
+    user_msg = user_template.format(
         count=len(ctx_blocks) + len(new_blocks),
         ctx_count=len(ctx_blocks),
         new_count=len(new_blocks),
@@ -539,42 +726,49 @@ async def _process_batch(
     async with semaphore:
         t0 = time.time()
         try:
-            raw = await asyncio.to_thread(_call_gemini_sync, prompt, client, model, batch_size)
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            for attempt in range(max_translation_retries + 1):
+                raw = await asyncio.to_thread(_call_gemini_sync, prompt, client, model, batch_size)
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
-            parsed: list[dict] = json.loads(raw)
-            batch_chunks = []
-            for item in parsed:
-                src_new = [s for s in item.get("source_blocks", []) if s in new_indices]
-                if src_new:
-                    item["source_blocks"] = src_new
-                    item["page"] = idx_to_page.get(src_new[0], 0)
-                    if not item.get("section_title"):
-                        first_line = item.get("text", "").split("\n")[0].strip()
-                        item["section_title"] = first_line[:30] if first_line else ""
-                    batch_chunks.append(item)
+                parsed: list[dict] = json.loads(raw)
+                batch_chunks = []
+                for item in parsed:
+                    src_new = [s for s in item.get("source_blocks", []) if s in new_indices]
+                    if src_new:
+                        item["source_blocks"] = src_new
+                        item["page"] = idx_to_page.get(src_new[0], 0)
+                        if not item.get("section_title"):
+                            first_line = item.get("text", "").split("\n")[0].strip()
+                            item["section_title"] = first_line[:30] if first_line else ""
+                        batch_chunks.append(item)
+
+                translated = find_translated_chunks(batch_chunks, new_blocks) if language == "en" else []
+                if not translated:
+                    break
+                logger.warning(
+                    f"Batch {batch_num}: {len(translated)}/{len(batch_chunks)} chunks translated "
+                    f"(attempt {attempt + 1}/{max_translation_retries + 1})"
+                )
+            else:
+                elapsed = time.time() - t0
+                logger.warning(f"Batch {batch_num}: translation persisted ({elapsed:.1f}s), fallback applied")
+                return batch_num, _fallback_chunks(new_blocks, fallback_reason="translated")
 
             elapsed = time.time() - t0
             logger.info(
                 f"Batch {batch_num}: NEW[{new_blocks[0]['index']}~{new_blocks[-1]['index']}] "
                 f"CTX {len(ctx_blocks)} -> {len(batch_chunks)} chunks ({elapsed:.1f}s)"
+                + (f" retries={attempt}" if attempt else "")
             )
+            for item in batch_chunks:
+                item["llm_retries"] = attempt
             return batch_num, batch_chunks
 
         except json.JSONDecodeError as e:
             elapsed = time.time() - t0
             logger.warning(f"Batch {batch_num}: JSON parse failed ({elapsed:.1f}s), fallback applied: {e}")
-            return batch_num, [
-                {
-                    "text": b["text"],
-                    "section_title": b["text"].split("\n")[0].strip()[:30],
-                    "source_blocks": [b["index"]],
-                    "page": b["page"],
-                    "fallback": True,
-                }
-                for b in new_blocks
-            ]
+            return batch_num, _fallback_chunks(new_blocks, fallback_reason="json_parse")
 
         except Exception as e:
             err_str = str(e)
@@ -583,16 +777,7 @@ async def _process_batch(
                 raise APIQuotaExceededError(f"Gemini LLM Chunking API 한도 초과: {e}") from e
             elapsed = time.time() - t0
             logger.error(f"Batch {batch_num}: error ({elapsed:.1f}s): {e}")
-            return batch_num, [
-                {
-                    "text": b["text"],
-                    "section_title": b["text"].split("\n")[0].strip()[:30],
-                    "source_blocks": [b["index"]],
-                    "page": b["page"],
-                    "error": str(e),
-                }
-                for b in new_blocks
-            ]
+            return batch_num, _fallback_chunks(new_blocks, fallback_reason="error", error=str(e))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -607,8 +792,11 @@ async def run_llm_chunking(
     batch_size: int | None = None,
     overlap: int | None = None,
     parallel: int | None = None,
+    language: str = "ko",
 ) -> list[dict]:
     """원시 블록 목록을 받아 LLM 청킹 후 청크 목록을 반환.
+
+    language: "ko"(기본, 기존 프롬프트) | "en"(영문 프롬프트 + 번역 검사)
 
     Args:
         blocks:     [{index, page, text}, ...] — parsers.extract_text_by_page 출력을 평탄화한 것
@@ -636,15 +824,18 @@ async def run_llm_chunking(
     _parallel   = parallel   if parallel   is not None else rec["parallel"]
 
     logger.info(
-        f"LLM chunking start: {len(blocks)} blocks, tier={rec['tier']}, "
+        f"LLM chunking start ({language}): {len(blocks)} blocks, tier={rec['tier']}, "
         f"batch={_batch_size}, overlap={_overlap}, parallel={_parallel}"
     )
 
     semaphore = asyncio.Semaphore(_parallel)
     batches = build_char_aware_batches(blocks, _batch_size, _overlap)
 
+    system_prompt, user_template = select_prompts(language, docx=False)
     tasks = [
-        _process_batch(semaphore, bn, cb, nb, client, model, _batch_size)
+        _process_batch(semaphore, bn, cb, nb, client, model, _batch_size,
+                       system_prompt=system_prompt, user_template=user_template,
+                       language=language)
         for bn, cb, nb in batches
     ]
     results = await asyncio.gather(*tasks)
@@ -675,8 +866,11 @@ async def run_llm_chunking_docx(
     batch_size: int | None = None,
     overlap: int | None = None,
     parallel: int | None = None,
+    language: str = "ko",
 ) -> list[dict]:
     """DOCX 전용 LLM 청킹.
+
+    language: "ko"(기본, 기존 프롬프트) | "en"(영문 프롬프트 + 번역 검사)
 
     PDF 버전(run_llm_chunking)과의 차이:
     - DOCX_SYSTEM_PROMPT 사용 (noise_correction 제거)
@@ -703,16 +897,18 @@ async def run_llm_chunking_docx(
     _parallel   = parallel   if parallel   is not None else rec["parallel"]
 
     logger.info(
-        f"DOCX LLM chunking start: {len(blocks)} blocks, tier={rec['tier']}, "
+        f"DOCX LLM chunking start ({language}): {len(blocks)} blocks, tier={rec['tier']}, "
         f"batch={_batch_size}, overlap={_overlap}, parallel={_parallel}"
     )
 
     semaphore = asyncio.Semaphore(_parallel)
     batches = build_char_aware_batches(blocks, _batch_size, _overlap)
 
+    system_prompt, user_template = select_prompts(language, docx=True)
     tasks = [
         _process_batch(semaphore, bn, cb, nb, client, model, _batch_size,
-                       system_prompt=DOCX_SYSTEM_PROMPT)
+                       system_prompt=system_prompt, user_template=user_template,
+                       language=language)
         for bn, cb, nb in batches
     ]
     results = await asyncio.gather(*tasks)

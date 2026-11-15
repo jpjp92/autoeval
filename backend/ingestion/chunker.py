@@ -60,8 +60,12 @@ async def ingest_with_llm_chunking(
     repeated_headers: set,
     gemini_client: Any,
     model_id: str,
+    language: str = "ko",
 ) -> List[Dict[str, Any]]:
-    """LLM 청킹 경로: 파일 확장자에 따라 PDF/DOCX 전용 함수로 분기 후 공통 필터 적용."""
+    """LLM 청킹 경로: 파일 확장자에 따라 PDF/DOCX 전용 함수로 분기 후 공통 필터 적용.
+
+    language: 문서 언어("ko" | "en"). 프롬프트 선택과 청크 metadata(source_language)에 쓴다.
+    """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     is_docx = ext in ("doc", "docx")
 
@@ -84,6 +88,7 @@ async def ingest_with_llm_chunking(
             blocks=indexed_blocks,
             client=gemini_client,
             model=model_id,
+            language=language,
         )
     else:
         page_count = max((p.get("page", 1) for p in pages), default=1)
@@ -97,6 +102,7 @@ async def ingest_with_llm_chunking(
             client=gemini_client,
             model=model_id,
             page_count=page_count,
+            language=language,
         )
 
     all_chunks_to_embed = []
@@ -140,11 +146,15 @@ async def ingest_with_llm_chunking(
             "hash": content_hash,
             "section_title": section_title,
             "chunk_type": chunk_type,
+            "source_language": language,
+            "fallback_reason": chunk.get("fallback_reason") if chunk.get("fallback") else None,
         })
 
+    _fallbacks = sum(1 for c in all_chunks_to_embed if c["fallback_reason"])
     method_tag = "docx" if is_docx else "pdf"
     logger.info(
-        f"[{filename}] LLM chunking ({method_tag}): {len(all_chunks_to_embed)} chunks. "
+        f"[{filename}] LLM chunking ({method_tag}, {language}): {len(all_chunks_to_embed)} chunks, "
+        f"fallback {_fallbacks}. "
         f"Filtered: {_filter_counts}"
     )
     return all_chunks_to_embed
@@ -154,13 +164,17 @@ def ingest_with_rule_chunking(
     filename: str,
     all_blocks: List[Dict[str, Any]],
     repeated_headers: set,
+    language: str = "ko",
 ) -> List[Dict[str, Any]]:
-    """Rule-based 청킹 경로 (기존 파이프라인, 하위 호환)."""
+    """Rule-based 청킹 경로 (기존 파이프라인, 하위 호환).
+
+    language: 문서 언어("ko" | "en"). 영문 섹션 제목 감지와 청크 metadata에 쓴다.
+    """
     all_blocks_text = [b.get("text", "") for b in all_blocks]
     merged_blocks_data, _ = merge_adjacent_short_blocks(all_blocks, all_blocks_text)
     logger.info(f"[{filename}] Block merge: {len(all_blocks)} → {len(merged_blocks_data)}")
 
-    sections = build_sections(merged_blocks_data)
+    sections = build_sections(merged_blocks_data, language=language)
     logger.info(f"[{filename}] Sections built: {len(sections)}")
     if not sections:
         logger.warning(f"[{filename}] No sections built.")
@@ -237,11 +251,13 @@ def ingest_with_rule_chunking(
                 "hash": content_hash,
                 "section_title": normalized_section_title,
                 "chunk_type": chunk_type,
+                "source_language": language,
+                "fallback_reason": None,
             })
 
     too_short_samples = _filter_counts.pop("_too_short_samples", [])
     logger.info(
-        f"[{filename}] Rule chunking: {len(all_chunks_to_embed)} chunks. "
+        f"[{filename}] Rule chunking ({language}): {len(all_chunks_to_embed)} chunks. "
         f"Filtered: {_filter_counts}"
     )
     if too_short_samples:
