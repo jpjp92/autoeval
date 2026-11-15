@@ -13,7 +13,11 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ingestion import llm_chunker  # noqa: E402
-from ingestion.language import detect_language  # noqa: E402
+from generators.prompts import build_system_prompt  # noqa: E402
+from ingestion.language import build_word_counts, detect_language, normalize_english_text  # noqa: E402
+from ingestion.parsers import is_toc_chunk  # noqa: E402
+from ingestion.prompts import build_hierarchy_prompt  # noqa: E402
+from ingestion.tagging import _is_admin_anchor  # noqa: E402
 from ingestion.llm_chunker import find_translated_chunks, select_prompts  # noqa: E402
 from ingestion.parsers import build_sections, detect_heading, detect_section_level  # noqa: E402
 
@@ -158,6 +162,91 @@ class ProcessBatchRetryTests(unittest.TestCase):
         calls, chunks = self.run_batch([self.translated], language="ko")
         self.assertEqual(len(calls), 1)
         self.assertNotIn("fallback", chunks[0])
+
+
+
+class EnglishNormalizationTests(unittest.TestCase):
+    counts = build_word_counts(["additional pre-trained sequence models are aligned", "fine-tune"])
+
+    def test_ligatures(self):
+        self.assertEqual(normalize_english_text("\ufb01ne-tune \ufb02ow e\ufb00ect"), "fine-tune flow effect")
+
+    def test_line_break_hyphen_rules(self):
+        cases = {
+            "addi- tional": "additional",          # joined form exists
+            "pre- trained": "pre-trained",         # hyphenated form exists
+            "sequence- aligned": "sequence-aligned",  # both parts are words
+            "espe- cially": "especially",          # unknown → join
+            "addi-\ntional": "additional",         # real line break
+            "fine-tune": "fine-tune",              # no space after hyphen → untouched
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_english_text(raw, self.counts), expected)
+
+    def test_fragments_are_not_counted_as_words(self):
+        counts = build_word_counts(["com- bined", "com- pute"])
+        self.assertEqual(counts["com"], 0)
+
+
+class EnglishFilterTests(unittest.TestCase):
+    def test_admin_anchor_english(self):
+        cases = {
+            "The proposed model improves accuracy by 15%.": False,
+            "Methods and Experimental Setup": False,
+            "2026-01-01, 2026-02-01, 2026-03-01": True,
+            "Accuracy: 94.2%, Recall: 91.5%": False,
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_is_admin_anchor(text, "en"), expected)
+
+    def test_admin_anchor_korean_default_unchanged(self):
+        # Previous rule: low Hangul ratio → admin. Still true for ko.
+        self.assertTrue(_is_admin_anchor("The proposed model improves accuracy by 15%."))
+
+    def test_english_toc(self):
+        toc = "Contents\n" + "\n".join(f"{i}.{j} Section title {i}{j}" for i in range(1, 4) for j in range(1, 3))
+        self.assertTrue(is_toc_chunk(toc, "en"))
+        self.assertFalse(is_toc_chunk(toc))  # ko: no "목차" keyword, as before
+
+    def test_english_body_with_section_numbers_is_not_toc(self):
+        body = " ".join(
+            f"In Section {i}.{j} we report that the model improves the score by {i}.{j} points over the baseline."
+            for i in range(1, 4) for j in range(1, 4)
+        )
+        self.assertFalse(is_toc_chunk(body, "en"))
+
+
+class QAOutputLanguageTests(unittest.TestCase):
+    profile = {"domain": "AI 연구 논문", "target_audience": "연구자", "key_terms": ["BERT"], "tone": "격식체"}
+
+    def test_korean_prompt_unchanged(self):
+        prompt = build_system_prompt(self.profile, "ko")
+        self.assertNotIn("<output_language>", prompt)
+        self.assertEqual(prompt, build_system_prompt(self.profile))
+
+    def test_english_prompt_overrides_language(self):
+        prompt = build_system_prompt(self.profile, "en")
+        self.assertTrue(prompt.startswith(build_system_prompt(self.profile, "ko")))
+        self.assertIn("Write every question and answer in English", prompt)
+
+    def test_static_english_prompt_no_longer_forces_korean(self):
+        from generators.prompts_en import SYSTEM_PROMPT_EN_V1
+        self.assertNotIn("in Korean", SYSTEM_PROMPT_EN_V1)
+
+
+
+class TaxonomyLanguageTests(unittest.TestCase):
+    def test_korean_is_default(self):
+        self.assertEqual(build_hierarchy_prompt("ctx", "2~3"), build_hierarchy_prompt("ctx", "2~3", "ko"))
+        self.assertIn("All taxonomy names in Korean", build_hierarchy_prompt("ctx", "2~3"))
+
+    def test_english_taxonomy_prompt(self):
+        prompt = build_hierarchy_prompt("ctx", "2~3", "en")
+        self.assertIn("All taxonomy names in English", prompt)
+        self.assertNotIn("in Korean", prompt)
+        self.assertIn("2~3 H2", prompt)
 
 
 if __name__ == "__main__":
