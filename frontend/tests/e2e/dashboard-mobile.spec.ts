@@ -39,14 +39,25 @@ const metrics = {
   },
 };
 
-async function openDashboard(page: Page, theme: 'dark' | 'light' = 'dark') {
-  await page.route('**/api/dashboard/metrics', r => r.fulfill({ json: metrics }));
+async function openDashboard(page: Page, theme: 'dark' | 'light' = 'dark', body: object = metrics) {
+  await page.route('**/api/dashboard/metrics', r => r.fulfill({ json: body }));
   await page.addInitScript(t => { try { localStorage.setItem('theme', t); } catch {} }, theme);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   // Desktop shows the table, mobile the card list; wait for whichever renders.
   await page.locator('[data-role="job-list"], table tbody tr').first().waitFor({ timeout: 20_000 });
 }
+
+const SIX_MODELS = ['gpt-5.2-2025-12-11', 'gemini-3.8-flash', 'gemini-3-flash-preview', 'claude-sonnet-4-6', 'gpt-6-luna', 'gemini-3.7-flash'];
+const sixModelMetrics = {
+  ...metrics,
+  data: {
+    ...metrics.data,
+    model_benchmarks: SIX_MODELS.map((model, i) => ({
+      model, avg_score: 0.96 - i * 0.01, pass_rate: 100, run_count: i + 1, total_qa: 100, valid_qa: 100,
+    })),
+  },
+};
 
 type Box = { x: number; y: number; width: number; height: number };
 const overlaps = (a: Box, b: Box) =>
@@ -119,6 +130,28 @@ for (const width of [360, 375, 390, 430]) {
       expect(lastBottom).toBeLessThanOrEqual(tabTop + 0.5);
     });
 
+    test('model comparison shows the top 4 and unfolds the rest', async ({ page }) => {
+      await openDashboard(page, 'dark', sixModelMetrics);
+      const headers = page.locator('[data-role="bench-header"]');
+      await expect(headers).toHaveCount(4);
+      await expect(headers.nth(3)).toContainText('Claude Sonnet 4.6');
+      const more = page.getByRole('button', { name: '나머지 2개 모델 보기' });
+      await expect(more).toHaveAttribute('aria-expanded', 'false');
+      await more.click();
+      await expect(headers).toHaveCount(6);
+      await expect(headers.nth(4)).toContainText('GPT-6 Luna'); // rank 5 follows rank 4
+      await page.getByRole('button', { name: '접기' }).click();
+      await expect(headers).toHaveCount(4);
+      const doc = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(doc).toBeLessThanOrEqual(0);
+    });
+
+    test('no fold button with 4 or fewer models', async ({ page }) => {
+      await openDashboard(page); // 3 models
+      await expect(page.locator('[data-role="bench-header"]')).toHaveCount(3);
+      await expect(page.getByRole('button', { name: /모델 보기|접기/ })).toHaveCount(0);
+    });
+
     test('detail shows full IDs without opening the evaluation', async ({ page }) => {
       await openDashboard(page);
       const first = page.locator('[data-role="job-list"] > li').first();
@@ -165,6 +198,13 @@ for (const width of [360, 375, 390, 430]) {
 for (const width of [1024, 1440]) {
   test.describe(`dashboard desktop ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
+
+    test('model comparison folds after 4 on desktop too', async ({ page }) => {
+      await openDashboard(page, 'dark', sixModelMetrics);
+      await expect(page.locator('[data-role="bench-header"]')).toHaveCount(4);
+      await page.getByRole('button', { name: '나머지 2개 모델 보기' }).click();
+      await expect(page.locator('[data-role="bench-header"]')).toHaveCount(6);
+    });
 
     test('keeps the 6-column table and model cells stay inside their column', async ({ page }) => {
       await openDashboard(page);

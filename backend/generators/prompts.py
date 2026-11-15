@@ -344,9 +344,27 @@ def _get_domain_weights(domain: str) -> dict:
     return {}
 
 
+# QA 출력 언어가 영어일 때 붙이는 덮어쓰기 블록.
+# 적응형 프롬프트 본문(한국어)은 그대로 두고, 출력 언어·어투 규칙만 바꾼다.
+_OUTPUT_LANGUAGE_EN = """
+<output_language>
+이 블록은 위의 언어·어투 규칙보다 우선합니다.
+- Write every question and answer in English, regardless of the context language.
+- Ignore the Korean tone rules above ("~입니까?", "~입니다." 등 격식체 어미 규칙은 적용하지 않습니다).
+  Questions end with "?"; answers are complete declarative English sentences.
+- Do not start answers with meta phrases such as "According to the context".
+- Keep numbers, units, citations, named entities, and technical terms exactly as written in the context.
+- The "intent" values stay as the English labels (fact, purpose, how, condition, comparison, list).
+</output_language>"""
+
+
 def build_system_prompt(domain_profile: dict, lang: str = "ko") -> str:
     """domain_profile 기반 도메인 특화 시스템 프롬프트 생성.
-    핵심 원칙은 항상 포함하고, domain 유형에 따라 intent 우선순위 힌트를 추가."""
+    핵심 원칙은 항상 포함하고, domain 유형에 따라 intent 우선순위 힌트를 추가.
+
+    lang: QA 출력 언어. "ko"(기본)는 기존 프롬프트 그대로, "en"이면 출력 언어 블록을 덧붙인다.
+    문서 원문 언어(source_language)와는 별개다.
+    """
     domain = domain_profile.get("domain", "문서")
     audience = domain_profile.get("target_audience", "독자")
     key_terms = domain_profile.get("key_terms", [])
@@ -378,6 +396,7 @@ def build_system_prompt(domain_profile: dict, lang: str = "ko") -> str:
         f"</role>"
         + domain_hint
         + _CORE_PRINCIPLES_KO
+        + (_OUTPUT_LANGUAGE_EN if lang == "en" else "")
     )
 
 

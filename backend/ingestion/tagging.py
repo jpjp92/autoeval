@@ -24,7 +24,22 @@ logger = logging.getLogger("autoeval.ingestion.tagging")
 _SENTENCE_RE = re.compile(r'[가-힣]{2,}[^.\n]{5,}[다요]\b')
 
 
-def _is_admin_anchor(content: str) -> bool:
+# 영문 완성 문장: 대문자로 시작해 5단어 이상 이어지고 마침표·물음표로 끝남
+_EN_SENTENCE_RE = re.compile(r'\b[A-Z][A-Za-z]*(?:\s+[^\s]+){4,}?[a-z0-9%)\]][.!?](?:\s|$)')
+
+
+def _is_admin_anchor_en(stripped: str) -> bool:
+    """영문 청크용 행정 메타 판별 — 애매하면 본문으로 남긴다(False).
+
+    True: 완성 문장이 없고, 단어(알파벳 3자 이상)가 하나도 없는 날짜·번호·식별자 나열.
+    제목("Methods and Experimental Setup")과 지표 나열("Accuracy: 94.2%")은 남긴다.
+    """
+    if _EN_SENTENCE_RE.search(stripped):
+        return False
+    return not re.search(r'[A-Za-z]{3,}', stripped)
+
+
+def _is_admin_anchor(content: str, language: str = "ko") -> bool:
     """행정 메타 청크 여부 — 내용 밀도 기반 (문서 유형 무관).
 
     판별 기준 (두 조건 중 하나 충족 시 True):
@@ -35,6 +50,8 @@ def _is_admin_anchor(content: str) -> bool:
     stripped = content.strip()
     if len(stripped) >= 400:
         return False
+    if language == "en":
+        return _is_admin_anchor_en(stripped)
     korean_chars = len(re.findall(r'[가-힣]', stripped))
     korean_ratio = korean_chars / max(len(stripped), 1)
     if korean_ratio < 0.3:

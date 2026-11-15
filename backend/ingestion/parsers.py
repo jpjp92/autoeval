@@ -141,8 +141,48 @@ def _span_text_with_spaces(span: dict) -> str:
 # 섹션 감지 & 구조화
 # ============================================================================
 
-def detect_section_level(title: str) -> Optional[int]:
+# ── 영문 제목 (language == "en" 에서만 사용) ──────────────────────────────
+# "1 Introduction", "3.1 Pre-training BERT", "A.2 Details", "Appendix A", "Abstract" ...
+_EN_NAMED_HEADINGS = (
+    "abstract", "introduction", "background", "related work", "method", "methods",
+    "methodology", "experiments", "experimental setup", "results", "discussion",
+    "conclusion", "conclusions", "limitations", "acknowledgements", "acknowledgments",
+    "references", "bibliography", "appendix", "appendices", "contents", "table of contents",
+)
+_EN_NUM_HEADING_RE = re.compile(r'^(\d{1,2}(?:\.\d{1,2}){0,2}|[A-Z](?:\.\d{1,2}){1,2})\.?\s+[A-Z][\w\-]')
+_EN_APPENDIX_RE = re.compile(r'^Appendix(?:\s+[A-Z0-9]{1,2})?\b', re.IGNORECASE)
+# 세로 사이드바·running header (예: "arXiv:1706.03762v7 [cs.CL] 2 Aug 2023")
+_EN_MARGIN_STAMP_RE = re.compile(r'^arXiv:\d{4}\.\d{4,5}|\[(?:cs|stat|math|eess|q-bio|physics)\.[A-Za-z]{2}\]')
+# 수치 표 행·각주 오인 방지: 제목에는 문장 끝 마침표·쉼표가 많지 않다.
+_EN_MAX_HEADING_WORDS = 12
+
+
+def _en_heading_level(title: str) -> Optional[int]:
+    """영문 제목이면 레벨(1~3), 아니면 None."""
+    t = title.strip()
+    if _EN_MARGIN_STAMP_RE.search(t):
+        return None
+    words = t.split()
+    if not words or len(words) > _EN_MAX_HEADING_WORDS or t.endswith((".", ",", ";")):
+        return None
+    m = _EN_NUM_HEADING_RE.match(t)
+    if m:
+        num = m.group(1)
+        return min(num.count(".") + 1, 3)
+    if _EN_APPENDIX_RE.match(t):
+        return 1
+    bare = re.sub(r'^[\d\.\s]+', '', t).rstrip(":").strip().lower()
+    if bare in _EN_NAMED_HEADINGS:
+        return 1
+    return None
+
+
+def detect_section_level(title: str, language: str = "ko") -> Optional[int]:
     """제목 패턴을 분석하여 섹션 레벨 반환 (1, 2, 3...)"""
+    if language == "en":
+        level = _en_heading_level(title)
+        if level:
+            return level
     patterns = [
         (r'^[0-9]+\.[0-9]+\.[0-9]+', 3),
         (r'^[0-9]+\.[0-9]+', 2),
@@ -159,11 +199,21 @@ def detect_section_level(title: str) -> Optional[int]:
     return None
 
 
-def detect_heading(text: str, font_size: float, prev_font_size: float) -> Optional[str]:
-    """제목(Heading) 감지 로직."""
+def detect_heading(text: str, font_size: float, prev_font_size: float, language: str = "ko") -> Optional[str]:
+    """제목(Heading) 감지 로직.
+
+    language == "en": 사이드바 스탬프를 제외하고, 영문 번호·이름 제목을 인식한다.
+    그 외("ko")는 기존 규칙 그대로.
+    """
     clean_text = text.strip()
     if not clean_text or len(clean_text) > 100:
         return None
+
+    if language == "en":
+        if _EN_MARGIN_STAMP_RE.search(clean_text):
+            return None
+        if _en_heading_level(clean_text) and font_size >= 9.0:
+            return clean_text
 
     if re.match(r'^[-•ŸŸ∙]\s', clean_text):
         return None
@@ -209,7 +259,7 @@ def detect_heading(text: str, font_size: float, prev_font_size: float) -> Option
     return None
 
 
-def build_sections(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_sections(blocks: List[Dict[str, Any]], language: str = "ko") -> List[Dict[str, Any]]:
     """제목을 기준으로 블록들을 논리적 섹션으로 그룹화."""
     sections = []
     current_section: Dict[str, Any] = {"heading": "Root", "level": 0, "blocks": [], "page": 1}
@@ -219,11 +269,11 @@ def build_sections(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         text = b.get("text", "")
         font_size = b.get("font_size", 10.0)
 
-        heading = detect_heading(text, font_size, prev_font_size)
+        heading = detect_heading(text, font_size, prev_font_size, language)
         if heading:
             if current_section["blocks"]:
                 sections.append(current_section)
-            level = detect_section_level(heading) or min(current_section["level"] + 1, 4)
+            level = detect_section_level(heading, language) or min(current_section["level"] + 1, 4)
             current_section = {
                 "heading": heading,
                 "level": level,
@@ -244,7 +294,7 @@ def build_sections(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # 청크 필터링
 # ============================================================================
 
-def is_toc_chunk(text: str) -> bool:
+def is_toc_chunk(text: str, language: str = "ko") -> bool:
     """
     목차(Table of Contents) 청크인지 판단.
     - Layer 1: 가운뎃점(·) 밀도
@@ -252,6 +302,9 @@ def is_toc_chunk(text: str) -> bool:
     - Layer 3: 점선 + 페이지번호 라인 비율
     - Layer 4: "목차" 키워드 + 다수 섹션 번호 패턴 (번호 목차 형식)
     - Layer 5: 섹션 번호 밀도만으로 판단 (목차 키워드 없어도)
+
+    language == "en": Layer 4 키워드에 "Contents"/"Table of Contents"를 더하고,
+    Layer 5의 완성 문장 수를 영문 문장으로 센다. "ko"는 기존 규칙 그대로.
     """
     if not text or len(text) < 20:
         return False
@@ -279,7 +332,10 @@ def is_toc_chunk(text: str) -> bool:
 
     # Layer 4: "목차" 키워드 + 섹션 번호 5개 이상
     # 예: "목 차 서론 1. 개요 1.1 배경 1.2 ..." 형태 감지
-    if re.search(r'목\s*차', text):
+    toc_keyword = re.search(r'목\s*차', text) or (
+        language == "en" and re.search(r'^\s*(?:table\s+of\s+)?contents\b', text, re.IGNORECASE | re.MULTILINE)
+    )
+    if toc_keyword:
         section_nums = re.findall(r'\b\d+\.\d+', text)
         if len(section_nums) >= 5:
             return True
@@ -292,7 +348,10 @@ def is_toc_chunk(text: str) -> bool:
         # 단어 20개 당 섹션 번호 1개 이상이면 목차성 높음
         if word_count > 0 and len(section_nums) / word_count >= 0.05 and len(section_nums) >= 8:
             # 실제 문장(마침표·물음표로 끝나는 한국어 문장)이 거의 없으면 목차로 판정
-            sentences = re.findall(r'[가-힣][^。.!?]{10,}[。.!?]', text)
+            if language == "en":
+                sentences = re.findall(r'[A-Za-z][^.!?]{20,}[a-z\)][.!?](?:\s|$)', text)
+            else:
+                sentences = re.findall(r'[가-힣][^。.!?]{10,}[。.!?]', text)
             if len(sentences) <= 2:
                 return True
 

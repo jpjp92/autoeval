@@ -21,6 +21,7 @@ from config.supabase_client import save_doc_chunks_batch
 from db.doc_metadata_repo import upsert_doc_metadata
 from exceptions import APIQuotaExceededError
 from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking
+from ingestion.language import detect_language, normalize_english_blocks
 from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import detect_repeated_headers
 
@@ -142,7 +143,11 @@ async def _embed_and_save(
             "source": source_ext,
             "ingested_at": ingested_at,
             "embedding_model": _EMBED_MODEL,
+            "source_language": c.get("source_language", "ko"),
+            "chunk_policy": f"{c.get('source_language', 'ko')}-v1",
         }
+        if c.get("fallback_reason"):
+            chunk_metadata["fallback_reason"] = c["fallback_reason"]
         batch_rows.append({
             "content":     c["raw_text"],
             "embedding":   normalized_embedding,
@@ -198,15 +203,27 @@ async def process_and_ingest(
             _update(status=IngestionStatus.FAILED, error="추출된 블록 없음")
             return
 
+        lang_info = detect_language(b.get("text", "") for b in all_blocks)
+        language = lang_info["language"]
+        logger.info(
+            f"[{filename}] Source language: {language} "
+            f"(hangul_ratio={lang_info['hangul_ratio']}, letters={lang_info['letters']})"
+        )
+        if language == "en":
+            changed = normalize_english_blocks(all_blocks)
+            logger.info(f"[{filename}] English normalization (ligature/hyphen): {changed} blocks")
+
         _update(status=IngestionStatus.CHUNKING, message="청킹 중")
         if chunking_method == "llm":
             all_chunks_to_embed = await ingest_with_llm_chunking(
                 filename, pages, all_blocks, repeated_headers,
                 gemini_client=gemini_client, model_id=model_id,
+                language=language,
             )
         else:
             all_chunks_to_embed = ingest_with_rule_chunking(
                 filename, all_blocks, repeated_headers,
+                language=language,
             )
 
         if not all_chunks_to_embed:

@@ -9,6 +9,8 @@ import { modelLabel } from "@/src/lib/models";
 
 type SortColumn = 'job_id' | 'source_doc' | 'model' | 'total_qa' | 'eval_grade' | 'created_at';
 
+// Model comparison shows the top N; the rest unfold below (ranking stays continuous).
+const BENCH_VISIBLE = 4;
 const JOBS_PAGE_SIZE = 5;
 
 // Brand colors for a model ID (chip text/border + score bar).
@@ -117,6 +119,7 @@ export function DashboardOverview({
   const [sortField, setSortField] = useState<SortColumn>('created_at');
   const [sortDesc, setSortDesc] = useState(true);
   const [openJobDetail, setOpenJobDetail] = useState<string | null>(null);
+  const [benchExpanded, setBenchExpanded] = useState(false);
 
   const handleSort = (field: SortColumn) => {
     if (sortField === field) setSortDesc(!sortDesc);
@@ -503,7 +506,7 @@ export function DashboardOverview({
             </div>
           ) : (
             <div className="space-y-2 lg:space-y-3">
-              {data.model_benchmarks.map((bench, idx) => {
+              {(benchExpanded ? data.model_benchmarks : data.model_benchmarks.slice(0, BENCH_VISIBLE)).map((bench, idx) => {
                 const isTop = idx === 0;
                 const scorePct = Math.min(bench.avg_score * 100, 100);
 
@@ -595,6 +598,18 @@ export function DashboardOverview({
                   </div>
                 );
               })}
+              {data.model_benchmarks.length > BENCH_VISIBLE && (
+                <button
+                  type="button"
+                  onClick={() => setBenchExpanded(v => !v)}
+                  aria-expanded={benchExpanded}
+                  className="w-full flex items-center justify-center gap-1 py-2.5 rounded-xl border border-dashed border-slate-200 dark:border-white/10 text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  {benchExpanded
+                    ? <>접기 <ChevronUp className="w-3.5 h-3.5" /></>
+                    : <>나머지 {data.model_benchmarks.length - BENCH_VISIBLE}개 모델 보기 <ChevronDown className="w-3.5 h-3.5" /></>}
+                </button>
+              )}
             </div>
           )}
         </div>

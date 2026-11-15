@@ -11,8 +11,14 @@ import json
 from typing import Any, Dict, List, Optional
 
 
-def build_hierarchy_prompt(concatenated_text: str, h2_guide: str) -> str:
-    """H1/H2/H3 taxonomy + domain_profile 생성 프롬프트."""
+def build_hierarchy_prompt(concatenated_text: str, h2_guide: str, taxonomy_language: str = "ko") -> str:
+    """H1/H2/H3 taxonomy + domain_profile 생성 프롬프트.
+
+    taxonomy_language: 카테고리·domain_profile 출력 언어. "ko"(기본, 기존 프롬프트) | "en".
+    ("source"는 호출 측에서 문서 언어로 바꿔 넘긴다.)
+    """
+    if taxonomy_language == "en":
+        return _build_hierarchy_prompt_en(concatenated_text, h2_guide)
     return f"""
 <role>
 You are an expert document classifier and domain analyst.
@@ -58,6 +64,59 @@ Return a JSON object with this exact structure (all string values in Korean):
     }},
     "H1명B": {{
       "H2명1": ["H3명1", "H3명2"]
+    }}
+  }}
+}}
+</task>
+"""
+
+
+def _build_hierarchy_prompt_en(concatenated_text: str, h2_guide: str) -> str:
+    """영문 카테고리용. 구조·개수 규칙은 한국어 프롬프트와 같고 출력 언어만 다르다."""
+    return f"""
+<role>
+You are an expert document classifier and domain analyst.
+Build a complete hierarchical taxonomy (H1/H2/H3) AND extract a domain profile for the provided document.
+</role>
+
+<constraints>
+- H1 COUNT RULE (STRICTLY ENFORCED): You MUST output between 3 and 5 H1 keys — no fewer than 3, no more than 5.
+  If you identify more than 5 themes, MERGE the most similar or overlapping ones until you have at most 5.
+  Think of H1 as broad domain pillars, not chapter titles.
+- For each H1, create {h2_guide} H2 sub-categories covering distinct content themes.
+- For each H2, create 2~4 specific H3 leaf labels.
+- All taxonomy names in English (Title Case), at most 4 words (about 30 characters) each.
+- Do not translate the document. Keep model names, acronyms and technical terms as written (e.g. "BERT", "GLUE").
+- H1 must represent LEARNABLE content themes — NOT administrative metadata.
+- H1 must NOT be: dates, identifiers, author lists, contact info, affiliations, page headers, references.
+- Bad H1 examples: "Author Information", "Publication Date", "References"
+- Good H1 examples: "Model Architecture", "Pre-training Objectives", "Evaluation Benchmarks"
+- TEXT QUALITY RULE: The context may contain PDF extraction artifacts (broken hyphenation such as "addi- tional",
+  ligatures, stray symbols). Write clean English words — never copy corrupted text into any H1/H2/H3 name.
+</constraints>
+
+<context>
+{concatenated_text[:20000]}
+</context>
+
+<task>
+Return a JSON object with this exact structure (all string values in English):
+{{
+  "domain_analysis": "One sentence summarising the nature of the whole document",
+  "domain_profile": {{
+    "domain": "Document field/type (e.g. NLP research paper)",
+    "domain_short": "Short domain name, at most 3 words",
+    "target_audience": "Main readers (e.g. machine learning researchers)",
+    "key_terms": ["term1", "term2", "term3", "term4", "term5"],
+    "tone": "Writing style (e.g. formal academic)"
+  }},
+  "h2_h3_master": {{
+    "H1 Name A": {{
+      "H2 Name 1": ["H3 Name 1", "H3 Name 2"],
+      "H2 Name 2": ["H3 Name 1", "H3 Name 2"]
+    }},
+    "H1 Name B": {{
+      "H2 Name 1": ["H3 Name 1", "H3 Name 2"]
     }}
   }}
 }}
