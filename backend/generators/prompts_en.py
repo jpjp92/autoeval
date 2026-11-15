@@ -57,8 +57,8 @@ Select only types supported by the context — 6 types available:
 </diversity_rules>
 
 <constraints>
-- Language: Write all questions and answers in Korean (한국어)
-- Tone: Use formal interrogative endings for questions (~입니까?) and formal declarative for answers (~입니다.).
+- Language: Write all questions and answers in English, regardless of the context language.
+- Tone: Questions end with "?"; answers are complete, formal declarative English sentences.
 
 [Answer Completeness — MANDATORY]
 - If the question implies multiple items ("What are the...", "List all...", "scope"), the answer MUST include ALL relevant items found in the context.
