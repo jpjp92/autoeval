@@ -77,7 +77,7 @@ async def ingest_with_llm_chunking(
                 continue
             if _is_docx_noise_block(text):
                 continue
-            if _TOC_BLOCK_RE.search(text) or is_toc_chunk(text):
+            if _TOC_BLOCK_RE.search(text) or is_toc_chunk(text, language):
                 continue
             indexed_blocks.append({
                 "index": len(indexed_blocks),
@@ -116,7 +116,7 @@ async def ingest_with_llm_chunking(
 
         chunk_text = remove_footer_noise(chunk_text, repeated_headers)
 
-        if is_toc_chunk(chunk_text):
+        if is_toc_chunk(chunk_text, language):
             _filter_counts["toc"] += 1
             continue
         if _is_colophon_chunk(chunk_text):
@@ -213,7 +213,7 @@ def ingest_with_rule_chunking(
             if stripped.startswith("|") and "---" in stripped and not stripped.startswith("[표]"):
                 chunk_text = "[표]\n" + stripped
 
-            if is_toc_chunk(chunk_text):
+            if is_toc_chunk(chunk_text, language):
                 _filter_counts["toc"] += 1
                 continue
             if _is_colophon_chunk(chunk_text):

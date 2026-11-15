@@ -294,7 +294,7 @@ def build_sections(blocks: List[Dict[str, Any]], language: str = "ko") -> List[D
 # 청크 필터링
 # ============================================================================
 
-def is_toc_chunk(text: str) -> bool:
+def is_toc_chunk(text: str, language: str = "ko") -> bool:
     """
     목차(Table of Contents) 청크인지 판단.
     - Layer 1: 가운뎃점(·) 밀도
@@ -302,6 +302,9 @@ def is_toc_chunk(text: str) -> bool:
     - Layer 3: 점선 + 페이지번호 라인 비율
     - Layer 4: "목차" 키워드 + 다수 섹션 번호 패턴 (번호 목차 형식)
     - Layer 5: 섹션 번호 밀도만으로 판단 (목차 키워드 없어도)
+
+    language == "en": Layer 4 키워드에 "Contents"/"Table of Contents"를 더하고,
+    Layer 5의 완성 문장 수를 영문 문장으로 센다. "ko"는 기존 규칙 그대로.
     """
     if not text or len(text) < 20:
         return False
@@ -329,7 +332,10 @@ def is_toc_chunk(text: str) -> bool:
 
     # Layer 4: "목차" 키워드 + 섹션 번호 5개 이상
     # 예: "목 차 서론 1. 개요 1.1 배경 1.2 ..." 형태 감지
-    if re.search(r'목\s*차', text):
+    toc_keyword = re.search(r'목\s*차', text) or (
+        language == "en" and re.search(r'^\s*(?:table\s+of\s+)?contents\b', text, re.IGNORECASE | re.MULTILINE)
+    )
+    if toc_keyword:
         section_nums = re.findall(r'\b\d+\.\d+', text)
         if len(section_nums) >= 5:
             return True
@@ -342,7 +348,10 @@ def is_toc_chunk(text: str) -> bool:
         # 단어 20개 당 섹션 번호 1개 이상이면 목차성 높음
         if word_count > 0 and len(section_nums) / word_count >= 0.05 and len(section_nums) >= 8:
             # 실제 문장(마침표·물음표로 끝나는 한국어 문장)이 거의 없으면 목차로 판정
-            sentences = re.findall(r'[가-힣][^。.!?]{10,}[。.!?]', text)
+            if language == "en":
+                sentences = re.findall(r'[A-Za-z][^.!?]{20,}[a-z\)][.!?](?:\s|$)', text)
+            else:
+                sentences = re.findall(r'[가-힣][^。.!?]{10,}[。.!?]', text)
             if len(sentences) <= 2:
                 return True
 

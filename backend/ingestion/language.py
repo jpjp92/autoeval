@@ -11,7 +11,8 @@ ingestion/language.py
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable
+from collections import Counter
+from typing import Any, Dict, Iterable, List
 
 _HANGUL_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
@@ -47,3 +48,66 @@ def hangul_ratio(text: str) -> float:
     h = len(_HANGUL_RE.findall(text or ""))
     a = len(_LATIN_RE.findall(text or ""))
     return h / (h + a) if (h + a) else 0.0
+
+
+# ── 영문 정규화 (source_language == "en" 에서만 사용) ─────────────────────────
+
+_LIGATURES = {"\ufb00": "ff", "\ufb01": "fi", "\ufb02": "fl", "\ufb03": "ffi", "\ufb04": "ffl", "\ufb05": "st", "\ufb06": "st"}
+_LIGATURE_RE = re.compile("[\ufb00-\ufb06]")
+# 줄바꿈 하이픈: "addi- tional", "addi-\ntional" (뒤 조각은 소문자로 시작)
+# 하이픈 뒤에 공백·줄바꿈이 있어야 한다. "fine-tune" 처럼 붙어 있는 하이픈 단어는 건드리지 않는다.
+_HYPHEN_BREAK_RE = re.compile(r"\b([A-Za-z]{2,})-(?:[ \t]*\n[ \t]*|[ \t]+)([a-z]{2,})\b")
+_WORD_RE = re.compile(r"[A-Za-z]+(?:-[A-Za-z]+)*")
+
+
+def build_word_counts(texts: Iterable[str]) -> Counter:
+    """문서 전체 단어 빈도 (소문자). 하이픈 복원 판단에 쓴다."""
+    counts: Counter = Counter()
+    for t in texts:
+        t = _LIGATURE_RE.sub(lambda m: _LIGATURES[m.group(0)], t or "")
+        # 줄바꿈 하이픈 조각("com- bined"의 "com", "bined")은 단어로 세지 않는다.
+        t = _HYPHEN_BREAK_RE.sub(" ", t)
+        for w in _WORD_RE.findall(t):
+            counts[w.lower()] += 1
+    return counts
+
+
+def normalize_english_text(text: str, word_counts: Counter | None = None) -> str:
+    """합자를 풀고 줄바꿈 하이픈을 복원한다.
+
+    결정 순서 (word_counts = 문서 전체 단어 빈도):
+      1. 붙인 형태가 하이픈 형태보다 많이 나오면 붙인다      ("addi- tional" → "additional")
+      2. 하이픈 형태가 문서에 있으면 하이픈을 유지한다        ("pre- trained" → "pre-trained")
+      3. 두 조각이 모두 단독 단어로 나오면 하이픈을 유지한다  ("sequence- aligned" → "sequence-aligned")
+      4. 나머지는 붙인다                                      ("espe- cially" → "especially")
+    """
+    if not text:
+        return text
+    text = _LIGATURE_RE.sub(lambda m: _LIGATURES[m.group(0)], text)
+    counts = word_counts or Counter()
+
+    def _join(m: re.Match) -> str:
+        left, right = m.group(1), m.group(2)
+        joined, hyphenated = (left + right).lower(), f"{left}-{right}".lower()
+        if counts[joined] > counts[hyphenated]:
+            return left + right
+        both_words = (len(left) >= 3 and len(right) >= 3
+                      and counts[left.lower()] > 0 and counts[right.lower()] > 0)
+        if counts[hyphenated] > 0 or both_words:
+            return f"{left}-{right}"
+        return left + right
+
+    return _HYPHEN_BREAK_RE.sub(_join, text)
+
+
+def normalize_english_blocks(blocks: List[Dict[str, Any]]) -> int:
+    """블록 text를 제자리에서 정규화하고, 바뀐 블록 수를 돌려준다."""
+    counts = build_word_counts(b.get("text", "") for b in blocks)
+    changed = 0
+    for b in blocks:
+        t = b.get("text", "")
+        n = normalize_english_text(t, counts)
+        if n != t:
+            b["text"] = n
+            changed += 1
+    return changed

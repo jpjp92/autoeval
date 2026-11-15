@@ -24,7 +24,7 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -47,6 +47,7 @@ from ingestion.parsers import extract_text_by_page
 from ingestion.pipeline import process_and_ingest
 from ingestion.prompts import build_hierarchy_prompt
 from ingestion.tagging import _is_admin_anchor, run_tagging
+from ingestion.language import detect_language
 
 logger = logging.getLogger("autoeval.ingestion")
 
@@ -108,6 +109,8 @@ class IngestionStatusResponse(BaseModel):
 
 class HierarchyAnalysisRequest(BaseModel):
     filename: str
+    # 카테고리 출력 언어: "ko"(기본, 기존 동작) | "en" | "source"(문서 언어를 따름)
+    taxonomy_language: Literal["ko", "en", "source"] = "ko"
 
 
 class HierarchyAnalysisResponse(BaseModel):
@@ -240,7 +243,8 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     if not anchor_chunks:
         raise HTTPException(status_code=404, detail=f"No chunks found for: {request.filename}")
 
-    filtered = [c for c in anchor_chunks if not _is_admin_anchor(c["content"])]
+    sample_language = detect_language(c["content"] for c in anchor_chunks)["language"]
+    filtered = [c for c in anchor_chunks if not _is_admin_anchor(c["content"], sample_language)]
     if len(filtered) < 10:
         filtered = anchor_chunks
     anchor_chunks = filtered[:30]
@@ -251,7 +255,9 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
     total_chunks = len(anchor_chunks)
     h2_guide = "2~3" if total_chunks <= 50 else ("3~7" if total_chunks > 150 else "2~5")
 
-    prompt = build_hierarchy_prompt(concatenated_text, h2_guide)
+    taxonomy_language = sample_language if request.taxonomy_language == "source" else request.taxonomy_language
+    logger.info(f"[{request.filename}] taxonomy_language={taxonomy_language} (requested={request.taxonomy_language}, source={sample_language})")
+    prompt = build_hierarchy_prompt(concatenated_text, h2_guide, taxonomy_language)
 
     try:
         response = await gemini_client.aio.models.generate_content(

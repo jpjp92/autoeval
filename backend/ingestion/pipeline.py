@@ -21,7 +21,7 @@ from config.supabase_client import save_doc_chunks_batch
 from db.doc_metadata_repo import upsert_doc_metadata
 from exceptions import APIQuotaExceededError
 from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking
-from ingestion.language import detect_language
+from ingestion.language import detect_language, normalize_english_blocks
 from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import detect_repeated_headers
 
@@ -209,6 +209,9 @@ async def process_and_ingest(
             f"[{filename}] Source language: {language} "
             f"(hangul_ratio={lang_info['hangul_ratio']}, letters={lang_info['letters']})"
         )
+        if language == "en":
+            changed = normalize_english_blocks(all_blocks)
+            logger.info(f"[{filename}] English normalization (ligature/hyphen): {changed} blocks")
 
         _update(status=IngestionStatus.CHUNKING, message="청킹 중")
         if chunking_method == "llm":
