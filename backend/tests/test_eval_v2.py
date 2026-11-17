@@ -67,10 +67,21 @@ class DataValidationTests(unittest.TestCase):
         self.assertNotIn("doc_skew", {w["code"] for w in v["warnings"]})
 
     def test_skew_warning_with_multiple_documents(self):
-        items = [qa(q=f"질문 {i}번 내용은 무엇인가?", docId="a") for i in range(4)] + [qa(docId="b")]
+        items = [qa(q=f"질문 {i}번 내용은 무엇인가?", source_doc="a.pdf") for i in range(4)] + [qa(source_doc="b.pdf")]
         v = validate_dataset(items)
         skew = [w for w in v["warnings"] if w["code"] == "doc_skew"]
-        self.assertEqual(skew, [{"code": "doc_skew", "doc": "a", "ratio": 0.8}])
+        self.assertEqual(skew, [{"code": "doc_skew", "doc": "a.pdf", "ratio": 0.8}])
+
+    def test_chunk_ids_are_not_documents(self):
+        items = [qa(q=f"질문 {i}번 내용은 무엇인가?", docId="chunk-a") for i in range(4)] + [qa(docId="chunk-b")]
+        v = validate_dataset(items)
+        self.assertEqual(v["doc_distribution"], {})
+        self.assertNotIn("doc_skew", {w["code"] for w in v["warnings"]})
+
+    def test_duplicate_qa_count_differs_from_pairs(self):
+        items = [qa(), qa(q="서울 아파트 매매가격은 얼마나 올랐나요?"), qa(q="서울 아파트 매매가격은 얼마나 올랐나??"), qa(q="부산 가격은?")]
+        v = validate_dataset(items)
+        self.assertEqual((len(v["duplicates"]), v["duplicate_qa_count"]), (2, 3))
 
     def test_exact_duplicate_marked(self):
         self.assertEqual(find_duplicate_questions([qa(), qa(q="  서울 아파트  매매가격은 얼마나 올랐나? ")]),
