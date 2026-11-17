@@ -546,6 +546,87 @@ def _resolve_chunk_page(
 # 표 추출
 # ============================================================================
 
+NESTED_TABLE_MARK = "[하위 표]"
+
+
+def _bbox_contains(outer, inner, tol: float = 2.0) -> bool:
+    return (outer[0] - tol <= inner[0] and outer[1] - tol <= inner[1]
+            and inner[2] <= outer[2] + tol and inner[3] <= outer[3] + tol)
+
+
+def nested_table_label(row_label: str, cell_label: str) -> str:
+    """하위 표 제목: "[표] 서울 · 구별 변동률 (하위 표)"."""
+    parts = [p.strip() for p in (row_label, cell_label) if p and p.strip()]
+    return "[표] " + (" · ".join(parts) + " " if parts else "") + "(하위 표)"
+
+
+def _pdf_nested_tables(page, table_list: list) -> tuple:
+    """PDF 표 안의 표(하위 표)를 찾아 바깥 표 칸을 고치고 하위 표 제목을 만든다.
+
+    PyMuPDF는 바깥 표 칸에 하위 표 글자를 한 줄로 뭉쳐 넣고, 하위 표를 따로 한 번 더 잡는다.
+    - 하위 표: 2행·2열 이상만 본다(그림 조각이 1행 표로 잡히는 경우 제외).
+    - 레이아웃 틀: 글자가 있는 바깥 칸이 전부 하위 표를 담고 있으면(표 두 개를 나란히 놓는 틀)
+      바깥 표는 버리고 하위 표는 그대로 둔다.
+    - 그 외: 하위 표가 든 칸은 하위 표 영역 밖 글자 + "[하위 표]", 하위 표에는 행 이름·칸 글자로 제목.
+    Returns: ({id(outer): patched table_data}, {id(inner): label}, {id(wrapper)})
+    """
+    patched: dict = {}
+    labels: dict = {}
+    wrappers: set = set()
+    try:
+        words = page.get_text("words")
+    except Exception:
+        return patched, labels, wrappers
+
+    def _size(t):
+        data = t.extract()
+        return len(data), (len(data[0]) if data else 0)
+
+    inners = [t for t in table_list if min(_size(t)) >= 2]
+    children: dict = {}
+    for inner in inners:
+        parents = [o for o in table_list if o is not inner and _bbox_contains(o.bbox, inner.bbox)]
+        if parents:
+            outer = min(parents, key=lambda o: (o.bbox[2] - o.bbox[0]) * (o.bbox[3] - o.bbox[1]))
+            children.setdefault(id(outer), (outer, []))[1].append(inner)
+
+    for outer, kids in children.values():
+        try:
+            rows = outer.rows
+        except Exception:
+            continue
+        data = [list(r) for r in outer.extract()]
+        holder_cells, text_cells = 0, 0
+        for ri, row in enumerate(rows):
+            for ci, cb in enumerate(row.cells):
+                if cb is None or ri >= len(data) or ci >= len(data[ri]) or not (data[ri][ci] or "").strip():
+                    continue
+                if any(_bbox_contains(cb, k.bbox) for k in kids):
+                    holder_cells += 1
+                else:
+                    text_cells += 1
+        if text_cells == 0:
+            wrappers.add(id(outer))   # 레이아웃 틀
+            continue
+        for ri, row in enumerate(rows):
+            for ci, cb in enumerate(row.cells):
+                if cb is None or ri >= len(data) or ci >= len(data[ri]):
+                    continue
+                for inner in kids:
+                    if not _bbox_contains(cb, inner.bbox):
+                        continue
+                    outside = [
+                        w[4] for w in words
+                        if _bbox_contains(cb, w[:4]) and not any(_bbox_contains(k.bbox, w[:4]) for k in kids)
+                    ]
+                    cell_label = " ".join(outside).strip()
+                    data[ri][ci] = (cell_label + " " + NESTED_TABLE_MARK).strip()
+                    row_label = next((str(c).strip() for c in data[ri][:ci] if c and str(c).strip()), "")
+                    labels[id(inner)] = nested_table_label(row_label, cell_label)
+        patched[id(outer)] = data
+    return patched, labels, wrappers
+
+
 def is_inside_table(block_bbox, table_bboxes: list) -> bool:
     """블록 중심점이 테이블 bbox 영역 내에 위치하는지 확인."""
     bx0, by0, bx1, by1 = block_bbox
@@ -622,6 +703,15 @@ def _explode_stacked_rows(table_data: list) -> list:
 TABLE_SPLIT_MAX_CHARS = 700
 
 
+def _docx_table_to_markdown(text: str) -> str:
+    """DOCX 표 텍스트를 PDF 표와 같은 "[표] + 머리글 + 구분선" 형식으로 바꾼다(분할할 때만 쓴다)."""
+    rows = [l for l in text.split("\n") if l.strip()]
+    if not rows or not all(r.startswith("|") for r in rows):
+        return text
+    ncols = max(rows[0].count("|") - 1, 1)
+    return "\n".join(["[표]", rows[0], "| " + " | ".join(["---"] * ncols) + " |"] + rows[1:])
+
+
 def split_large_table_text(text: str, max_chars: int = TABLE_SPLIT_MAX_CHARS) -> List[str]:
     """[표] 마크다운이 max_chars를 넘으면 머리글을 붙인 여러 조각으로 나눈다.
 
@@ -629,7 +719,11 @@ def split_large_table_text(text: str, max_chars: int = TABLE_SPLIT_MAX_CHARS) ->
     각 조각은 "[표] (n/N)" 으로 시작하고 머리글을 반복한 뒤 본문 행을 max_chars 안에서 담는다.
     표가 아니거나 작으면 [text] 그대로 돌려준다.
     """
-    if not text.startswith("[표]") or len(text) <= max_chars:
+    if len(text) <= max_chars:
+        return [text]
+    if text.startswith("| "):
+        text = _docx_table_to_markdown(text)   # DOCX 표("| a | b |" 행을 빈 줄로 구분)
+    if not text.startswith("[표]"):
         return [text]
     lines = text.split("\n")
     rows = lines[1:]
@@ -775,12 +869,19 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
 
                 table_bboxes = [t.bbox for t in table_list]
                 page_items = []  # (y_pos, text, block_dict)
+                nested_data, nested_labels, layout_wrappers = _pdf_nested_tables(page, table_list)
 
                 for t in table_list:
+                    if id(t) in layout_wrappers:
+                        continue
                     ty0, ty1 = t.bbox[1], t.bbox[3]
                     if ty0 < page_height * 0.05 or ty1 > page_height * 0.92:
                         continue
-                    table_text = format_table_as_text(t.extract(), page=page, table_obj=t)
+                    table_text = format_table_as_text(
+                        nested_data.get(id(t)) or t.extract(), page=page, table_obj=t
+                    )
+                    if table_text and id(t) in nested_labels:
+                        table_text = table_text.replace("[표]", nested_labels[id(t)], 1)
                     if table_text:
                         page_items.append((ty0, table_text, {
                             "text": table_text,
@@ -935,10 +1036,13 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                         merged.append(para)
                 return " ".join(merged) if merged else ""
 
-            def _extract_table(tbl_elm) -> str:
+            def _extract_table(tbl_elm, nested_out: list | None = None) -> str:
                 """각 행을 '| cell | cell |' 형태로 변환.
                 행 사이를 \\n\\n으로 구분해 RecursiveCharacterTextSplitter가
                 행 경계에서만 분할하도록 보장.
+
+                셀 안의 표(하위 표)는 이전에는 읽지 않아 내용이 사라졌다.
+                이제 그 칸에는 "[하위 표]"만 남기고, 하위 표는 (제목, 텍스트)로 nested_out에 담는다.
                 """
                 rows_text = []
                 for tr in tbl_elm.findall(f"{{{WNS}}}tr"):
@@ -946,6 +1050,14 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                     seen: set = set()
                     for tc in tr.findall(f"{{{WNS}}}tc"):
                         ct = _cell_text(tc).strip()
+                        inner_tbls = tc.findall(f"{{{WNS}}}tbl")
+                        if inner_tbls:
+                            row_label = cells[0] if cells else ""
+                            for inner in inner_tbls:
+                                inner_text = _extract_table(inner, nested_out)
+                                if inner_text.strip() and nested_out is not None:
+                                    nested_out.append((nested_table_label(row_label, ct), inner_text))
+                            ct = (ct + " " + NESTED_TABLE_MARK).strip()
                         if ct and ct not in seen:
                             seen.add(ct)
                             cells.append(ct)
@@ -984,10 +1096,20 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
                     })
 
                 elif local == 'tbl':
-                    table_text = _extract_table(child)
+                    nested: list = []
+                    table_text = _extract_table(child, nested)
                     if table_text.strip():
                         blocks.append({
                             "text": table_text,
+                            "font_size": 10.0,
+                            "bbox": [0, idx * 20, 500, idx * 20 + 18],
+                            "page": 1,
+                            "is_table": True,
+                        })
+                    # 하위 표는 바깥 표 바로 뒤에 별도 블록으로 둔다.
+                    for label, inner_text in nested:
+                        blocks.append({
+                            "text": label + "\n" + inner_text,
                             "font_size": 10.0,
                             "bbox": [0, idx * 20, 500, idx * 20 + 18],
                             "page": 1,
