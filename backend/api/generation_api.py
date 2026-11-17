@@ -34,6 +34,10 @@ from config.supabase_client import get_qa_generation_from_supabase, is_supabase_
 from generators.job_manager import JobStatus, job_manager
 from generators.worker import run_qa_generation
 
+try:
+    from backend.job_ids import new_transaction_id
+except ImportError:
+    from job_ids import new_transaction_id
 logger = logging.getLogger("autoeval.generation")
 
 
@@ -82,7 +86,7 @@ def setup_generation_routes(app: FastAPI):
             {"model": "gemini-3.8-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
         """
         try:
-            job_id = f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+            job_id = new_transaction_id()
             job_manager.create_job(job_id, request.model_dump())
             logger.info(f"Created generation job: {job_id}")
 

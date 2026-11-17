@@ -1,6 +1,6 @@
 // 평가 v2 전용 화면 조각 — 기획: docs/Plan/PLAN_261117_EVAL_V2_UI.md
 import { useState } from 'react';
-import { ShieldCheck, ChevronDown, AlertTriangle, Languages, Quote } from 'lucide-react';
+import { ShieldCheck, ChevronDown, AlertTriangle, Languages, Quote, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import type { QAPreviewItem, V2Validation, V2JudgeSummary } from '@/src/types/evaluation';
 import {
@@ -30,19 +30,41 @@ export function V2Badge({ version }: { version: 'v1' | 'v2' }) {
   );
 }
 
-function Stat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'warn' | 'ok' }) {
+type GaugeTone = 'ok' | 'warn' | 'fail';
+const TONE: Record<GaugeTone, { ring: string; text: string; label: string }> = {
+  ok:   { ring: 'text-emerald-500 dark:text-emerald-400', text: 'text-emerald-600 dark:text-emerald-400', label: '정상' },
+  warn: { ring: 'text-amber-500 dark:text-amber-400',     text: 'text-amber-600 dark:text-amber-400',     label: '주의' },
+  fail: { ring: 'text-rose-500 dark:text-rose-400',       text: 'text-rose-600 dark:text-rose-400',       label: '실패' },
+};
+
+/** 상태 게이지 — v1 MetricRadialGauge와 같은 링 모양. 점수가 아니라 상태(정상·주의·실패)를 색으로 표시한다 */
+function StatusGauge({ ratio, label, detail, tone }: { ratio: number; label: string; detail: string; tone: GaugeTone }) {
+  const r = 42;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  const t = TONE[tone];
   return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 break-keep">{label}</p>
-      <p className={cn('text-lg font-bold font-mono',
-        tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : tone === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100')}>
-        {value}
-      </p>
+    <div className="flex flex-col items-center text-center min-w-0">
+      <div className="relative w-20 h-20 lg:w-24 lg:h-24" role="img" aria-label={`${label} ${(clamped * 100).toFixed(0)}% (${t.label})`}>
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeWidth="5" className="text-slate-200 dark:text-white/10" />
+          <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={circ * (1 - clamped)}
+            className={cn('transition-[stroke-dashoffset] duration-1000 ease-out', t.ring)} />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-lg lg:text-xl font-black text-slate-800 dark:text-white tracking-tight">
+          {(clamped * 100).toFixed(0)}%
+        </span>
+      </div>
+      <p className="mt-2 text-xs font-bold text-slate-700 dark:text-slate-200">{label}</p>
+      <p className={cn('text-[11px] break-keep', tone === 'ok' ? 'text-slate-500 dark:text-slate-400' : t.text)}>{detail}</p>
     </div>
   );
 }
 
-/** 데이터 검증 카드 — 점수 없이 숫자와 경고만 */
+const SMALL_SAMPLE = 20;
+
+/** 데이터 검증 카드 — 진단 정보(점수에 반영하지 않음): 상태 게이지 2개 + 의도 분포 + 상태 줄 */
 export function ValidationCard({
   validation, intentDistribution, onShowDuplicates,
 }: {
@@ -50,60 +72,128 @@ export function ValidationCard({
   intentDistribution: any[];
   onShowDuplicates?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const dup = validation.duplicates?.length ?? 0;
-  const warnings = (validation.warnings ?? []).filter(w => w.code !== 'syntax_invalid' && w.code !== 'duplicate_questions');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const total = Math.max(validation.total, 1);
+  const pairs = validation.duplicates?.length ?? 0;
+  // 쌍 수와 QA 수는 다르다. 이전 결과에 duplicate_qa_count가 없으면 쌍에서 계산한다
+  const dupQA = validation.duplicate_qa_count
+    ?? new Set((validation.duplicates ?? []).flatMap(d => [d.a, d.b])).size;
+  const syntaxTone: GaugeTone = validation.invalid > 0 ? 'fail' : 'ok';
+  const dupTone: GaugeTone = dupQA > 0 ? 'warn' : 'ok';
+  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew');
+  const docs = Object.entries(validation.doc_distribution ?? {}).sort((a, b) => b[1] - a[1]);
+  const docMax = Math.max(1, ...docs.map(d => d[1]));
+  const allClear = validation.invalid === 0 && pairs === 0 && skew.length === 0;
+
+  const treemap = intentDistribution.length > 0 && (
+    <>
+      <IntentTreemap data={intentDistribution} />
+      {validation.total < SMALL_SAMPLE && (
+        <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">QA {validation.total}개 — 표본이 적어 분포는 참고용입니다.</p>
+      )}
+    </>
+  );
+
   return (
     <div className="bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
-      <div className="mb-3 flex items-start justify-between">
+      <div className="mb-3 flex items-start justify-between gap-2">
         <div>
           <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-500" /> 데이터 검증
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">구문 · 중복 · 분포 (점수에 반영하지 않음)</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 break-keep">형식 검사 · 중복 탐지 · 데이터 구성 진단 (품질 점수에 미반영)</p>
         </div>
         <ChartInfoTooltip
           title="데이터 검증"
           items={[
             { text: '필수 필드·길이 검사에서 떨어진 QA는 품질 평가에서 제외합니다.' },
-            { label: '중복 의심', text: '질문 문자열 유사도 0.7 이상인 쌍' },
-            { label: '문서 쏠림', text: '문서가 2개 이상일 때만 경고합니다.' },
+            { label: '중복 의심', text: '질문 문자열 유사도 0.7 이상인 쌍. 의미상 중복을 확정하지는 않습니다.' },
+            { label: '의도 분포', text: '데이터 구성 정보입니다. 고르지 않아도 품질이 낮다는 뜻은 아닙니다.' },
           ]}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="구문 정상" value={`${validation.valid} / ${validation.total}`} tone={validation.invalid ? 'warn' : 'ok'} />
-        <div className="min-w-0">
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">중복 의심</p>
-          <div className="flex items-baseline gap-2">
-            <p className={cn('text-lg font-bold font-mono', dup ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-slate-100')}>{dup}건</p>
-            {dup > 0 && onShowDuplicates && (
-              <button onClick={onShowDuplicates} className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">보기</button>
-            )}
-          </div>
-        </div>
+
+      {/* 상태 게이지 2개 */}
+      <div className="grid grid-cols-2 gap-3 py-2">
+        <StatusGauge
+          ratio={validation.valid / total}
+          label="구문 정상"
+          detail={validation.invalid ? `${validation.valid} / ${validation.total}개 · 탈락 ${validation.invalid}` : `${validation.valid} / ${validation.total}개`}
+          tone={syntaxTone}
+        />
+        <StatusGauge
+          ratio={1 - dupQA / total}
+          label="중복 의심 없음"
+          detail={pairs ? `중복 의심 ${pairs}쌍 · QA ${dupQA}개` : '중복 의심 0쌍'}
+          tone={dupTone}
+        />
       </div>
-      {warnings.length > 0 && (
-        <ul className="mt-3 space-y-1">
-          {warnings.map((w, i) => (
-            <li key={i} className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300">
-              <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
-              <span className="break-keep">
-                {VALIDATION_WARNING_LABEL[w.code] ?? w.code}
-                {w.code === 'doc_skew' && w.ratio != null && ` — ${w.doc} ${(w.ratio * 100).toFixed(0)}%`}
-              </span>
-            </li>
-          ))}
-        </ul>
+
+      {/* 질문 의도 분포 — 데스크톱은 항상, 모바일은 접힘 */}
+      {intentDistribution.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">질문 의도 분포</p>
+            <button
+              onClick={() => setMobileOpen(o => !o)}
+              aria-expanded={mobileOpen}
+              className="md:hidden flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400"
+            >
+              {mobileOpen ? '접기' : '펼치기'} <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', mobileOpen && 'rotate-180')} />
+            </button>
+          </div>
+          <div className="hidden md:flex md:flex-col">{treemap}</div>
+          {mobileOpen && <div className="md:hidden flex flex-col">{treemap}</div>}
+        </div>
       )}
-      <button
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        className="mt-auto pt-3 flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-      >
-        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} /> 질문 의도 분포
-      </button>
-      {open && <div className="mt-2"><IntentTreemap data={intentDistribution} /></div>}
+
+      {/* 문서별 QA 수 — 문서가 2개 이상일 때만 */}
+      {docs.length >= 2 && (
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">문서별 QA</p>
+          {docs.slice(0, 5).map(([name, n]) => (
+            <div key={name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-[11px]">
+              <div className="min-w-0">
+                <p className="truncate text-slate-600 dark:text-slate-300" title={name}>{name}</p>
+                <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+                  <div className="h-full rounded-full bg-indigo-400" style={{ width: `${(n / docMax) * 100}%` }} />
+                </div>
+              </div>
+              <span className="font-mono text-slate-500 dark:text-slate-400">{n}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 상태 줄 */}
+      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+        {allClear ? (
+          <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="w-4 h-4" /> 구문 오류 및 중복 의심 없음
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {validation.invalid > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-500/20">
+                <AlertTriangle className="w-3 h-3" /> 구문 탈락 {validation.invalid}건
+              </span>
+            )}
+            {pairs > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-500/20">
+                <AlertTriangle className="w-3 h-3" /> 중복 의심 {pairs}쌍
+                {onShowDuplicates && (
+                  <button onClick={onShowDuplicates} className="ml-1 underline underline-offset-2">보기</button>
+                )}
+              </span>
+            )}
+            {skew.map((w, i) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-500/20">
+                <AlertTriangle className="w-3 h-3" /> {VALIDATION_WARNING_LABEL[w.code] ?? w.code} {((w.ratio ?? 0) * 100).toFixed(0)}%
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

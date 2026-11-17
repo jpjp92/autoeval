@@ -81,6 +81,12 @@ export function buildV2HTMLContent(data: EvaluationData): string {
   const intentMax = Math.max(1, ...intentEntries.map(e => e[1]));
   const policies = Object.entries(judge.by_language_policy ?? {});
   const qByIdx = new Map(rows.map(r => [r.qa_index, r]));
+  const intentTotal = Math.max(1, intentEntries.reduce((a, e) => a + e[1], 0));
+  const dupQA = validation.duplicate_qa_count ?? new Set(validation.duplicates.flatMap(d => [d.a, d.b])).size;
+  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew');
+  const docs = Object.entries(validation.doc_distribution ?? {}).sort((a, b) => b[1] - a[1]);
+  const docMax = Math.max(1, ...docs.map(d => d[1]));
+  const allClear = !validation.invalid && !validation.duplicates.length && !skew.length;
 
   const tableRows = rows.map((r, i) => `
     <tr data-status="${esc(r.v2_status)}">
@@ -124,7 +130,7 @@ h2 .n{font-size:12px;color:var(--muted);font-weight:500}
 .card .s{font-size:11px;color:var(--muted)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media (max-width:760px){.grid2{grid-template-columns:1fr}}
-.bar{display:grid;grid-template-columns:84px 1fr 52px;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+.bar{display:grid;grid-template-columns:84px 1fr 64px;align-items:center;gap:8px;margin:7px 0;font-size:13px}
 .bar .track{height:12px;border-radius:6px;background:var(--soft);position:relative;overflow:hidden}
 .bar .fill{position:absolute;inset:0 auto 0 0;border-radius:6px}
 .bar .th{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text);opacity:.35}
@@ -134,7 +140,9 @@ h2 .n{font-size:12px;color:var(--muted);font-weight:500}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .chip{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid var(--line);background:var(--soft);color:var(--sub);margin:1px 2px 1px 0}
 .chip.ok{background:var(--good-bg);color:var(--good)}.chip.ng{background:var(--bad-bg);color:var(--bad)}
-.warn{color:var(--mid);font-size:13px;margin-top:6px}
+.warn{color:var(--mid);font-size:13px;margin-top:10px}
+.okline{color:var(--good);font-size:13px;margin-top:10px;font-weight:600}
+.bar .val{white-space:nowrap}
 .dup{font-size:12px;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
 .dup li{list-style:none;margin:4px 0;overflow-wrap:anywhere}
 .qa-card{border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:10px;padding:12px 14px;margin-bottom:10px;break-inside:avoid;page-break-inside:avoid}
@@ -208,15 +216,22 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
 </section>
 
 <section>
-  <h2>데이터 검증 <span class="n">점수에 반영하지 않음</span></h2>
+  <h2>데이터 검증 <span class="n">형식 검사 · 중복 탐지 · 데이터 구성 진단 (품질 점수에 미반영)</span></h2>
   <div class="cards">
-    <div class="card"><p class="k">구문 정상</p><p class="v">${validation.valid} / ${validation.total}</p></div>
-    <div class="card"><p class="k">중복 의심</p><p class="v ${validation.duplicates.length ? 'mid' : ''}">${validation.duplicates.length}건</p></div>
+    <div class="card"><p class="k">구문 정상</p><p class="v ${validation.invalid ? 'bad' : 'good'}">${validation.valid} / ${validation.total}</p><p class="s">${validation.invalid ? `탈락 ${validation.invalid}건 · 평가에서 제외` : '탈락 없음'}</p></div>
+    <div class="card"><p class="k">중복 의심</p><p class="v ${validation.duplicates.length ? 'mid' : 'good'}">${validation.duplicates.length}쌍</p><p class="s">관련 QA ${dupQA}개 · 유사도 0.7 이상</p></div>
   </div>
-  ${(validation.warnings ?? []).filter(w => w.code === 'doc_skew').map(w => `<p class="warn">⚠ ${esc(VALIDATION_WARNING_LABEL[w.code] ?? w.code)} — ${esc(w.doc)} ${((w.ratio ?? 0) * 100).toFixed(0)}%</p>`).join('')}
+  <p class="${allClear ? 'okline' : 'warn'}">${allClear ? '✓ 구문 오류 및 중복 의심 없음' : [
+    validation.invalid ? `⚠ 구문 탈락 ${validation.invalid}건` : '',
+    validation.duplicates.length ? `⚠ 중복 의심 ${validation.duplicates.length}쌍` : '',
+    ...skew.map(w => `⚠ ${esc(VALIDATION_WARNING_LABEL[w.code] ?? w.code)} — ${esc(w.doc)} ${((w.ratio ?? 0) * 100).toFixed(0)}%`),
+  ].filter(Boolean).join(' · ')}</p>
   ${validation.duplicates.length ? `<ul class="dup">${validation.duplicates.slice(0, 20).map(d => `<li>#${d.a + 1} ↔ #${d.b + 1} <span class="muted">(유사도 ${d.similarity.toFixed(2)})</span><br>${esc(qByIdx.get(d.a)?.q ?? '')}<br><span class="muted">${esc(qByIdx.get(d.b)?.q ?? '')}</span></li>`).join('')}</ul>` : ''}
   ${intentEntries.length ? `<p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">질문 의도 분포</p>
-  ${intentEntries.map(([k, n]) => `<div class="bar"><span>${esc(INTENT_KR[k] ?? k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / intentMax * 100).toFixed(1)}%"></span></span><span class="val">${n}</span></div>`).join('')}` : ''}
+  ${intentEntries.map(([k, n]) => `<div class="bar"><span>${esc(INTENT_KR[k] ?? k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / intentMax * 100).toFixed(1)}%"></span></span><span class="val">${n} · ${(n / intentTotal * 100).toFixed(0)}%</span></div>`).join('')}
+  <p class="s muted" style="font-size:11px">분포는 데이터 구성 정보이며 품질 판정이 아닙니다.${validation.total < 20 ? ` QA ${validation.total}개로 표본이 적어 참고용입니다.` : ''}</p>` : ''}
+  ${docs.length >= 2 ? `<p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">문서별 QA</p>
+  ${docs.map(([k, n]) => `<div class="bar"><span title="${esc(k)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / docMax * 100).toFixed(1)}%"></span></span><span class="val">${n}</span></div>`).join('')}` : ''}
 </section>
 </div>
 

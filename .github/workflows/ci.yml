@@ -39,6 +39,7 @@ jobs:
           backend.tests.test_english_chunking
           backend.tests.test_judge_content
           backend.tests.test_eval_v2
+          backend.tests.test_job_ids
 
   frontend:
     name: frontend
