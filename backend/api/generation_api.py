@@ -86,7 +86,7 @@ def setup_generation_routes(app: FastAPI):
             {"model": "gemini-3.8-flash", "lang": "ko", "samples": 8, "prompt_version": "v1"}
         """
         try:
-            job_id = new_transaction_id()
+            job_id = new_transaction_id(taken=job_manager.jobs.keys())
             job_manager.create_job(job_id, request.model_dump())
             logger.info(f"Created generation job: {job_id}")
 
