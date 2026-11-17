@@ -24,6 +24,7 @@ from ingestion.parsers import (
     merge_adjacent_short_blocks,
     normalize_for_hash,
     remove_footer_noise,
+    split_large_table_text,
     strip_redundant_headings,
     _is_colophon_chunk,
     _is_symbol_noise_chunk,
@@ -51,6 +52,52 @@ def _is_docx_noise_block(text: str) -> bool:
     if len(text) <= 12 and re.match(r'^[A-Za-z]{1,2}[)（\]】]', text):
         return True
     return False
+
+
+def _split_verbatim_tables(blocks: List[Dict[str, Any]]) -> tuple:
+    """큰 표 블록을 LLM 입력에서 빼고, 머리글을 붙인 조각을 그대로 청크로 만든다.
+
+    큰 표를 LLM이 산문으로 풀면 수치의 절반 이상이 빠지고 값이 다른 행에 붙는다
+    (2026-11-17 보도자료 PDF 실측). TABLE_SPLIT_MAX_CHARS 이하 표는 기존처럼 LLM에 넘긴다.
+
+    Returns: (llm_blocks, table_chunks) — 둘 다 같은 index 공간을 쓴다.
+    """
+    llm_blocks: List[Dict[str, Any]] = []
+    table_chunks: List[Dict[str, Any]] = []
+    prev_text = ""
+    for b in blocks:
+        text = b["text"]
+        parts = split_large_table_text(text)
+        if len(parts) == 1:
+            llm_blocks.append({**b, "index": len(llm_blocks) + len(table_chunks)})
+        else:
+            # 바로 앞 블록이 짧으면 표 제목으로 보고 각 조각 첫 줄에 넣는다(조각만 봐도 무슨 표인지 알 수 있게).
+            prev = re.sub(r"\[\s*\]", "", prev_text).strip()
+            caption = prev if prev and len(prev) <= 40 and "\n" not in prev else ""
+            for k, part in enumerate(parts, 1):
+                idx = len(llm_blocks) + len(table_chunks)
+                label = f"{caption} ({k}/{len(parts)})" if caption else f"({k}/{len(parts)})"
+                part = part.replace(f"[표] ({k}/{len(parts)})", f"[표] {label}", 1)
+                table_chunks.append({
+                    "text": part,
+                    "section_title": label if caption else f"[표] {label}",
+                    "source_blocks": [idx],
+                    "page": b.get("page", 1),
+                    "table_verbatim": True,
+                })
+        prev_text = text
+    return llm_blocks, table_chunks
+
+
+def _merge_by_source_order(llm_chunks: List[Dict[str, Any]], table_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """LLM 청크와 원문 표 청크를 원래 블록 순서대로 합친다."""
+    merged = sorted(
+        llm_chunks + table_chunks,
+        key=lambda c: min(c.get("source_blocks") or [10 ** 9]),
+    )
+    for i, c in enumerate(merged):
+        c["chunk_index"] = i
+    return merged
 
 
 async def ingest_with_llm_chunking(
@@ -84,19 +131,21 @@ async def ingest_with_llm_chunking(
                 "page": b.get("page", 1),
                 "text": text,
             })
+        indexed_blocks, table_chunks = _split_verbatim_tables(indexed_blocks)
         chunks = await run_llm_chunking_docx(
             blocks=indexed_blocks,
             client=gemini_client,
             model=model_id,
             language=language,
         )
+        chunks = _merge_by_source_order(chunks, table_chunks)
     else:
         page_count = max((p.get("page", 1) for p in pages), default=1)
-        indexed_blocks = [
-            {"index": i, "page": b.get("page", 1), "text": b.get("text", "").strip()}
-            for i, b in enumerate(all_blocks)
+        indexed_blocks, table_chunks = _split_verbatim_tables([
+            {"page": b.get("page", 1), "text": b.get("text", "").strip()}
+            for b in all_blocks
             if b.get("text", "").strip()
-        ]
+        ])
         chunks = await run_llm_chunking(
             blocks=indexed_blocks,
             client=gemini_client,
@@ -104,6 +153,7 @@ async def ingest_with_llm_chunking(
             page_count=page_count,
             language=language,
         )
+        chunks = _merge_by_source_order(chunks, table_chunks)
 
     all_chunks_to_embed = []
     seen_hashes: set = set()

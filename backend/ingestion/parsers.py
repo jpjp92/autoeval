@@ -558,6 +558,106 @@ def is_inside_table(block_bbox, table_bboxes: list) -> bool:
     return False
 
 
+def _cell_lines(cell) -> list:
+    return [l.strip() for l in str(cell).split("\n") if l.strip()] if cell else []
+
+
+def _explode_stacked_rows(table_data: list) -> list:
+    """한 칸에 여러 행 값이 줄바꿈으로 쌓인 표 행을 실제 행으로 펼친다.
+
+    PDF 표에서 하위 행 경계선이 없으면 PyMuPDF가 여러 행을 한 칸에 줄바꿈으로 담는다.
+      예) ['수원\\n수원 장안\\n수원 권선', '2.40\\n1.62\\n0.96', ...] → 3개 행
+    - 줄이 2개 이상인 칸들의 줄 수가 모두 N으로 같으면 N개 행으로 나눈다.
+      한 줄짜리 칸(상위 지역명 등)은 첫 행에만 두고, 나머지는 이후 forward-fill이 채운다.
+    - 이름 칸 줄 수가 값 칸보다 적고, 다음 행들이 "그 칸만 있고 값 칸은 빈" 행이면
+      그 줄들을 이어 붙여 N을 맞춘다. PyMuPDF가 이름을 여러 행에 나눠 담는 두 경우:
+        ['부천⏎부천 원미…'(4줄), 값 28줄] + [이름 24줄, 값 없음]
+        ['인 천'(1줄), 값 10줄] + ['부 산', None…] + … + ['충 남', None…]
+    - 이어 받은 칸이 끝내 N줄이 되지 않거나 다른 칸과 줄 수가 맞지 않으면 원래 행을 그대로 둔다(기존 동작).
+    """
+    rows = [list(r) for r in table_data]
+    out: list = []
+    i = 0
+    while i < len(rows):
+        row = rows[i]
+        lines = [_cell_lines(c) for c in row]
+        counts = [len(l) for l in lines]
+        multi = [n for n in counts if n >= 2]
+        if not multi:
+            out.append(row)
+            i += 1
+            continue
+        n = max(set(multi), key=multi.count)   # 가장 흔한 줄 수 = 값 칸의 행 수
+        consumed = 1
+        # 줄이 모자란 칸은 다음 행(그 칸만 있고 나머지는 빈 행)에서 이어 받는다.
+        short = [j for j, c in enumerate(counts) if 1 <= c < n]
+        borrowed: set = set()
+        while short and i + consumed < len(rows):
+            nxt = [_cell_lines(c) for c in rows[i + consumed]]
+            if any(nxt[j] for j in range(len(nxt)) if j not in short):
+                break   # 다음 행에 다른 값이 있으면 별개의 행
+            for j in short:
+                if j < len(nxt) and nxt[j]:
+                    lines[j] = lines[j] + nxt[j]
+                    borrowed.add(j)
+            consumed += 1
+            counts = [len(l) for l in lines]
+            short = [j for j in short if counts[j] < n]
+        # 줄바꿈 칸이 하나뿐인데 이어 받은 칸도 없으면 머리글 등의 줄바꿈("10.13⏎(2주 누계)") — 펼치지 않는다.
+        lone_line_break = len(multi) < 2 and not borrowed
+        if lone_line_break or any(counts[j] != n for j in borrowed) or any(c >= 2 and c != n for c in counts):
+            out.append(row)   # 맞출 수 없음 — 기존 동작
+            i += 1
+            continue
+        for k in range(n):
+            out.append([
+                (l[k] if len(l) == n else (l[0] if k == 0 and l else None))
+                for l in lines
+            ])
+        i += consumed
+    return out
+
+
+# 이 글자 수를 넘는 표는 LLM 산문화 없이 머리글을 붙인 조각으로 청크를 만든다(청크 상한 800자 이내).
+TABLE_SPLIT_MAX_CHARS = 700
+
+
+def split_large_table_text(text: str, max_chars: int = TABLE_SPLIT_MAX_CHARS) -> List[str]:
+    """[표] 마크다운이 max_chars를 넘으면 머리글을 붙인 여러 조각으로 나눈다.
+
+    머리글 = 첫 행 + 구분선 + 그 뒤에 이어지는 "첫 칸이 빈" 행(날짜·단위 같은 2단 머리글).
+    각 조각은 "[표] (n/N)" 으로 시작하고 머리글을 반복한 뒤 본문 행을 max_chars 안에서 담는다.
+    표가 아니거나 작으면 [text] 그대로 돌려준다.
+    """
+    if not text.startswith("[표]") or len(text) <= max_chars:
+        return [text]
+    lines = text.split("\n")
+    rows = lines[1:]
+    if len(rows) < 3 or not rows[1].startswith("| ---"):
+        return [text]
+    header = rows[:2]
+    body_start = 2
+    while body_start < len(rows) and re.match(r"^\|\s*\|", rows[body_start]):
+        header.append(rows[body_start])   # 첫 칸이 빈 2단 머리글
+        body_start += 1
+    body = rows[body_start:]
+    if not body:
+        return [text]
+    head_len = sum(len(h) + 1 for h in header) + 12
+    groups: List[List[str]] = [[]]
+    size = head_len
+    for r in body:
+        if groups[-1] and size + len(r) + 1 > max_chars:
+            groups.append([])
+            size = head_len
+        groups[-1].append(r)
+        size += len(r) + 1
+    if len(groups) == 1:
+        return [text]
+    n = len(groups)
+    return ["\n".join([f"[표] ({k + 1}/{n})"] + header + g) for k, g in enumerate(groups)]
+
+
 def format_table_as_text(table_data: list, page=None, table_obj=None) -> str:
     """
     PyMuPDF extract() 결과를 Markdown 테이블 텍스트로 변환.
@@ -595,6 +695,8 @@ def format_table_as_text(table_data: list, page=None, table_obj=None) -> str:
             table_data = patched
         except Exception:
             pass
+
+    table_data = _explode_stacked_rows(table_data)
 
     cleaned_rows = []
     for row in table_data:
