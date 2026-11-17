@@ -170,6 +170,8 @@ Return ONLY valid JSON:
         text = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             data = json.loads(text)
+            if not isinstance(data, dict) or "completeness" not in data:
+                raise ValueError("completeness missing")
             def _score(key: str, default: int = 5) -> float:
                 val = data.get(key, default)
                 return min(10, max(0, float(val))) / 10.0
@@ -186,7 +188,8 @@ Return ONLY valid JSON:
                 "completeness": 0.5,
                 "coverage": 0.5,
                 "missing_aspects": [],
-                "completeness_reason": ""
+                "completeness_reason": "",
+                "error": "judge_parse_error",
             }
 
     def evaluate_all(self, question: str, answer: str, context: str, intent: str = "") -> dict:
@@ -232,10 +235,11 @@ Return ONLY valid JSON:
             return self._parse_combined(raw)
         except APIQuotaExceededError:
             raise
-        except Exception:
+        except Exception as e:
             return {
                 "completeness": 0.5,
                 "coverage": 0.5,
                 "missing_aspects": [],
-                "completeness_reason": ""
+                "completeness_reason": "",
+                "error": f"judge_call_error: {e}"[:300],
             }

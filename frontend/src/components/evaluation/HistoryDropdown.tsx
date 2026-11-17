@@ -67,6 +67,9 @@ export function HistoryDropdown({
                     </span>
                     <span className="text-xs font-mono text-slate-600 dark:text-slate-300">{item.final_score != null ? (item.final_score * 100).toFixed(1) + '점' : '-'}</span>
                     <span className="text-xs text-slate-400 dark:text-slate-500">{item.total_qa} QA</span>
+                    {item.metadata?.eval_version === 'v2' && (
+                      <span className="text-[10px] font-bold px-1.5 py-px rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-500/30">v2</span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                     {item.metadata?.generation_model ?? '-'}

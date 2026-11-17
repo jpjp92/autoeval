@@ -31,6 +31,8 @@ interface FormValues {
   promptVersion: string;
   autoEvaluate: boolean;
   evaluatorModel: string;
+  /** 비교 기간 미리보기. 기본 v1 (docs/Plan/PLAN_261117_EVAL_V2_UI.md 1장) */
+  evalVersion: "v1" | "v2";
 }
 
 interface QAGenerationPanelProps {
@@ -180,7 +182,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
 
   const [formValues, setFormValues] = useState<FormValues>({
     model: DEFAULT_GENERATION_MODEL, lang: "ko", samples: 2,
-    promptVersion: "v1", autoEvaluate: true, evaluatorModel: DEFAULT_EVALUATOR_MODEL,
+    promptVersion: "v1", autoEvaluate: true, evaluatorModel: DEFAULT_EVALUATOR_MODEL, evalVersion: "v1",
   });
   const [sampleInputValue, setSampleInputValue] = useState(String(formValues.samples));
 
@@ -349,6 +351,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
         result_filename: resultFile,
         evaluator_model: formValues.evaluatorModel,
         generation_id: genId,
+        eval_version: formValues.evalVersion,
       });
       if (evalData.success && evalData.job_id) {
         setEvalJobId(evalData.job_id);
@@ -491,7 +494,7 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             <ModelSelect
               id="qa-evaluator-model"
               label="평가 모델 (Judge)"
-              description="생성된 QA의 관련성·근거성·완전성을 평가합니다."
+              description={formValues.evalVersion === "v2" ? "생성된 QA의 근거성·정확성·완전성·질문 품질을 평가합니다." : "생성된 QA의 관련성·근거성·완전성을 평가합니다."}
               value={formValues.evaluatorModel}
               onChange={evaluatorModel => setFormValues(previous => ({ ...previous, evaluatorModel }))}
               disabled={modelsLocked}
@@ -518,6 +521,32 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                   <div className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all", formValues.autoEvaluate ? "left-[18px]" : "left-0.5")} />
                 </div>
               </button>
+            </div>
+
+            {/* 평가 방식 (비교 기간 미리보기) */}
+            <div className="space-y-1.5">
+              <label id="qa-eval-version-label" className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">평가 방식</label>
+              <div role="radiogroup" aria-labelledby="qa-eval-version-label" className="grid grid-cols-2 gap-1 p-1 h-[42px] rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
+                {([
+                  { v: "v1", label: "v1 (기본)", title: "구문·통계·RAG Triad·완전성" },
+                  { v: "v2", label: "v2 미리보기", title: "데이터 검증 → 통합 Judge (근거성·정확성·완전성·질문 품질)" },
+                ] as const).map(o => (
+                  <button
+                    key={o.v}
+                    role="radio"
+                    aria-checked={formValues.evalVersion === o.v}
+                    title={o.title}
+                    disabled={modelsLocked}
+                    onClick={() => setFormValues(prev => ({ ...prev, evalVersion: o.v }))}
+                    className={cn("rounded-lg text-xs font-semibold transition-all disabled:opacity-50",
+                      formValues.evalVersion === o.v
+                        ? "bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 shadow-sm"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -825,6 +854,33 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
             {(phase === "evaluating" || evaluationDone) && <div className="space-y-2.5">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">평가 파이프라인</p>
               {(() => {
+                // v2: 데이터 검증 → AI 품질 평가 (백엔드가 보낸 레이어 키로 판단)
+                if (evalLayers["judge"]) {
+                  const v2steps = [
+                    { key: "validation", label: "데이터 검증",   status: evalLayers["validation"]?.status ?? "pending", progress: evalLayers["validation"]?.progress || 0, message: evalLayers["validation"]?.message },
+                    { key: "judge",      label: "AI 품질 평가", status: evalLayers["judge"].status,                    progress: evalLayers["judge"].progress || 0,       message: evalLayers["judge"].message },
+                  ];
+                  return v2steps.map(({ key, label, status, progress, message }) => (
+                    <div key={key} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-slate-600 dark:text-slate-400 font-medium shrink-0">{label}</span>
+                        <span className="min-w-0 truncate text-[11px] text-slate-400 dark:text-slate-500">{status === "completed" ? message : ""}</span>
+                        <span className={cn("shrink-0 font-semibold px-2 py-0.5 rounded-full text-[11px]",
+                          status === "completed" ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400" :
+                          status === "running"   ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400" :
+                                                   "bg-slate-100 dark:bg-white/8 text-slate-400 dark:text-slate-500"
+                        )}>
+                          {status === "completed" ? "완료" : status === "running" ? "실행 중" : "대기"}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-white/10 rounded-full h-1 overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all duration-300",
+                          status === "completed" ? "bg-emerald-400" : status === "running" ? "bg-amber-400" : "bg-slate-200 dark:bg-white/10"
+                        )} style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  ));
+                }
                 const ragStatus   = evalLayers["rag"].status;
                 const qualStatus  = evalLayers["quality"].status;
                 const ragQualStatus =
@@ -873,6 +929,16 @@ export function QAGenerationPanel({ currentFilename, taggingVersion, taggingTree
                   {(() => {
                     const s = evalReport.summary;
                     const m = evalReport.metadata ?? {};
+                    if (m.eval_version === "v2") {
+                      return [
+                        { label: "총 QA",          value: `${m.total_qa ?? '-'}개`,                                     ok: null },
+                        { label: "품질 통과",       value: `${s.pass_count ?? 0}개 (${(s.pass_rate ?? 0).toFixed(1)}%)`, ok: (s.pass_rate ?? 0) >= 70 },
+                        { label: "등급",           value: s.grade ?? "보류",                                            ok: 'highlight' as const },
+                        { label: "근거·수치 오류",  value: `${s.hard_fail_count ?? 0}건`,                               ok: (s.hard_fail_count ?? 0) === 0 },
+                        { label: "평가 실패",       value: `${s.evaluation_error_count ?? 0}건`,                        ok: (s.evaluation_error_count ?? 0) === 0 ? null : false },
+                        { label: "평가 모델",       value: m.evaluator_model ?? '-',                                     ok: null },
+                      ];
+                    }
                     const ragScore = s.rag_average_score ?? 0;
                     const qualScore = s.quality_average_score ?? 0;
                     const qualityAvg = ((ragScore + qualScore) / 2).toFixed(2);

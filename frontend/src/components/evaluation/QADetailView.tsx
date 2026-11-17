@@ -3,10 +3,12 @@ import { cn } from '@/src/lib/utils';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG } from '@/src/types/evaluation';
 import { getScoreColor, getQAStatus, SCORE_THRESHOLDS } from '@/src/lib/evalScoreUtils';
+import { V2DetailSection, V2Badge } from '@/src/components/evaluation/V2Panels';
 
 export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => void }) {
   const status = getQAStatus(qa);
   const cfg    = STATUS_CONFIG[status];
+  const isV2   = qa.eval_version === 'v2';
 
   // RAG Triad 평가
   const ragDimensions = [
@@ -49,6 +51,7 @@ export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => 
               {INTENT_KR[qa.intent] ?? qa.intent}
             </span>
           )}
+          {isV2 && <V2Badge version="v2" />}
           <span className={cn('px-2.5 py-0.5 text-xs font-semibold rounded-full border', cfg.className)}>
             {cfg.label}
           </span>
@@ -66,8 +69,8 @@ export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => 
             <p className="font-semibold text-rose-700 dark:text-rose-300">{FAILURE_CONFIG[qa.primary_failure]?.label ?? qa.primary_failure}</p>
             {qa.failure_reason && <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{qa.failure_reason}</p>}
 
-            {/* 개별 점수 breakdown — 미달 항목 강조 */}
-            {(() => {
+            {/* 개별 점수 breakdown — 미달 항목 강조 (v1만, v2는 아래 AI 품질 평가에 지표 4개가 있다) */}
+            {!isV2 && (() => {
               const dims = [
                 { label: '관련성', value: qa.relevance },
                 { label: '근거성', value: qa.groundedness },
@@ -148,8 +151,10 @@ export function QADetailView({ qa, onBack }: { qa: QAPreviewItem; onBack: () => 
         )}
       </div>
 
-      {/* 품질 평가 — RAG Triad + Quality 통합 섹션 */}
-      {(qa.rag_avg != null || qa.quality_avg != null || allDimensions.length > 0) && (
+      {isV2 && <V2DetailSection qa={qa} />}
+
+      {/* 품질 평가 — RAG Triad + Quality 통합 섹션 (v1) */}
+      {!isV2 && (qa.rag_avg != null || qa.quality_avg != null || allDimensions.length > 0) && (
         <div className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden relative">
           {/* 포인트 악센트 */}
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500/50" />

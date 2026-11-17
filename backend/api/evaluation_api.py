@@ -78,7 +78,8 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             "result_filename": "qa_model_lang_v1_timestamp.json",
             "evaluator_model": optional(str, default="gpt-5.6-luna"),
             "generation_id": optional(str, Supabase ID from generation),
-            "limit": optional(int)
+            "limit": optional(int),
+            "eval_version": optional("v1" | "v2", default "v1")
         }
         """
         try:
@@ -92,6 +93,9 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             evaluator_model = body.get("evaluator_model", _default_eval_model) if isinstance(body, dict) else _default_eval_model
             generation_id   = body.get("generation_id") if isinstance(body, dict) else None
             limit           = body.get("limit")         if isinstance(body, dict) else None
+            eval_version    = body.get("eval_version", "v1") if isinstance(body, dict) else "v1"
+            if eval_version not in ("v1", "v2"):
+                return {"success": False, "error": "eval_version must be 'v1' or 'v2'"}
 
             if not result_filename:
                 return {"success": False, "error": "result_filename is required"}
@@ -113,6 +117,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 evaluator_model=evaluator_model,
                 eval_manager=eval_manager,
                 generation_id=generation_id,
+                eval_version=eval_version,
             )
 
             return {
@@ -120,6 +125,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
                 "job_id":         job_id,
                 "message":        "Evaluation started",
                 "evaluator_model": evaluator_model,
+                "eval_version":   eval_version,
                 "generation_id":  generation_id,
                 "timestamp":      datetime.now().isoformat(),
             }

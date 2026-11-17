@@ -10,7 +10,7 @@ import { exportToCSV, exportToHTML, exportToJSON, exportToZip } from '@/src/lib/
 import { getEvalExport, getEvalExportById } from '@/src/lib/api';
 import type { EvalExportResponse } from '@/src/lib/api';
 import type { QAStatus } from '@/src/types/evaluation';
-import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, QA_PAGE_SIZE } from '@/src/types/evaluation';
+import { INTENT_KR, INTENT_COLORS, STATUS_CONFIG, FAILURE_CONFIG, QA_PAGE_SIZE, LANGUAGE_POLICY_LABEL } from '@/src/types/evaluation';
 import { SCORE_THRESHOLDS, getQAStatus } from '@/src/lib/evalScoreUtils';
 import { formatKST, buildChartData } from '@/src/lib/evalChartUtils';
 import type { SummaryStat } from '@/src/lib/evalChartUtils';
@@ -19,6 +19,7 @@ import { MetricRadialGauge } from '@/src/components/evaluation/charts/MetricRadi
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
 import { QualityScoreChart } from '@/src/components/evaluation/charts/QualityScoreChart';
 import { QADetailView } from '@/src/components/evaluation/QADetailView';
+import { ValidationCard, FailureChips, LanguagePolicyRow, V2Badge, failureLabel, qaFailureKeys } from '@/src/components/evaluation/V2Panels';
 import { HistoryDropdown } from '@/src/components/evaluation/HistoryDropdown';
 import { useEvaluationData } from './hooks/useEvaluationData';
 import { useEvalHistory } from './hooks/useEvalHistory';
@@ -41,15 +42,33 @@ export function QAEvaluationDashboard({
   const { loading, error, report } = useEvaluationData(evalJobId, () => {
     clearHistory();
     resetTable();
+    setFailureFilter(null);
   });
 
   const {
     historyList, historyReport, historyQaPreview, historyQaLoading,
     selectedHistoryId, showHistoryMenu, setShowHistoryMenu,
     selectHistory, clearHistory,
-  } = useEvalHistory(initialEvalDbId, () => resetTable());
+  } = useEvalHistory(initialEvalDbId, () => { resetTable(); setFailureFilter(null); });
 
-  const qaPreview = report?.qa_preview ?? historyQaPreview;
+  const qaPreviewAll = report?.qa_preview ?? historyQaPreview;
+
+  // 현재 표시할 차트 데이터
+  const chartData = report
+    ? buildChartData(report, failureLabel)
+    : historyReport
+      ? { summaryStats: historyReport.summaryStats, layer1Stats: historyReport.layer1Stats, intentDistribution: historyReport.intentDistribution, llmQualityScores: historyReport.llmQualityScores, v2: historyReport.v2 }
+      : null;
+  const v2 = chartData?.v2 ?? null;
+
+  // v2: 실패 유형 칩 / 중복 의심 [보기] 필터 (표 상태 필터와 함께 적용)
+  const [failureFilter, setFailureFilter] = useState<string | null>(null);
+  const duplicateIdx = new Set((v2?.validation.duplicates ?? []).flatMap(d => [d.a, d.b]));
+  const qaPreview = !failureFilter
+    ? qaPreviewAll
+    : failureFilter === '__duplicates'
+      ? qaPreviewAll.filter(q => duplicateIdx.has(q.qa_index))
+      : qaPreviewAll.filter(q => qaFailureKeys(q).includes(failureFilter));
 
   const {
     qaPage, setQaPage,
@@ -61,28 +80,21 @@ export function QAEvaluationDashboard({
     resetTable,
   } = useQATable(qaPreview);
 
-  // 현재 표시할 차트 데이터
-  const chartData = report
-    ? buildChartData(report)
-    : historyReport
-      ? { summaryStats: historyReport.summaryStats, layer1Stats: historyReport.layer1Stats, intentDistribution: historyReport.intentDistribution, llmQualityScores: historyReport.llmQualityScores }
-      : null;
-
   const activeReport  = report;
   const activeItem    = historyReport?.item;
   const qaListLoading = historyQaLoading;
 
   // 성공 QA 수: 로딩 완료된 qaPreview 기준으로 계산 (HTML export 포함 일관 적용)
   const totalQA      = report?.metadata?.total_qa ?? activeItem?.total_qa ?? 0;
-  const successCount = qaPreview.filter(qa => getQAStatus(qa) === 'success').length;
+  const successCount = qaPreviewAll.filter(qa => getQAStatus(qa) === 'success').length;
   const correctedSummaryStats: SummaryStat[] = (chartData?.summaryStats ?? []).map((stat, i) => {
     // 히스토리 로딩 중이고 상세 데이터가 아직 준비되지 않았다면 모든 지표에 스켈레톤 적용 (일관성)
-    if (historyQaLoading && qaPreview.length === 0) {
+    if (historyQaLoading && qaPreviewAll.length === 0) {
       return { ...stat, value: 'loading' };
     }
 
-    // 성공 QA 수 보정 (상세 데이터 도착 후)
-    if (i === 1 && qaPreview.length > 0) {
+    // 성공 QA 수 보정 (상세 데이터 도착 후) — v1만. v2는 백엔드 집계를 그대로 쓴다
+    if (!v2 && i === 1 && qaPreview.length > 0) {
       return { ...stat, value: `${successCount} / ${totalQA}` };
     }
     return stat;
@@ -102,7 +114,7 @@ export function QAEvaluationDashboard({
     layer1Stats:        chartData.layer1Stats,
     intentDistribution: chartData.intentDistribution,
     llmQualityScores:   chartData.llmQualityScores,
-    detailedQA:         qaPreview.map((q, i) => ({
+    detailedQA:         qaPreviewAll.map((q, i) => ({
       id: i + 1, q: q.q, a: q.a, context: q.context, intent: q.intent,
       l2_avg: q.quality_avg ?? 0, triad_avg: q.rag_avg ?? 0, pass: q.pass,
       primary_failure: q.primary_failure, failure_types: q.failure_types,
@@ -111,12 +123,16 @@ export function QAEvaluationDashboard({
       failure_reason: q.failure_reason,
       relevance: q.relevance, groundedness: q.groundedness,
       context_relevance: q.context_relevance, completeness: q.completeness,
+      v2: q.eval_version === 'v2' ? q : undefined,
     })),
+    v2,
     metadata: {
       qa_model: getGenerationModel(),
       eval_model: activeReport?.metadata?.evaluator_model  || activeItem?.metadata?.evaluator_model  || '-',
       source:     activeReport?.metadata?.source_doc || activeItem?.metadata?.source_doc || activeReport?.result_filename || activeItem?.result_filename || '-',
       timestamp:  activeReport?.timestamp ?? activeItem?.created_at ?? new Date().toISOString(),
+      eval_version:  v2 ? 'v2' : 'v1',
+      judge_version: activeReport?.metadata?.judge_version || activeItem?.metadata?.judge_version,
     },
   } : null;
 
@@ -146,6 +162,7 @@ export function QAEvaluationDashboard({
             failure_reason: r.failure_reason,
             relevance: r.relevance, groundedness: r.groundedness,
             context_relevance: r.context_relevance, completeness: r.completeness,
+            v2: r.eval_version === 'v2' ? r : undefined,
           })),
           metadata: { ...evaluationData.metadata, timestamp: res.timestamp ?? evaluationData.metadata?.timestamp },
         });
@@ -249,9 +266,13 @@ export function QAEvaluationDashboard({
         style={{ animationFillMode: 'both' }}
       >
         <div className="space-y-4">
-          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-none">
+          <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white leading-none flex flex-wrap items-center gap-2">
             QA 성능 평가 리포트
+            <V2Badge version={v2 ? 'v2' : 'v1'} />
           </h2>
+          {v2 && (
+            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed break-keep">{v2.conclusion}</p>
+          )}
           
           <div className="flex flex-col gap-1.5">
             {/* 1행: Model · Dataset · 평가 일시 */}
@@ -389,6 +410,45 @@ export function QAEvaluationDashboard({
         ))}
       </div>
 
+      {v2 ? (
+      <div className="space-y-4 animate-in fade-in duration-700" style={{ animationDelay: '200ms', animationFillMode: 'both' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <ValidationCard
+            validation={v2.validation}
+            intentDistribution={intentDistribution}
+            onShowDuplicates={() => { setFailureFilter('__duplicates'); setStatusFilter(null); setQaPage(0); setSelectedQA(null); }}
+          />
+          <div className="lg:col-span-2 bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
+            <div className="mb-3 flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-indigo-500" /> AI 품질 평가
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">근거성 · 정확성 · 완전성 · 질문 품질 (평균, 0–1)</p>
+              </div>
+              <ChartInfoTooltip
+                title="AI 품질 평가"
+                items={[
+                  { text: 'QA마다 평가 모델이 한 번에 4개 지표를 판정합니다.' },
+                  { label: 'QA 점수', text: '근거성 35% · 정확성 30% · 완전성 20% · 질문 품질 15%' },
+                  { label: '불통과', text: '근거성·정확성 0.6 미만, 원문 모순, QA 점수 0.70 미만, 질문 품질 0.5 미만' },
+                  { label: '평가 실패', text: '응답을 받지 못한 QA는 점수 계산에서 뺍니다.' },
+                ]}
+              />
+            </div>
+            <div className="flex-1">
+              <QualityScoreChart data={llmQualityScores} />
+            </div>
+            <LanguagePolicyRow judge={v2.judge} />
+          </div>
+        </div>
+        <FailureChips
+          counts={v2.judge.failure_counts}
+          active={failureFilter && failureFilter !== '__duplicates' ? failureFilter : null}
+          onSelect={(k) => { setFailureFilter(k); setQaPage(0); setSelectedQA(null); }}
+        />
+      </div>
+      ) : (
       <div 
         className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-700"
         style={{ animationDelay: '200ms', animationFillMode: 'both' }}
@@ -464,6 +524,7 @@ export function QAEvaluationDashboard({
           </div>
         </div>
       </div>
+      )}
 
       {/* Detailed QA Table */}
       <div 
@@ -474,7 +535,15 @@ export function QAEvaluationDashboard({
         {!selectedQA && (
           <div className="px-4 lg:px-5 py-4 border-b border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50 dark:bg-white/3">
             <div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">상세 평가 결과</h3>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
+                상세 평가 결과
+                {failureFilter && (
+                  <button onClick={() => { setFailureFilter(null); setQaPage(0); }}
+                    className="px-2 py-0.5 rounded-full border text-[10px] font-semibold bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-500/30">
+                    {failureFilter === '__duplicates' ? '중복 의심' : failureLabel(failureFilter)} ✕
+                  </button>
+                )}
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {qaPreview.length > 0
                   ? `${statusFilter ? `${filteredQA.length}개 표시 중 /` : '총'} ${qaPreview.length}개 · 페이지당 ${QA_PAGE_SIZE}개 · 행 클릭 시 상세 보기`
@@ -506,7 +575,7 @@ export function QAEvaluationDashboard({
         )}
 
         {/* 내용 영역 */}
-        {qaPreview.length === 0 ? (
+        {qaPreviewAll.length === 0 ? (
           <div className="p-12 text-center text-slate-400 dark:text-slate-500 text-sm">
             {report ? '평가된 QA 데이터가 없습니다.' : '현재 세션에서 실행된 평가 결과에서만 상세 QA를 확인할 수 있습니다.'}
           </div>
@@ -553,12 +622,23 @@ export function QAEvaluationDashboard({
                       </div>
                       <p className="text-sm font-medium text-slate-700 dark:text-slate-200 leading-snug line-clamp-2">{row.q}</p>
                       <div className="flex items-center gap-4 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                        {row.eval_version === 'v2' ? (
+                          <>
+                            <span>QA 점수 {row.qa_score != null
+                              ? <span className={row.pass ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.qa_score.toFixed(3)}</span>
+                              : '-'}</span>
+                            {row.language_policy && row.language_policy !== 'korean_native' && (
+                              <span>{LANGUAGE_POLICY_LABEL[row.language_policy] ?? row.language_policy}</span>
+                            )}
+                          </>
+                        ) : (<>
                         <span>품질 {row.quality_avg != null
                           ? <span className={row.quality_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
                           : '-'}</span>
                         <span>Triad {row.rag_avg != null
                           ? <span className={row.rag_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
                           : '-'}</span>
+                        </>)}
                         <ChevronRight className="ml-auto w-4 h-4 text-slate-300 dark:text-slate-600" />
                       </div>
                     </button>
@@ -577,8 +657,8 @@ export function QAEvaluationDashboard({
                       { col: 'intent',  label: '의도',      cls: 'w-20'  },
                       { col: 'q',       label: '질문',      cls: ''      },
                       { col: 'a',       label: '답변',      cls: ''      },
-                      { col: 'quality', label: '품질 점수',  cls: 'w-24'  },
-                      { col: 'triad',   label: 'Triad 점수', cls: 'w-24' },
+                      { col: 'quality', label: v2 ? 'QA 점수' : '품질 점수',  cls: 'w-24'  },
+                      { col: 'triad',   label: v2 ? '언어' : 'Triad 점수', cls: 'w-24' },
                       { col: 'status',  label: '상태',      cls: 'w-16'  },
                       { col: 'failure', label: '실패유형',   cls: 'w-24'  },
                     ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
@@ -647,11 +727,13 @@ export function QAEvaluationDashboard({
                         </td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
                           {row.quality_avg != null
-                            ? <span className={row.quality_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
+                            ? <span className={(row.eval_version === 'v2' ? row.pass : row.quality_avg >= SCORE_THRESHOLDS.mid) ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
-                          {row.rag_avg != null
+                          {row.eval_version === 'v2'
+                            ? <span className="text-slate-500 dark:text-slate-400">{row.language_policy ? (LANGUAGE_POLICY_LABEL[row.language_policy] ?? row.language_policy) : '-'}</span>
+                            : row.rag_avg != null
                             ? <span className={row.rag_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
