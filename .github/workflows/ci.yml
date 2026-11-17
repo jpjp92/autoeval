@@ -40,6 +40,7 @@ jobs:
           backend.tests.test_judge_content
           backend.tests.test_eval_v2
           backend.tests.test_job_ids
+          backend.tests.test_pdf_extract
 
   frontend:
     name: frontend

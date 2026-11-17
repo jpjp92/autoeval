@@ -11,6 +11,7 @@ I/O 없음 — 입력은 bytes/str, 출력은 Python 자료구조.
 from __future__ import annotations
 
 import io
+import os
 import re
 import hashlib
 import logging
@@ -846,7 +847,223 @@ def format_table_as_text(table_data: list, page=None, table_obj=None) -> str:
 # 파일 파싱 (PDF / DOCX / TXT)
 # ============================================================================
 
-def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, Any]]:
+def _extract_pdf_page(page, page_index: int):
+    """PDF 한 쪽 → {"text","page","blocks"} 또는 None(빈 쪽·목차)."""
+    page_num = page_index + 1
+    page_dict = page.get_text("rawdict")
+    blocks = page_dict.get("blocks", [])
+    blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
+    page_height = page.rect.height
+
+    try:
+        page_tables = page.find_tables(paths=_table_paths(page))
+        table_list = page_tables.tables if page_tables else []
+    except Exception:
+        table_list = []
+
+    table_bboxes = [t.bbox for t in table_list]
+    page_items = []  # (y_pos, text, block_dict)
+    nested_data, nested_labels, layout_wrappers = _pdf_nested_tables(page, table_list)
+
+    for t in table_list:
+        if id(t) in layout_wrappers:
+            continue
+        ty0, ty1 = t.bbox[1], t.bbox[3]
+        if ty0 < page_height * 0.05 or ty1 > page_height * 0.92:
+            continue
+        table_text = format_table_as_text(
+            nested_data.get(id(t)) or t.extract(), page=page, table_obj=t
+        )
+        if table_text and id(t) in nested_labels:
+            table_text = table_text.replace("[표]", nested_labels[id(t)], 1)
+        if table_text:
+            page_items.append((ty0, table_text, {
+                "text": table_text,
+                "font_size": 9.0,
+                "bbox": list(t.bbox),
+                "page": page_num,
+                "is_table": True,
+            }))
+
+    for b in blocks:
+        if b["type"] != 0:
+            continue
+        y0, y1 = b["bbox"][1], b["bbox"][3]
+        if y0 < page_height * 0.05 or y1 > page_height * 0.92:
+            continue
+        if table_bboxes and is_inside_table(b["bbox"], table_bboxes):
+            continue
+
+        block_lines = []
+        max_font_size = 0
+        for line in b["lines"]:
+            line_text = ""
+            prev_x = None
+            for span in line["spans"]:
+                if prev_x is not None and span["bbox"][0] - prev_x > 20:
+                    line_text += " | "
+                line_text += _span_text_with_spaces(span)
+                max_font_size = max(max_font_size, span["size"])
+                prev_x = span["bbox"][2]
+            block_lines.append(line_text)
+
+        block_text = "\n".join(block_lines)
+        normalized_block = normalize_text(block_text)
+        if normalized_block:
+            page_items.append((y0, normalized_block, {
+                "text": normalized_block,
+                "font_size": max_font_size,
+                "bbox": b["bbox"],
+                "page": page_num,
+            }))
+
+    page_items.sort(key=lambda x: x[0])
+
+    # 블록 분리 보정:
+    # ① 괄호형 영문 용어: "ROI\n(Return on Investment)" → 이전 블록에 병합
+    #    패턴 A: 블록이 "(영문자..." 로 시작 (여는 괄호형)
+    #    패턴 B: 블록이 "영문대소문자+)..." 로 시작 (닫는 괄호형)
+    # ② 한국어 어미/조사 절단: PyMuPDF가 시각적 줄바꿈 경계를
+    #    블록으로 분리할 때 "하여야 한" + "니 된다." 처럼
+    #    어절 중간에서 잘리는 경우. 직전 블록이 한글로 끝나고
+    #    현 블록이 1-4자 한글 + 구두점/공백으로 시작하면 병합.
+    _PAREN_CONT = re.compile(r'^(\([A-Za-z]|[A-Z][a-z]+\))')
+    # ② 패턴 개선:
+    #  - 1-4자 한글 + 구두점/공백 OR 문자열 끝 (단독 음절 "발" 등 포함)
+    _KOR_CONT   = re.compile(r'^[가-힣]{1,4}(?:[\s.,。;!?]|$)')
+    #  - 한글 뒤에 원형 번호/공백이 오는 경우도 허용
+    #    예: "알고리즘개 ③" → 끝이 한글이 아니지만 절단된 케이스
+    _KOR_TAIL   = re.compile(r'[가-힣][\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]*$')
+    merged_items: list = []
+    for item in page_items:
+        y_pos, text, block_dict = item
+        stripped = text.strip()
+        if merged_items and not block_dict.get("is_table"):
+            py, prev_text, prev_block = merged_items[-1]
+            is_paren = _PAREN_CONT.match(stripped)
+            is_kor = (
+                _KOR_CONT.match(stripped)
+                and _KOR_TAIL.search(prev_text.rstrip())
+            )
+            if is_kor:
+                prev_y1   = prev_block.get("bbox", [0, 0, 0, 0])[3]
+                y_gap_val = y_pos - prev_y1
+                prev_font = prev_block.get("font_size", 10.0)
+                cur_font  = block_dict.get("font_size", 10.0)
+                font_diff = abs(prev_font - cur_font)
+                if y_gap_val > 15.0 and font_diff > 1.5:
+                    is_kor = False  # heading+본문 오병합 방지
+            if is_paren or is_kor:
+                prev_stripped = prev_text.rstrip()
+                if is_kor:
+                    # 원형 번호가 끝에 붙은 경우: 번호 앞에 음절 삽입
+                    # "알고리즘개 ③" + "발" → "알고리즘개발 ③"
+                    circle_m = re.search(
+                        r'([\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]+)$',
+                        prev_stripped,
+                    )
+                    if circle_m:
+                        base = prev_stripped[:circle_m.start()]
+                        joined = base + stripped + circle_m.group(0)
+                    else:
+                        joined = prev_stripped + stripped
+                else:
+                    # 괄호형은 공백 삽입
+                    joined = prev_stripped + " " + stripped
+                merged_items[-1] = (py, joined, {**prev_block, "text": joined})
+                continue
+        merged_items.append(item)
+    page_items = merged_items
+
+    blocks_data = [item[2] for item in page_items]
+    page_text_parts = [item[1] for item in page_items]
+    page_full_text = "\n\n".join(page_text_parts)
+
+    if page_num <= 2 and is_toc_chunk(page_full_text):
+        logger.info(f"[Page {page_num}] TOC page detected and skipped.")
+        return None
+
+    if not page_text_parts:
+        return None
+    return {
+        "text": page_full_text,
+        "page": page_index + 1,
+        "blocks": blocks_data,
+    }
+
+
+# ---- PDF 쪽 단위 추출 (표 감지 가속 · 병렬) ----
+# 기획: docs/Plan/PLAN_261117_INGEST_SPEED.md
+DEGENERATE_PATH_MAX = 0.5   # 가로·세로 모두 이보다 작은 그림 요소(크기 0 선)는 표 감지에서 뺀다
+PDF_PARALLEL_MIN_PAGES = 4
+
+
+def _table_paths(page):
+    """find_tables에 넘길 그림 요소. 크기 0인 선은 표 테두리가 될 수 없어 빼도 결과가 같다."""
+    return [d for d in page.get_drawings()
+            if not (d["rect"].width < DEGENERATE_PATH_MAX and d["rect"].height < DEGENERATE_PATH_MAX)]
+
+
+def _pdf_workers(n_pages: int) -> int:
+    """PDF_EXTRACT_WORKERS(설정하지 않으면 1 = 순차). 서버 코어 수에 맞춰 직접 켠다."""
+    raw = os.getenv("PDF_EXTRACT_WORKERS")
+    try:
+        w = int(raw) if raw else 1
+    except ValueError:
+        w = 1
+    return max(1, min(w, n_pages)) if n_pages >= PDF_PARALLEL_MIN_PAGES else 1
+
+
+_worker_doc = None
+
+
+def _pdf_worker_init(file_content: bytes):
+    global _worker_doc
+    _worker_doc = fitz.open(stream=file_content, filetype="pdf")
+
+
+def _pdf_worker_page(page_index: int):
+    return page_index, _extract_pdf_page(_worker_doc[page_index], page_index)
+
+
+def _extract_pdf_pages(file_content: bytes, n_pages: int, progress_cb=None) -> list:
+    """쪽 순서대로 결과 목록. 병렬이 실패하면 순차로 다시 한다."""
+    def _report(done):
+        if progress_cb:
+            try:
+                progress_cb(done, n_pages)
+            except Exception:
+                pass
+
+    workers = _pdf_workers(n_pages)
+    by_page = {}
+    if workers > 1:
+        try:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+            import multiprocessing as mp
+            # 서버는 스레드에서 호출하므로 fork 대신 spawn을 쓴다
+            with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn"),
+                                     initializer=_pdf_worker_init, initargs=(file_content,)) as ex:
+                futures = [ex.submit(_pdf_worker_page, i) for i in range(n_pages)]
+                for f in as_completed(futures):
+                    i, r = f.result()
+                    by_page[i] = r
+                    _report(len(by_page))
+        except Exception as e:
+            logger.warning(f"[PDF] 병렬 추출 실패, 순차로 재시도: {e}")
+            by_page = {}
+    if not by_page:
+        doc = fitz.open(stream=file_content, filetype="pdf")
+        try:
+            for i in range(n_pages):
+                by_page[i] = _extract_pdf_page(doc[i], i)
+                _report(i + 1)
+        finally:
+            doc.close()
+    return [by_page[i] for i in range(n_pages) if by_page[i]]
+
+
+def extract_text_by_page(file_content: bytes, filename: str, progress_cb=None) -> List[Dict[str, Any]]:
     """파일 확장자에 따라 텍스트 및 메타데이터 추출 (폰트/위치 정보 포함)."""
     ext = filename.split('.')[-1].lower()
     results = []
@@ -854,147 +1071,7 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
     try:
         if ext == 'pdf':
             doc = fitz.open(stream=file_content, filetype="pdf")
-            for page_index, page in enumerate(doc):
-                page_num = page_index + 1
-                page_dict = page.get_text("rawdict")
-                blocks = page_dict.get("blocks", [])
-                blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
-                page_height = page.rect.height
-
-                try:
-                    page_tables = page.find_tables()
-                    table_list = page_tables.tables if page_tables else []
-                except Exception:
-                    table_list = []
-
-                table_bboxes = [t.bbox for t in table_list]
-                page_items = []  # (y_pos, text, block_dict)
-                nested_data, nested_labels, layout_wrappers = _pdf_nested_tables(page, table_list)
-
-                for t in table_list:
-                    if id(t) in layout_wrappers:
-                        continue
-                    ty0, ty1 = t.bbox[1], t.bbox[3]
-                    if ty0 < page_height * 0.05 or ty1 > page_height * 0.92:
-                        continue
-                    table_text = format_table_as_text(
-                        nested_data.get(id(t)) or t.extract(), page=page, table_obj=t
-                    )
-                    if table_text and id(t) in nested_labels:
-                        table_text = table_text.replace("[표]", nested_labels[id(t)], 1)
-                    if table_text:
-                        page_items.append((ty0, table_text, {
-                            "text": table_text,
-                            "font_size": 9.0,
-                            "bbox": list(t.bbox),
-                            "page": page_num,
-                            "is_table": True,
-                        }))
-
-                for b in blocks:
-                    if b["type"] != 0:
-                        continue
-                    y0, y1 = b["bbox"][1], b["bbox"][3]
-                    if y0 < page_height * 0.05 or y1 > page_height * 0.92:
-                        continue
-                    if table_bboxes and is_inside_table(b["bbox"], table_bboxes):
-                        continue
-
-                    block_lines = []
-                    max_font_size = 0
-                    for line in b["lines"]:
-                        line_text = ""
-                        prev_x = None
-                        for span in line["spans"]:
-                            if prev_x is not None and span["bbox"][0] - prev_x > 20:
-                                line_text += " | "
-                            line_text += _span_text_with_spaces(span)
-                            max_font_size = max(max_font_size, span["size"])
-                            prev_x = span["bbox"][2]
-                        block_lines.append(line_text)
-
-                    block_text = "\n".join(block_lines)
-                    normalized_block = normalize_text(block_text)
-                    if normalized_block:
-                        page_items.append((y0, normalized_block, {
-                            "text": normalized_block,
-                            "font_size": max_font_size,
-                            "bbox": b["bbox"],
-                            "page": page_num,
-                        }))
-
-                page_items.sort(key=lambda x: x[0])
-
-                # 블록 분리 보정:
-                # ① 괄호형 영문 용어: "ROI\n(Return on Investment)" → 이전 블록에 병합
-                #    패턴 A: 블록이 "(영문자..." 로 시작 (여는 괄호형)
-                #    패턴 B: 블록이 "영문대소문자+)..." 로 시작 (닫는 괄호형)
-                # ② 한국어 어미/조사 절단: PyMuPDF가 시각적 줄바꿈 경계를
-                #    블록으로 분리할 때 "하여야 한" + "니 된다." 처럼
-                #    어절 중간에서 잘리는 경우. 직전 블록이 한글로 끝나고
-                #    현 블록이 1-4자 한글 + 구두점/공백으로 시작하면 병합.
-                _PAREN_CONT = re.compile(r'^(\([A-Za-z]|[A-Z][a-z]+\))')
-                # ② 패턴 개선:
-                #  - 1-4자 한글 + 구두점/공백 OR 문자열 끝 (단독 음절 "발" 등 포함)
-                _KOR_CONT   = re.compile(r'^[가-힣]{1,4}(?:[\s.,。;!?]|$)')
-                #  - 한글 뒤에 원형 번호/공백이 오는 경우도 허용
-                #    예: "알고리즘개 ③" → 끝이 한글이 아니지만 절단된 케이스
-                _KOR_TAIL   = re.compile(r'[가-힣][\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]*$')
-                merged_items: list = []
-                for item in page_items:
-                    y_pos, text, block_dict = item
-                    stripped = text.strip()
-                    if merged_items and not block_dict.get("is_table"):
-                        py, prev_text, prev_block = merged_items[-1]
-                        is_paren = _PAREN_CONT.match(stripped)
-                        is_kor = (
-                            _KOR_CONT.match(stripped)
-                            and _KOR_TAIL.search(prev_text.rstrip())
-                        )
-                        if is_kor:
-                            prev_y1   = prev_block.get("bbox", [0, 0, 0, 0])[3]
-                            y_gap_val = y_pos - prev_y1
-                            prev_font = prev_block.get("font_size", 10.0)
-                            cur_font  = block_dict.get("font_size", 10.0)
-                            font_diff = abs(prev_font - cur_font)
-                            if y_gap_val > 15.0 and font_diff > 1.5:
-                                is_kor = False  # heading+본문 오병합 방지
-                        if is_paren or is_kor:
-                            prev_stripped = prev_text.rstrip()
-                            if is_kor:
-                                # 원형 번호가 끝에 붙은 경우: 번호 앞에 음절 삽입
-                                # "알고리즘개 ③" + "발" → "알고리즘개발 ③"
-                                circle_m = re.search(
-                                    r'([\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF]+)$',
-                                    prev_stripped,
-                                )
-                                if circle_m:
-                                    base = prev_stripped[:circle_m.start()]
-                                    joined = base + stripped + circle_m.group(0)
-                                else:
-                                    joined = prev_stripped + stripped
-                            else:
-                                # 괄호형은 공백 삽입
-                                joined = prev_stripped + " " + stripped
-                            merged_items[-1] = (py, joined, {**prev_block, "text": joined})
-                            continue
-                    merged_items.append(item)
-                page_items = merged_items
-
-                blocks_data = [item[2] for item in page_items]
-                page_text_parts = [item[1] for item in page_items]
-                page_full_text = "\n\n".join(page_text_parts)
-
-                if page_num <= 2 and is_toc_chunk(page_full_text):
-                    logger.info(f"[Page {page_num}] TOC page detected and skipped.")
-                    continue
-
-                if page_text_parts:
-                    results.append({
-                        "text": page_full_text,
-                        "page": page_index + 1,
-                        "blocks": blocks_data,
-                    })
+            results.extend(_extract_pdf_pages(file_content, len(doc), progress_cb))
             doc.close()
 
         elif ext in ['doc', 'docx']:
