@@ -1,3 +1,6 @@
+import type { QAPreviewItem } from '@/src/types/evaluation';
+import type { V2View } from '@/src/lib/evalChartUtils';
+
 export interface EvaluationData {
   summaryStats: Array<{ label: string; value: string; icon?: any; color?: string; bg?: string }>;
   layer1Stats: Array<{ subject: string; A: number; fullMark: number }>;
@@ -23,12 +26,18 @@ export interface EvaluationData {
     groundedness?:      number;
     context_relevance?: number;
     completeness?:      number;
+    /** eval v2 행 (있으면 v2 리포트 형식으로 내보낸다) */
+    v2?: QAPreviewItem;
   }>;
+  /** eval v2 요약 (있으면 v2 리포트) */
+  v2?: V2View | null;
   metadata?: {
     qa_model?:   string;
     eval_model?: string;
     lang?:       string;
     timestamp?:  string;
     source?:     string;
+    eval_version?: string;
+    judge_version?: string;
   };
 }

@@ -1,5 +1,6 @@
 import { formatKST } from '@/src/lib/evalChartUtils';
 import type { EvaluationData } from './types';
+import { buildV2HTMLContent } from './htmlBuilderV2';
 
 // ── SVG 차트 생성 헬퍼 ────────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ ${legend}
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildHTMLContent(data: EvaluationData): string {
+  if (data.v2) return buildV2HTMLContent(data);
   const timestamp = formatKST(data.metadata?.timestamp ?? new Date().toISOString());
   const qaModel   = data.metadata?.qa_model  || 'N/A';
   const evalModel = data.metadata?.eval_model || 'N/A';
