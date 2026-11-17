@@ -104,6 +104,8 @@ interface EvaluateRequest {
   result_filename: string;
   evaluator_model?: string;
   generation_id?: string;
+  /** 평가 방식. 기본 v1. v2 = 데이터 검증 → 통합 Judge (비교 기간 미리보기) */
+  eval_version?: 'v1' | 'v2';
   include_h1?: boolean;
   include_h2?: boolean;
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { getEvalHistory, getEvalExportById } from '@/src/lib/api';
 import { buildChartDataFromHistory } from '@/src/lib/evalChartUtils';
-import type { SummaryStat } from '@/src/lib/evalChartUtils';
+import type { SummaryStat, V2View } from '@/src/lib/evalChartUtils';
+import { FAILURE_CONFIG } from '@/src/types/evaluation';
 import type { QAPreviewItem, HistoryItem } from '@/src/types/evaluation';
 
 export type HistoryReport = {
@@ -9,6 +10,7 @@ export type HistoryReport = {
   layer1Stats: any[];
   intentDistribution: any[];
   llmQualityScores: any[];
+  v2: V2View | null;
   item: HistoryItem;
 };
 
@@ -45,7 +47,7 @@ export function useEvalHistory(
   const selectHistory = async (item: HistoryItem) => {
     onSelectRef.current?.();
     setSelectedHistoryId(item.id);
-    setHistoryReport({ ...buildChartDataFromHistory(item), item });
+    setHistoryReport({ ...buildChartDataFromHistory(item, k => FAILURE_CONFIG[k]?.label ?? k), item });
     setHistoryQaPreview([]);
     setShowHistoryMenu(false);
     setHistoryQaLoading(true);

@@ -1,6 +1,6 @@
-import { FileText, CheckCircle2, Target, Activity } from 'lucide-react';
-import type { EvalReport, HistoryItem } from '@/src/types/evaluation';
-import { INTENT_KR } from '@/src/types/evaluation';
+import { FileText, CheckCircle2, Target, Activity, ShieldAlert } from 'lucide-react';
+import type { EvalReport, HistoryItem, V2Validation, V2JudgeSummary } from '@/src/types/evaluation';
+import { INTENT_KR, V2_DIMENSIONS, GRADE_WITHHELD_LABEL } from '@/src/types/evaluation';
 import { getQAStatus } from '@/src/lib/evalScoreUtils';
 
 export interface TooltipItem { text: string; label?: string; }
@@ -18,7 +18,71 @@ export function formatKST(dateStr: string): string {
   return new Date(dateStr).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
-export function buildChartData(report: EvalReport) {
+// ─── eval v2 ──────────────────────────────────────────────────────────────────
+export interface V2View {
+  validation: V2Validation;
+  judge: V2JudgeSummary;
+  /** 평가 v2 결과의 요약 카드 (화면·리포트 공용) */
+  conclusion: string;
+}
+
+export function isV2Report(report?: EvalReport | null, item?: HistoryItem | null): boolean {
+  return (report?.metadata?.eval_version ?? item?.metadata?.eval_version) === 'v2';
+}
+
+function pct(n: number | null | undefined): string {
+  return n == null ? '-' : `${n.toFixed(1)}%`;
+}
+
+export function v2Conclusion(total: number, judge: V2JudgeSummary, failureLabel: (k: string) => string): string {
+  const grade = judge.grade ?? (judge.grade_withheld ? '보류' : '-');
+  const top = Object.entries(judge.failure_counts)
+    .sort((a, b) => b[1] - a[1]).slice(0, 2)
+    .map(([k, v]) => `${failureLabel(k)} ${v}건`);
+  const head = judge.judged_count === total
+    ? `${total}개 중 ${judge.pass_count}개 통과(${pct(judge.pass_rate)})`
+    : `전체 ${total}개 중 ${judge.judged_count}개 평가, ${judge.pass_count}개 통과(${pct(judge.pass_rate)})`;
+  const parts = [`${head}, 등급 ${grade}.`];
+  if (judge.hard_fail_count) parts.push(`근거·수치 오류 ${judge.hard_fail_count}건.`);
+  if (judge.evaluation_error_count) parts.push(`평가 실패 ${judge.evaluation_error_count}건.`);
+  if (top.length) parts.push(`주요 실패: ${top.join(', ')}.`);
+  return parts.join(' ');
+}
+
+function buildV2(total: number, validation: V2Validation, judge: V2JudgeSummary, failureLabel: (k: string) => string) {
+  const gradeValue = judge.grade ?? '보류';
+  const summaryStats: SummaryStat[] = [
+    { label: '전체 QA', value: total.toLocaleString(), icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-100',
+      tooltip: { title: '전체 QA', items: [{ text: '평가 대상 QA 수입니다.' }, { label: '구문 정상', text: `${validation.valid} / ${validation.total}` }] } },
+    { label: '품질 통과', value: `${judge.pass_count} / ${judge.judged_count}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100',
+      tooltip: { title: '품질 통과', items: [{ text: '근거·수치 오류가 없고, QA 점수 0.70 이상, 질문 품질 0.5 이상인 QA입니다.' }, { label: '통과율', text: pct(judge.pass_rate) }] } },
+    { label: '종합 평가 등급', value: gradeValue, icon: Activity, color: 'text-rose-600', bg: 'bg-rose-100',
+      tooltip: { title: '종합 평가 등급', items: [
+        { text: judge.grade_withheld ? (GRADE_WITHHELD_LABEL[judge.grade_withheld] ?? judge.grade_withheld) : 'QA 점수 평균으로 정합니다. 근거·수치 오류 QA는 0.5배로 반영합니다.' },
+        { label: '최종 점수', text: judge.final_score != null ? judge.final_score.toFixed(3) : '-' },
+        { label: '구간', text: 'A+ 0.95 · A 0.85 · B+ 0.75 · B 0.65 · C 0.50' },
+      ] } },
+    { label: '근거·수치 오류', value: `${judge.hard_fail_count}건`, icon: ShieldAlert, color: 'text-amber-600', bg: 'bg-amber-100',
+      tooltip: { title: '근거·수치 오류 / 평가 실패', items: [
+        { text: '근거성·정확성 0.6 미만이거나 원문과 모순되는 주장이 있는 QA입니다. 점수와 관계없이 불통과입니다.' },
+        { label: '평가 실패', text: `${judge.evaluation_error_count}건 (점수 계산에서 제외)` },
+      ] } },
+  ];
+  const intentDistribution = Object.entries(validation.intent_distribution ?? {}).map(([name, value]) => ({
+    name, label: name.charAt(0).toUpperCase() + name.slice(1), krLabel: INTENT_KR[name] ?? name, value: value as number,
+  }));
+  const llmQualityScores = V2_DIMENSIONS.map(d => ({
+    name: d.label, nameEn: d.nameEn, score: judge.averages?.[d.key] ?? 0, group: 'quality' as const,
+  }));
+  const v2: V2View = { validation, judge, conclusion: v2Conclusion(total, judge, failureLabel) };
+  return { summaryStats, layer1Stats: [] as any[], intentDistribution, llmQualityScores, v2 };
+}
+
+export function buildChartData(report: EvalReport, failureLabel: (k: string) => string = k => k) {
+  const pr = report.pipeline_results;
+  if (isV2Report(report) && pr?.validation && pr?.judge) {
+    return buildV2(report.metadata.total_qa, pr.validation, pr.judge, failureLabel);
+  }
   const s   = report.pipeline_results?.stats;
   const rag = report.pipeline_results?.rag;
   const qua = report.pipeline_results?.quality;
@@ -60,11 +124,14 @@ export function buildChartData(report: EvalReport) {
     { name: '완전성', nameEn: 'Completeness',        score: qua?.summary?.avg_completeness       ?? 0, group: 'quality' as const },
   ];
 
-  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
+  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores, v2: null as V2View | null };
 }
 
-export function buildChartDataFromHistory(item: HistoryItem) {
+export function buildChartDataFromHistory(item: HistoryItem, failureLabel: (k: string) => string = k => k) {
   const pl  = item.pipeline_results?.layers ?? {};
+  if (isV2Report(null, item) && pl.validation && pl.judge) {
+    return buildV2(item.total_qa, pl.validation, pl.judge, failureLabel);
+  }
   const st  = pl.stats;
   const rag = pl.rag;
   const qua = pl.quality;
@@ -102,5 +169,5 @@ export function buildChartDataFromHistory(item: HistoryItem) {
     { name: '완전성', nameEn: 'Completeness',        score: qua?.summary?.avg_completeness       ?? 0, group: 'quality' as const },
   ];
 
-  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores };
+  return { summaryStats, layer1Stats, intentDistribution, llmQualityScores, v2: null as V2View | null };
 }

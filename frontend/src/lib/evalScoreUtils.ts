@@ -12,6 +12,12 @@ export function getScoreColor(v: number): string {
 
 export function getQAStatus(qa: Partial<QAPreviewItem>): QAStatus {
   if (!qa) return 'fail';
+  // v2: 백엔드 판정을 그대로 쓴다. 평가 실패·구문 제외는 '보류'로 둔다(품질 판정이 없는 QA).
+  if (qa.eval_version === 'v2') {
+    if (qa.v2_status === 'pass') return 'success';
+    if (qa.v2_status === 'fail' || qa.v2_status === 'hard_fail') return 'fail';
+    return 'hold';
+  }
   const { quality_avg, rag_avg, pass, failure_types } = qa;
 
   const qFail = quality_avg == null || quality_avg < SCORE_THRESHOLDS.mid;
