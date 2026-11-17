@@ -285,6 +285,7 @@ Rate context relevance on a 0-10 scale:
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
                 "context_relevance": 0.65, "context_relevance_reason": "",
+                "error": "judge_parse_error",
             }
 
     def evaluate_all_with_reasons(self, question: str, answer: str, context: str) -> dict:
@@ -294,6 +295,7 @@ Rate context relevance on a 0-10 scale:
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
                 "context_relevance": 0.65, "context_relevance_reason": "",
+                "error": "judge_unavailable",
             }
         try:
             import json as _json
@@ -380,4 +382,5 @@ Return ONLY valid JSON:
                 "relevance": 0.65, "relevance_reason": "",
                 "groundedness": 0.65, "groundedness_reason": "",
                 "context_relevance": 0.65, "context_relevance_reason": "",
+                "error": f"judge_call_error: {e}"[:300],
             }

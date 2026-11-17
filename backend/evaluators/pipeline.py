@@ -183,6 +183,8 @@ def _rag_worker(args):
             "context_relevance":           round(result["context_relevance"], 3),
             "context_relevance_reason":    result.get("context_relevance_reason", ""),
             "avg_score":                   round(avg_score, 3),
+            # v1 점수는 그대로 두고, 대체값(0.65)이 쓰였는지만 남긴다
+            **({"error": result["error"]} if result.get("error") else {}),
         }
     except Exception as e:
         logger.warning(f"[{job_id}] RAG evaluation error at index {i}: {e}")
@@ -208,6 +210,7 @@ def _quality_worker(args):
             "completeness_reason": scores.get("completeness_reason", ""),
             "avg_quality":         round(completeness, 3),
             "pass":                completeness >= 0.70,
+            **({"error": scores["error"]} if scores.get("error") else {}),
         }
     except Exception as e:
         logger.warning(f"[{job_id}] Quality evaluation error at index {i}: {e}")
@@ -359,6 +362,7 @@ def run_full_evaluation_pipeline(
                 "avg_groundedness":      round(sum(s.get("groundedness",      0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "avg_context_relevance": round(sum(s.get("context_relevance", 0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
                 "avg_score":             round(sum(s.get("avg_score",         0.65) for s in rag_scores_list) / max(len(rag_scores_list), 1), 3),
+                "evaluation_error_count": sum(1 for s in rag_scores_list if s.get("error")),
                 "distribution": {
                     "relevance":         _distribution_stats(rag_scores_list, "relevance"),
                     # groundedness threshold=0.8: 수치 기반 주관적 표현(정도 부사)은 "틀린 답변"이 아닌
@@ -425,6 +429,7 @@ def run_full_evaluation_pipeline(
             "summary": {
                 "avg_completeness": round(sum(s.get("completeness", 0.65) for s in quality_scores_list) / max(len(quality_scores_list), 1), 3),
                 "avg_quality":      round(sum(valid_qs) / max(len(valid_qs), 1), 3),
+                "evaluation_error_count": sum(1 for s in quality_scores_list if s.get("error")),
                 "distribution": {
                     "completeness": _distribution_stats(quality_scores_list, "completeness"),
                     "overall":      _distribution_stats(quality_scores_list, "avg_quality"),
@@ -555,6 +560,9 @@ def run_evaluation(
 
         valid_qa_count    = syntax_data["valid"]                      if syntax_data   else len(qa_list)
         syntax_pass_rate  = syntax_data["pass_rate"]                  if syntax_data   else 100
+        # v1 호환: DatasetStats는 integrated_score를 반환하지 않으므로 이 값은 항상 5다
+        # (통계 항은 사실상 상수 0.025). v1 이력과 점수를 맞추기 위해 그대로 둔다.
+        # v2는 통계를 점수에서 뺀다 (docs/Plan/PLAN_261117_EVAL_V2.md)
         dataset_quality   = stats_data.get("integrated_score", 5)    if stats_data    else 5
         rag_avg           = rag_data["summary"]["avg_score"]          if rag_data      else 0.65
         quality_avg       = quality_data["summary"]["avg_quality"]    if quality_data  else 0.65
