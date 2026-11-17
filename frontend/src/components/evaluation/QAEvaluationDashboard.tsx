@@ -19,7 +19,7 @@ import { MetricRadialGauge } from '@/src/components/evaluation/charts/MetricRadi
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
 import { QualityScoreChart } from '@/src/components/evaluation/charts/QualityScoreChart';
 import { QADetailView } from '@/src/components/evaluation/QADetailView';
-import { ValidationCard, FailureChips, LanguagePolicyRow, V2Badge, failureLabel, qaFailureKeys } from '@/src/components/evaluation/V2Panels';
+import { ValidationCard, V2QualityPanel, FailureChips, LanguagePolicyRow, V2Badge, failureLabel, qaFailureKeys } from '@/src/components/evaluation/V2Panels';
 import { HistoryDropdown } from '@/src/components/evaluation/HistoryDropdown';
 import { useEvaluationData } from './hooks/useEvaluationData';
 import { useEvalHistory } from './hooks/useEvalHistory';
@@ -437,7 +437,7 @@ export function QAEvaluationDashboard({
               />
             </div>
             <div className="flex-1">
-              <QualityScoreChart data={llmQualityScores} />
+              <V2QualityPanel judge={v2.judge} validation={v2.validation} rows={qaPreviewAll} />
             </div>
             <LanguagePolicyRow judge={v2.judge} />
           </div>

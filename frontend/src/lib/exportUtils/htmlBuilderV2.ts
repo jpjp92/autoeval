@@ -81,10 +81,20 @@ export function buildV2HTMLContent(data: EvaluationData): string {
   const intentMax = Math.max(1, ...intentEntries.map(e => e[1]));
   const policies = Object.entries(judge.by_language_policy ?? {});
   const qByIdx = new Map(rows.map(r => [r.qa_index, r]));
+  const verdicts = [
+    { key: 'pass', label: '통과', n: judge.pass_count, cls: 'f-good' },
+    { key: 'fail', label: '불통과', n: Math.max(0, judge.judged_count - judge.pass_count - judge.hard_fail_count), cls: 'f-mid' },
+    { key: 'hard_fail', label: '근거·수치 오류', n: judge.hard_fail_count, cls: 'f-bad' },
+    { key: 'error', label: '평가 실패', n: judge.evaluation_error_count, cls: 'f-gray' },
+    { key: 'skipped', label: '구문 제외', n: validation.invalid, cls: 'f-light' },
+  ];
+  const vTotal = Math.max(1, verdicts.reduce((a, v) => a + v.n, 0));
   const intentTotal = Math.max(1, intentEntries.reduce((a, e) => a + e[1], 0));
   const dupQA = validation.duplicate_qa_count ?? new Set(validation.duplicates.flatMap(d => [d.a, d.b])).size;
-  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew');
-  const docs = Object.entries(validation.doc_distribution ?? {}).sort((a, b) => b[1] - a[1]);
+  // 수정 전 저장된 결과는 문서 분포가 청크 ID(UUID) 기준이다 — 문서로 보이지 않게 거른다
+  const isDocName = (k?: string | null) => !!k && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k);
+  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew' && isDocName(w.doc));
+  const docs = Object.entries(validation.doc_distribution ?? {}).filter(([k]) => isDocName(k)).sort((a, b) => b[1] - a[1]);
   const docMax = Math.max(1, ...docs.map(d => d[1]));
   const allClear = !validation.invalid && !validation.duplicates.length && !skew.length;
 
@@ -135,6 +145,9 @@ h2 .n{font-size:12px;color:var(--muted);font-weight:500}
 .bar .fill{position:absolute;inset:0 auto 0 0;border-radius:6px}
 .bar .th{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text);opacity:.35}
 .bar .val{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.stack{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--soft);margin:6px 0}
+.f-gray{background:var(--muted)}.f-light{background:var(--line)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
 .f-good{background:var(--good)}.f-mid{background:var(--mid)}.f-bad{background:var(--bad)}.f-acc{background:var(--accent)}
 .good{color:var(--good)}.mid{color:var(--mid)}.bad{color:var(--bad)}.muted{color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
@@ -203,6 +216,9 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
 <div class="grid2">
 <section>
   <h2>AI 품질 평가 <span class="n">지표 평균 · 세로선은 기준값</span></h2>
+  <p class="k" style="font-size:12px;color:var(--sub)">판정 구성</p>
+  <div class="stack" role="img" aria-label="${verdicts.map(v => `${v.label} ${v.n}`).join(', ')}">${verdicts.filter(v => v.n).map(v => `<span class="${v.cls}" style="width:${(v.n / vTotal * 100).toFixed(2)}%" title="${v.label} ${v.n}"></span>`).join('')}</div>
+  <div class="chips" style="margin-bottom:10px">${verdicts.filter(v => v.n || v.key === 'pass').map(v => `<span class="chip"><i class="dot ${v.cls}"></i>${v.label} ${v.n}</span>`).join('')}</div>
   ${V2_DIMENSIONS.map(d => {
     const v = judge.averages?.[d.key];
     const cls = v == null ? 'f-acc' : v >= 0.85 ? 'f-good' : v >= d.threshold ? 'f-mid' : 'f-bad';
