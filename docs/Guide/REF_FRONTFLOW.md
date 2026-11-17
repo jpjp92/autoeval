@@ -187,7 +187,7 @@ factoid    → 사실형    definition → 정의형    boolean    → 확인형
 
 Export
   ├── XLSX: exportToCSV(evaluationData)  — v1 2시트 (Stats + Detail) / v2 4시트 (Summary · Validation · Detail · Evidence)
-  └── HTML Report: exportToHTML(evaluationData)  — v1 SVG 차트 / v2 htmlBuilderV2 (결론 → 요약 → 품질 → 데이터 검증 → 불통과 QA 근거 → 전체 QA → 평가 기준)
+  └── HTML Report: exportToHTML(evaluationData)  — v1 SVG 차트 / v2 htmlBuilderV2 (Evaluation 화면과 같은 구성: 결론 → 요약 → 데이터 검증·품질 → 실패 유형 칩(필터) → 상세 평가 결과 5개씩, 행 클릭 시 상세 → 평가 기준)
 ```
 
 ---
