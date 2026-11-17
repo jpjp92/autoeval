@@ -412,13 +412,13 @@ export function QAEvaluationDashboard({
 
       {v2 ? (
       <div className="space-y-4 animate-in fade-in duration-700" style={{ animationDelay: '200ms', animationFillMode: 'both' }}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ValidationCard
             validation={v2.validation}
             intentDistribution={intentDistribution}
             onShowDuplicates={() => { setFailureFilter('__duplicates'); setStatusFilter(null); setQaPage(0); setSelectedQA(null); }}
           />
-          <div className="lg:col-span-2 bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
+          <div className="bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
             <div className="mb-3 flex items-start justify-between">
               <div>
                 <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
