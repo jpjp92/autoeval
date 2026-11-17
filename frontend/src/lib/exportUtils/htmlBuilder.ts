@@ -4,7 +4,7 @@ import { buildV2HTMLContent } from './htmlBuilderV2';
 
 // ── SVG 차트 생성 헬퍼 ────────────────────────────────────────────────────────
 
-function svgTreemap(
+export function svgTreemap(
   items: Array<{ name: string; krLabel?: string; label?: string; value: number }>,
   colorMap: Record<string, string>,
 ): string {
