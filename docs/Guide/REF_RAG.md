@@ -1,6 +1,6 @@
 <!--
 파일: REF_RAG.md
-설명: 문서 인제스션(PDF/DOCX 추출 → LLM/Rule 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색)까지의 RAG 파이프라인 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함. 평가 파이프라인은 REF_EVAL.md 참조.
+설명: 문서 인제스션(PDF/DOCX/XLSX/CSV 추출 → 언어 판별 → LLM/Rule/Table 청킹 → Gemini 임베딩 → Supabase 저장) → 계층 태깅(H1/H2/H3) → QA 생성(벡터 검색)까지의 RAG 파이프라인 정리. 배치 티어 정책, 필터 조건, 메타데이터 스키마 포함. 평가 파이프라인은 REF_EVAL.md 참조.
 업데이트: 2026-11-09
 -->
 
@@ -15,14 +15,22 @@
 
 ```
 [문서 업로드]
-  PDF / DOCX
+  PDF / DOCX / XLSX·XLSM·CSV   (.xls 거절)
       │
       ▼
 [텍스트 추출]  parsers.extract_text_by_page()
   PDF  → PyMuPDF rawdict 모드  chars 단위 추출 + 한글 공백 복원
          detect_heading() : font>=10 패턴 매칭 / font_boost 이중 감지
          _KOR_CONT 병합   : y_gap > 15 AND font_diff > 1.5 시 병합 금지
-  DOCX → python-docx XML  단락·표·Heading 스타일 구조 보존
+  DOCX → python-docx XML  단락·표·Heading 스타일 구조 보존 (셀 안의 표는 하위 표 블록으로 분리)
+  XLSX·CSV → spreadsheet.extract_spreadsheet()  시트=page, 빈 행·열로 표 분리, 병합 칸·2단 머리글,
+         number_format대로 값 표시(사사오입), 숨김 시트 제외, 시트당 2,000행·문서당 20,000행 상한
+  표 공통 → 쌓인 칸 펼치기(_explode_stacked_rows), PDF 하위 표 분리(_pdf_nested_tables)
+      │
+      ▼
+[언어 판별]  language.detect_language()  한글/(한글+라틴) < 0.05 → en, 그 외 ko
+  - en: 합자·줄바꿈 하이픈 정규화(normalize_english_blocks), 영문 제목 감지, 영문 청킹 프롬프트
+  - 결과는 청크 metadata source_language / chunk_policy 로 저장
       │
       ▼
 [전처리 / 노이즈 필터]
@@ -32,7 +40,10 @@
   - _is_docx_noise_block()    커버·장식 요소 제거 (DOCX 전용)
       │
       ▼
-[청킹]  두 경로 중 선택 (chunking_method 파라미터, 기본: llm)
+[청킹]  XLSX·CSV → table 경로(ingest_with_table_chunking, LLM 없음, 원문 표 청크)
+        그 외   → 두 경로 중 선택 (chunking_method 파라미터, 기본: llm)
+        LLM 경로: 700자 초과 표는 LLM에 보내지 않고 머리글 반복 원문 표 청크로 만든 뒤 순서대로 병합
+                  영문(en) 배치는 번역 감지 시 1회 재요청 → 그래도 번역이면 원문 폴백(fallback_reason)
   ┌──────────────────────┐     ┌──────────────────────────────────┐
   │  rule 청킹           │     │  LLM 청킹 (기본, 품질 우선)       │
   │  chunk_blocks_aware()│     │  run_llm_chunking()        (PDF) │
@@ -63,8 +74,9 @@
       │
       ▼
 [계층 분류]  H1 / H2 / H3 태깅
-  - analyze-hierarchy      → 전체 청크 풀 랜덤 40개 → __admin__ 필터 → 최대 30개
+  - analyze-hierarchy      → 전체 청크 풀 랜덤 40개 → __admin__ 필터(샘플 언어별 규칙) → 최대 30개
                              LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성
+                             taxonomy_language: ko(기본) | en | source
                              → doc_metadata upsert
   - analyze-tagging-samples → 기존 태깅 샘플 미리보기 (5개)
   - apply-granular-tagging → 청크별 h1/h2/h3 일괄 태깅
@@ -75,6 +87,7 @@
   - sample_doc_chunks RPC 균등 샘플링 → h1/h2/h3 후처리 필터
   - doc_metadata에서 domain_profile 로드 (LLM 0회)
   - build_system_prompt() / build_user_template() 적응형 프롬프트 빌드
+    lang=en 이면 <output_language> 블록으로 영어 QA (원문 언어와 별개)
   - ThreadPoolExecutor 병렬 생성
     Gemini 3.8 Flash (workers=5) / GPT-6 Luna (workers=5)
   - _dedup_across_chunks(sim_threshold=0.75) 중복 제거
@@ -110,8 +123,26 @@
 | 노드 타입      | 처리 방식                                                           |
 | -------------- | ------------------------------------------------------------------- |
 | `w:p` (단락) | `_iter_t()` 로 `w:t` 수집, `mc:Fallback` 하위 스킵(중복 방지) |
-| `w:tbl` (표) | `_extract_table()` → `\| cell \| cell \|` 마크다운 행 구조 보존   |
+| `w:tbl` (표) | `_extract_table()` → `\| cell \| cell \|` 마크다운 행 구조 보존. 셀 안 `w:tbl`은 재귀 추출해 `[표] 행 · 칸 (하위 표)` 블록으로 바깥 표 뒤에 둠 |
 | Heading 스타일 | `w:pStyle val` 값으로 font_size 18/16/14 매핑                     |
+
+### PDF 표 처리 (2026-11-17)
+
+| 규칙 | 함수 | 내용 |
+| --- | --- | --- |
+| 쌓인 칸 펼치기 | `_explode_stacked_rows()` | 한 칸에 줄바꿈으로 쌓인 여러 행(`수원⏎수원 장안⏎…`)을 실제 행으로. 이름이 다음 행으로 넘어간 경우 이어 받아 줄 수를 맞춤. 맞출 수 없으면 기존 동작 |
+| 하위 표 분리 | `_pdf_nested_tables()` | 다른 표 안의 2×2 이상 표: 바깥 칸은 `… [하위 표]`, 하위 표는 `[표] 행 · 칸 (하위 표)`. 글자 있는 칸이 모두 하위 표면 레이아웃 틀로 보고 바깥 표 제거 |
+| 큰 표 분할 | `split_large_table_text()` | 700자 초과 `[표]`는 첫 행·구분선·2단 머리글(첫 칸이 빈 행)을 조각마다 반복. DOCX 표 형식도 변환 후 분할 |
+
+### XLSX·XLSM·CSV (`ingestion/spreadsheet.py`)
+
+- openpyxl `data_only=True` — 수식은 저장된 계산값. 계산값이 없으면 빈칸 + 경고 로그
+- 시트 1개 = page 1개, 숨김 시트 제외. 빈 행과 빈 열로 번갈아 나눠 표 덩어리를 찾음
+- 값 2칸 이하 덩어리는 다음 표의 제목 → `[표] 시트 · 제목`
+- 병합 칸은 범위 전체 채움, 첫 행에서 시작하는 세로 병합 → 2단 머리글(아래 칸은 비움)
+- `number_format`대로 표시: `0.00%` → `4.31%`, `#,##0` → `12,345`, 날짜 ISO. 반올림은 엑셀과 같은 사사오입
+- CSV: UTF-8(BOM) → CP949 순으로 디코딩, 구분자 자동 판별
+- 상한: 시트당 2,000행, 문서당 20,000행 (page `truncated_rows`)
 
 **LangChain `Docx2txtLoader`와의 차이점**
 

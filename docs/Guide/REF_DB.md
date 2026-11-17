@@ -33,7 +33,7 @@
 
 ---
 
-### `doc_chunks` — PDF/DOCX 청크 + 벡터
+### `doc_chunks` — 문서 청크(PDF/DOCX/XLSX/CSV) + 벡터
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -50,15 +50,19 @@
 |----|------|
 | `filename` | 원본 파일명 |
 | `document_id` | 인제스션 UUID (전용 컬럼과 동일 값 — 하위 호환용 중복 저장) |
-| `page` | 페이지 번호 (DOCX는 `1` 고정) |
+| `page` | 페이지 번호 (DOCX는 `1` 고정, XLSX는 시트 순서) |
 | `chunk_type` | `body` \| `heading` \| `table` \| `list` \| `colophon` |
 | `section_title` | LLM 청킹 시 섹션 제목 (rule 청킹은 빈 문자열) |
 | `content_hash` | SHA-1 중복 제거용 |
 | `char_length` | 청크 원문 바이트 길이 |
 | `chunk_index` | 청크 순서 인덱스 (문서 전체 전역 순번: `batch_start + idx`) |
 | `total_chunks` | 해당 문서 전체 청크 수 |
-| `chunking_method` | `llm` \| `rule` |
-| `source` | 파일 확장자 (`pdf` \| `docx`) |
+| `chunking_method` | `llm` \| `rule` \| `table`(XLSX·CSV) |
+| `source` | 파일 확장자 (`pdf` \| `docx` \| `xlsx` \| `xlsm` \| `csv` 등) |
+| `source_language` | 문서 언어 `ko` \| `en` (2026-11-15 이후 수집분. 없으면 `ko`로 간주) |
+| `chunk_policy` | `ko-v1` \| `en-v1` — 적용한 청킹 프롬프트·규칙 버전 |
+| `fallback_reason` | LLM 청킹 폴백 사유 — `translated` \| `json_parse` \| `error` (폴백 청크에만 존재) |
+| `sheet` | XLSX 시트 이름 (스프레드시트 청크에만 존재) |
 | `ingested_at` | 수집 ISO 타임스탬프 |
 | `embedding_model` | 임베딩 모델명 |
 | `hierarchy_h1` | H1 대분류 (Pass3 태깅 후 업데이트) |

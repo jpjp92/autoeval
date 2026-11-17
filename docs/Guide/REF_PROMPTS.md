@@ -1,11 +1,11 @@
 <!--
 파일: REF_PROMPTS.md
-설명: 백엔드 LLM 호출 프롬프트 전체 목록. Ingestion(H1/H2/H3 분석·태깅), QA 생성(시스템·유저 템플릿, 정적 KO/EN·동적 빌더), 평가(RAG Triad·완전성) 단계별 프롬프트 위치·모델·경로 정리. P1~P8 패치 적용 현황 포함.
-업데이트: 2026-11-09
+설명: 백엔드 LLM 호출 프롬프트 전체 목록. Ingestion(LLM 청킹 KO/EN, H1/H2/H3 분석·태깅), QA 생성(시스템·유저 템플릿, 정적 KO/EN·동적 빌더), 평가(RAG Triad·완전성) 단계별 프롬프트 위치·모델·경로 정리. P1~P8 패치 적용 현황 포함.
+업데이트: 2026-11-17
 -->
 # PROMPTS.md — 백엔드 프롬프트 목록
 
-> 마지막 업데이트: 2026-11-09
+> 마지막 업데이트: 2026-11-17 (영문 청킹 프롬프트, QA 출력 언어, 카테고리 언어 옵션 반영)
 > 백엔드에서 LLM을 호출하는 모든 프롬프트를 파이프라인 단계 순서로 정리.
 > P1~P8 패치 적용 현황 포함 — 파일 하단 "패치 현황" 섹션 참고.
 
@@ -15,7 +15,8 @@
 
 | # | 단계 | 파일 | 모델 | 경로 |
 |---|------|------|------|------|
-| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile) | `ingestion_api.py` | Gemini 2.5 Flash | — |
+| 0 | Ingestion — LLM 청킹 (PDF/DOCX × KO/EN) | `llm_chunker.py` | Gemini 2.5 Flash | — |
+| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile, KO/EN) | `ingestion_api.py` | Gemini 2.5 Flash | — |
 | 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 2.5 Flash | — |
 | 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 2.5 Flash | fallback |
 | 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | Gemini 2.5 Flash | fallback |
@@ -33,6 +34,23 @@
 
 ---
 
+## 0. Ingestion — LLM 청킹
+
+**파일**: `backend/ingestion/llm_chunker.py` — `select_prompts(language, docx)`
+
+| 문서 언어 | PDF | DOCX | User Template |
+| --- | --- | --- | --- |
+| `ko` (기본) | `SYSTEM_PROMPT` | `DOCX_SYSTEM_PROMPT` | `USER_TEMPLATE` |
+| `en` | `SYSTEM_PROMPT_EN` | `DOCX_SYSTEM_PROMPT_EN` | `USER_TEMPLATE_EN` |
+
+- 공통 규약: CTX/NEW 블록, 순수 JSON 배열(`text`, `section_title`, `source_blocks`), 청크 200~800자, 표 마커 `[표]`.
+- KO: `<role>`에 "원문 언어를 유지하세요. 영문 용어·인용·문장은 번역하지 말고 원문 그대로 둡니다." (2026-11-15). 그 외 기존 규칙(한국어 노이즈 교정, 한국어 접속사 끝맺음, 표 → 한국어 산문).
+- EN: 최우선 `<language_rules>` — 번역 금지, 수치·단위·인용·고유명사·URL·코드 보존, 노이즈만 교정. 영문 노이즈 교정(줄바꿈 하이픈, 합자, arXiv 사이드바), 영문 제목 처리, 연결어(`However` 등) 끝맺음 금지, 표는 영문 산문(행·열 관계 보존), `section_title` 영문.
+- 사후 검증(`find_translated_chunks`): 원문이 영문인 청크의 text·section_title 한글 비율이 원문보다 0.05 이상 높으면 번역 → 1회 재요청 → 원문 폴백(`fallback_reason="translated"`).
+- LLM에 보내지 않는 입력: 700자 초과 표(원문 표 청크), XLSX·CSV 전체(table 청킹).
+
+---
+
 ## 1. Pass1+2 통합 — H1/H2/H3 Master + domain_profile 생성
 
 **파일**: `backend/api/ingestion_api.py` (엔드포인트: `POST /analyze-hierarchy`)
@@ -42,6 +60,7 @@
 **임베딩**: Gemini Embedding 2, `output_dimensionality=1536` (L2 정규화)
 
 > Pass1(H1) + Pass2(H2/H3) + domain_profile을 단일 LLM 호출로 동시 생성.
+> 출력 언어: 요청 필드 `taxonomy_language` — `ko`(기본, 아래 프롬프트) | `en`(`_build_hierarchy_prompt_en`, Title Case 4단어 이하, 영문 domain_profile) | `source`(샘플 청크의 문서 언어를 따름).
 > 결과는 `doc_metadata` 테이블에 upsert. QA 생성 시 LLM 재호출 없이 캐시 사용.
 
 ```
@@ -215,7 +234,7 @@ Analyze the samples above and return:
 
 **파일**: `backend/generators/prompts.py` — `SYSTEM_PROMPT_EN_V1`
 **용도**: ⚠️ **Fallback 경로** — lang=en이고 `system_prompt=None`일 때 기본값
-**내용**: KO v1 동일 구조, 영문 버전. 최종 출력은 한국어(`Write all Q&A in Korean`)
+**내용**: KO v1 동일 구조, 영문 버전. 최종 출력은 영어(`Write all questions and answers in English, regardless of the context language`). 2026-11-15 이전에는 한국어 출력을 지시했다.
 **패치 적용**: P1(comparison 40%, how 1개 권장) / P2(변화 방향) / P3(purpose 조건) / P4(추론 금지) / P5(완전성) / P7(대칭 검증) / P8(카테고리 중의성) — ✅ 전체 적용
 
 > KO Fallback (#5)과 달리 EN Fallback은 P1~P8 전체 반영 완료.
@@ -228,7 +247,9 @@ Analyze the samples above and return:
 **용도**: ✅ **주 경로** — `worker.py`가 domain_profile 기반으로 동적 생성 후 `qa_generator.py`에 주입
 **패치 적용**: P1~P8 전체 적용 (`_CORE_PRINCIPLES_KO` 포함)
 
-**구성**: `<role>` (domain-aware) + `_CORE_PRINCIPLES_KO` 블록
+**구성**: `<role>` (domain-aware) + `_CORE_PRINCIPLES_KO` 블록 (+ `lang=en`이면 `_OUTPUT_LANGUAGE_EN`)
+
+> `lang`은 QA 출력 언어이며 문서 원문 언어(`source_language`)와 별개다. `lang=en`이면 끝에 `<output_language>` 블록을 붙여 위의 한국어 어투 규칙을 덮어쓰고 영어로 출력한다. `lang=ko`는 이전과 같은 문자열이다.
 
 ```
 <role>

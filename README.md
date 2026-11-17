@@ -2,7 +2,7 @@
 
 **LLM 기반 QA 자동 생성 및 평가**
 
-PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질 평가까지 엔드-투-엔드로 처리합니다.
+PDF/DOCX/엑셀(XLSX·CSV) 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질 평가까지 엔드-투-엔드로 처리합니다.
 
 ---
 
@@ -22,7 +22,7 @@ PDF/DOCX 문서를 업로드하면 계층 구조 분석 → QA 생성 → 품질
 ## 전체 플로우
 
 ```
-PDF/DOCX 업로드
+PDF/DOCX/XLSX/CSV 업로드
   └─ [Data Standardization]
        ├─ LLM 청킹 + 임베딩 → doc_chunks 저장
        └─ H1/H2/H3 계층 분석 + 태깅 → doc_metadata 저장
@@ -43,7 +43,8 @@ PDF/DOCX 업로드
 
 | 처리      | 내용                                                                                                                                               |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 파싱      | PDF(PyMuPDF) / DOCX(python-docx) — 원시 블록 추출 (`extract_text_by_page`)                                                                         |
+| 파싱      | PDF(PyMuPDF) / DOCX(python-docx) / XLSX·XLSM·CSV(openpyxl) — 원시 블록 추출 (`extract_text_by_page`). 표는 쌓인 칸 펼치기·하위 표 분리 |
+| 표        | 700자 초과 표는 LLM 산문화 없이 머리글을 반복한 원문 표 청크로 저장. 엑셀·CSV는 전부 표 청크 (`ingest_with_table_chunking`, 시트당 2,000행 상한) |
 | 청킹      | **LLM 청킹** (기본값, `chunking_method=llm`) — Gemini 2.5 Flash, 배치 단위 의미 경계 분할, 노이즈 제거 포함 / `rule` 옵션으로 rule-based 전환 가능 |
 | 정규화    | 특수문자 치환, 줄바꿈 결합, 짧은 청크 병합                                                                                                         |
 | 중복 방지 | SHA-1 `content_hash` 기반 — 배치 중복 SELECT → 신규 청크만 1회 배치 INSERT                                                                         |
@@ -462,7 +463,7 @@ docker compose up -d --build
 
 | 메서드 | 경로                                     | 설명                                                                                   |
 | ------ | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| `POST` | `/api/ingestion/upload`                  | PDF/DOCX 업로드 → 텍스트 추출 후 즉시 `job_id` 반환. 청킹·임베딩은 BackgroundTasks 비동기 실행 |
+| `POST` | `/api/ingestion/upload`                  | PDF/DOCX/XLSX/CSV 업로드 → 텍스트 추출 후 즉시 `job_id` 반환. 청킹·임베딩은 BackgroundTasks 비동기 실행 |
 | `GET`  | `/api/ingestion/{job_id}/status`         | 인제스션 job 상태 조회 (`status`, `progress`, `total`, `message`, `doc_id`)            |
 | `POST` | `/api/ingestion/analyze-hierarchy`       | anchor 30개 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장           |
 | `POST` | `/api/ingestion/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)                      |

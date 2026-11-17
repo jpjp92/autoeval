@@ -17,14 +17,21 @@ backend/
 │   └── evaluation_api.py        # POST|GET /api/evaluate/* — 4레이어 평가 job 관리
 ├── ingestion/                   # 인제스션 순수 함수 (I/O 없음)
 │   ├── parsers.py               # PDF/DOCX 파싱·정규화·필터·청킹 전 처리
+│   │                            #   표: 쌓인 칸 펼치기(_explode_stacked_rows), 하위 표 분리,
+│   │                            #   큰 표 머리글 반복 분할(split_large_table_text), 영문 제목 감지
+│   ├── spreadsheet.py           # XLSX·XLSM·CSV → [표] 블록 (시트=page, 서식대로 값 표시, 시트당 2,000행)
+│   ├── language.py              # 문서 언어 판별(ko|en), 영문 합자·줄바꿈 하이픈 정규화
 │   ├── llm_chunker.py           # LLM 청킹 — Gemini 2.5 Flash 기반 의미 단위 청킹
-│   │                            #   PDF: SYSTEM_PROMPT (noise_correction 포함)
-│   │                            #   DOCX: DOCX_SYSTEM_PROMPT (noise_correction 없음)
+│   │                            #   PDF: SYSTEM_PROMPT / SYSTEM_PROMPT_EN (noise_correction 포함)
+│   │                            #   DOCX: DOCX_SYSTEM_PROMPT / DOCX_SYSTEM_PROMPT_EN
+│   │                            #   영문 배치는 번역 감지 → 1회 재요청 → 원문 폴백
 │   │                            #   파라미터: PDF=페이지 수 기반, DOCX=블록 수 기반 티어 자동 조정
 │   ├── job_manager.py           # IngestionStatus, IngestionJob, IngestionJobManager, 전역 싱글턴
 │   ├── prompts.py               # LLM 프롬프트 빌더 — build_hierarchy_prompt / build_tagging_prompt
 │   ├── tagging.py               # 배치 태깅 코루틴 — run_tagging(), _is_admin_anchor()
-│   ├── chunker.py               # LLM/Rule-based 청킹 로직 — ingest_with_llm/rule_chunking()
+│   ├── chunker.py               # 청킹 로직 — ingest_with_llm/rule/table_chunking()
+│   │                            #   LLM 경로: 700자 초과 표는 LLM 없이 원문 표 청크
+│   │                            #   table 경로: XLSX·CSV 전용 (LLM 호출 없음)
 │   └── pipeline.py              # 임베딩 → Supabase 저장 파이프라인 — process_and_ingest()
 │                                #   BackgroundTasks 비동기 패턴, Semaphore(EMBED_CONCURRENCY),
 │                                #   임베딩 3회 재시도(지수 백오프), 배치별 progress 업데이트
@@ -90,6 +97,15 @@ python -m uvicorn backend.main:app --reload --port 8000
 
 API 문서: `http://localhost:8000/docs`
 
+### 테스트
+
+```bash
+# 저장소 루트에서 (외부 API·DB 호출 없음)
+.venv/bin/python -m unittest \
+  backend.tests.test_spreadsheet backend.tests.test_table_chunking \
+  backend.tests.test_english_chunking backend.tests.test_judge_content
+```
+
 ---
 
 ## 배포 환경 (Render)
@@ -107,9 +123,9 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드   | 경로                         | 설명                                                                                                        |
 | -------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST` | `/upload`                  | PDF/DOCX 업로드 → 텍스트 추출 후 즉시 `job_id` 반환 (BackgroundTasks 비동기). 청킹·임베딩은 백그라운드 실행. |
+| `POST` | `/upload`                  | PDF/DOCX/XLSX/XLSM/CSV 업로드 → 즉시 `job_id` 반환 (BackgroundTasks 비동기). 추출·청킹·임베딩은 백그라운드 실행. `.xls`는 거절(사유 메시지). |
 | `GET`  | `/{job_id}/status`         | 인제스션 job 상태 조회 (`status`, `progress`, `total`, `message`, `error`, `doc_id`)                        |
-| `POST` | `/analyze-hierarchy`       | anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장                   |
+| `POST` | `/analyze-hierarchy`       | anchor 30개 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성 → doc_metadata 저장. 선택 필드 `taxonomy_language`(`ko` 기본 \| `en` \| `source`) |
 | `POST` | `/analyze-tagging-samples` | 이미 태깅된 청크 샘플 조회 (`__admin__` 제외, H1 다양성 우선 5개)                                         |
 | `POST` | `/apply-granular-tagging`  | 청크별 hierarchy 일괄 태깅 (batch=5, parallel=5, 완료 후 샘플 5개 반환)                                     |
 | `GET`  | `/hierarchy-list`          | H1/H2/H3 고유 목록.`filter_for_qa=true`(기본, QA 드롭다운용) / `filter_for_qa=false`(표시용, 필터 없음) |
@@ -188,10 +204,14 @@ API 문서: `http://localhost:8000/docs`
   "section_title":   "핵심 주제 제목 (LLM 생성)",
   "content_hash":    "sha1hex",
   "char_length":     412,
-  "chunking_method": "llm | rule",
+  "chunking_method": "llm | rule | table",
   "embedding_model": "gemini-embedding-2",
   "ingested_at":     "2026-04-02T10:00:00",
-  "source":          "pdf | docx",
+  "source":          "pdf | docx | xlsx | xlsm | csv",
+  "source_language": "ko | en",
+  "chunk_policy":    "ko-v1 | en-v1",
+  "fallback_reason": "translated | json_parse | error  (폴백 청크만)",
+  "sheet":           "시트 이름  (XLSX 청크만)",
   "hierarchy_h1":    "대분류",
   "hierarchy_h2":    "중분류",
   "hierarchy_h3":    "소분류"
@@ -206,13 +226,18 @@ API 문서: `http://localhost:8000/docs`
 ## 인제스션 파이프라인 흐름
 
 ```
-PDF/DOCX 업로드
+PDF/DOCX/XLSX/CSV 업로드 (.xls는 사유 메시지와 함께 실패)
   └─ doc_id = uuid4()
       └─ upsert_doc_metadata(doc_id, filename)   # FK 제약 충족을 위해 최소 row 선점
           └─ extract_text_by_page()
-              ├─ PDF  → PyMuPDF 블록 단위 추출
-              └─ DOCX → python-docx XML 직접 파싱 (단락/표/제목 구조 보존)
+              ├─ PDF  → PyMuPDF 블록 단위 추출 (표: 쌓인 칸 펼치기, 하위 표 분리)
+              ├─ DOCX → python-docx XML 직접 파싱 (단락/표/제목 구조 보존, 셀 안 표 재귀 추출)
+              └─ XLSX·CSV → spreadsheet.extract_spreadsheet() (시트=page, 서식대로 값, 2,000행/시트)
+                  detect_language() → ko | en  (en: 합자·하이픈 정규화, 영문 프롬프트)
+                  ├─ [table] ingest_with_table_chunking()  XLSX·CSV 전용, LLM 없음
                   ├─ [llm]  run_llm_chunking() / run_llm_chunking_docx()  (기본)
+                  │         700자 초과 표는 LLM 없이 머리글 반복 원문 표 청크
+                  │         en 배치: 번역 감지 → 1회 재요청 → 원문 폴백
                   │         Gemini 2.5 Flash, 배치 병렬, 의미 단위 청크
                   │         DOCX: 블록 수 기반 티어(S/M/L/XL) 자동 조정
                   └─ [rule] build_sections → chunk_blocks_aware  (하위 호환)
@@ -224,6 +249,7 @@ PDF/DOCX 업로드
 
 Pass 2: /analyze-hierarchy
   anchor 30개 샘플링 → LLM 1회 → H1/H2/H3 master + domain_profile 동시 생성
+  taxonomy_language: ko(기본) | en | source
   TEXT QUALITY RULE 적용: PDF 노이즈 텍스트를 H1/H2/H3에 복사하지 않도록 제어
   → doc_metadata upsert
 
