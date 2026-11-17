@@ -37,6 +37,10 @@ logging.getLogger("google_genai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("alembic").setLevel(logging.WARNING)
 
+try:
+    from backend.job_ids import eval_job_id, is_transaction_id
+except ImportError:
+    from job_ids import eval_job_id, is_transaction_id
 logger = logging.getLogger("autoeval.evaluation")
 
 # ============= evaluators 패키지에서 import =============
@@ -67,6 +71,27 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
     except ImportError:
         Request = Any
         BackgroundTasks = Any
+
+    def _next_eval_job_id(generation_id) -> str:
+        """생성 작업 ID(TX-…)에 -E번호를 붙인다. 생성을 못 찾거나 옛 형식이면 새 TX ID."""
+        gen_job_id = None
+        existing = list(eval_manager.jobs.keys())
+        try:
+            try:
+                from config.supabase_client import supabase_client
+            except ImportError:
+                from backend.config.supabase_client import supabase_client
+            if supabase_client and generation_id:
+                row = (supabase_client.table("qa_gen_results").select("job_id")
+                       .eq("id", generation_id).limit(1).execute()).data or []
+                gen_job_id = row[0].get("job_id") if row else None
+                if is_transaction_id(gen_job_id):
+                    prev = (supabase_client.table("qa_eval_results").select("job_id")
+                            .like("job_id", f"{gen_job_id}-E%").execute()).data or []
+                    existing += [r.get("job_id", "") for r in prev]
+        except Exception as e:
+            logger.warning(f"eval job id lookup failed, using new transaction id: {e}")
+        return eval_job_id(gen_job_id, existing)
 
     @app.post("/api/evaluate", tags=["evaluation"])
     async def evaluate_qa(request: Request, background_tasks: BackgroundTasks) -> dict:
@@ -100,7 +125,7 @@ def setup_evaluation_routes(app: Any, eval_manager: Optional[EvaluationManager] 
             if not result_filename:
                 return {"success": False, "error": "result_filename is required"}
 
-            job_id = f"eval_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+            job_id = _next_eval_job_id(generation_id)
             job = eval_manager.create_job(job_id, result_filename)
             if generation_id:
                 eval_manager.update_job(job_id, generation_id=generation_id)

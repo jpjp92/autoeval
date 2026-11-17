@@ -280,6 +280,8 @@ export function DashboardOverview({
                               <dl data-role="job-detail" className="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg bg-slate-50 dark:bg-white/5 px-3 py-2 text-[11px]">
                                 <dt className="text-slate-400">작업 ID</dt>
                                 <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.job_id}</dd>
+                                <dt className="text-slate-400">평가 ID</dt>
+                                <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.eval_job_id || "—"}</dd>
                                 <dt className="text-slate-400">모델 ID</dt>
                                 <dd className="font-mono text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{job.model || "—"}</dd>
                                 <dt className="text-slate-400 self-center">평가 등급</dt>
