@@ -618,6 +618,46 @@ def _explode_stacked_rows(table_data: list) -> list:
     return out
 
 
+# 이 글자 수를 넘는 표는 LLM 산문화 없이 머리글을 붙인 조각으로 청크를 만든다(청크 상한 800자 이내).
+TABLE_SPLIT_MAX_CHARS = 700
+
+
+def split_large_table_text(text: str, max_chars: int = TABLE_SPLIT_MAX_CHARS) -> List[str]:
+    """[표] 마크다운이 max_chars를 넘으면 머리글을 붙인 여러 조각으로 나눈다.
+
+    머리글 = 첫 행 + 구분선 + 그 뒤에 이어지는 "첫 칸이 빈" 행(날짜·단위 같은 2단 머리글).
+    각 조각은 "[표] (n/N)" 으로 시작하고 머리글을 반복한 뒤 본문 행을 max_chars 안에서 담는다.
+    표가 아니거나 작으면 [text] 그대로 돌려준다.
+    """
+    if not text.startswith("[표]") or len(text) <= max_chars:
+        return [text]
+    lines = text.split("\n")
+    rows = lines[1:]
+    if len(rows) < 3 or not rows[1].startswith("| ---"):
+        return [text]
+    header = rows[:2]
+    body_start = 2
+    while body_start < len(rows) and re.match(r"^\|\s*\|", rows[body_start]):
+        header.append(rows[body_start])   # 첫 칸이 빈 2단 머리글
+        body_start += 1
+    body = rows[body_start:]
+    if not body:
+        return [text]
+    head_len = sum(len(h) + 1 for h in header) + 12
+    groups: List[List[str]] = [[]]
+    size = head_len
+    for r in body:
+        if groups[-1] and size + len(r) + 1 > max_chars:
+            groups.append([])
+            size = head_len
+        groups[-1].append(r)
+        size += len(r) + 1
+    if len(groups) == 1:
+        return [text]
+    n = len(groups)
+    return ["\n".join([f"[표] ({k + 1}/{n})"] + header + g) for k, g in enumerate(groups)]
+
+
 def format_table_as_text(table_data: list, page=None, table_obj=None) -> str:
     """
     PyMuPDF extract() 결과를 Markdown 테이블 텍스트로 변환.
