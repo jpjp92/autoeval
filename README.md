@@ -99,6 +99,8 @@ final_score = (syntax×0.05) + (stats×0.05) + (rag_triad×0.65) + (completeness
 등급: A+ (≥0.95) / A (≥0.85) / B+ (≥0.75) / B (≥0.65) / C (≥0.50) / F (<0.50)
 ```
 
+> **평가 v2 (미리보기):** 데이터 검증(구문·중복·분포, 점수 아님) → 통합 Judge(근거성·정확성·완전성·질문 품질, QA당 1회 호출)로 평가한다. 평가 실패는 점수에서 빼고, 근거·수치 오류는 불통과로 처리한다. 원문·QA 언어 조합(한→한, 영→영, 영→한, 한→영)마다 검사 규칙을 붙인다. 기본값은 v1이고, QA Pipeline의 "평가 방식"에서 고른다. 자세한 기준은 [REF_EVAL.md](docs/Guide/REF_EVAL.md)의 "평가 v2"에 있다.
+
 ---
 
 ## QA 평가 프레임워크 상세
@@ -182,6 +184,9 @@ autoeval/
 │ │ ├── dataset_stats.py # Layer 1-B: 다양성·중복률 통계
 │ │ ├── rag_triad.py # Layer 2: RAG Triad (XML 프롬프트)
 │ │ ├── qa_quality.py # Layer 3: Quality Score (XML, system/user 분리)
+│ │ ├── data_validation.py # v2 Stage 1: 구문·중복·분포 (점수 아님)
+│ │ ├── qa_judge.py # v2 Stage 2: 통합 Judge + 언어 정책
+│ │ ├── pipeline_v2.py # v2 파이프라인 + v1 호환 결과 행
 │ │ ├── recommendations.py # 평가 결과 기반 개선 권고 생성
 │ │ └── job_manager.py # in-memory 평가 job 관리
 │ ├── db/ # Supabase Repository 패키지

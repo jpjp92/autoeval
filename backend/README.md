@@ -47,6 +47,9 @@ backend/
 │   ├── dataset_stats.py         # Layer 1-B: 통계 분석 (다양성·중복·편향)
 │   ├── rag_triad.py             # Layer 2: RAG Triad (관련성·근거성·맥락성)
 │   ├── qa_quality.py            # Layer 3: 완전성 (Completeness, 질문 분해 기반)
+│   ├── data_validation.py       # v2 Stage 1: 구문·중복·분포 (점수 아님)
+│   ├── qa_judge.py              # v2 Stage 2: 통합 Judge (4개 지표, 주장별 근거, 언어 정책)
+│   ├── pipeline_v2.py           # v2 파이프라인 + v1 화면 호환 결과 행
 │   ├── recommendations.py       # 평가 결과 기반 개선 권고 생성
 │   └── job_manager.py           # in-memory 평가 job 관리
 ├── db/                          # Supabase Repository
@@ -165,7 +168,7 @@ API 문서: `http://localhost:8000/docs`
 
 | 메서드   | 경로                                     | 설명                                               |
 | -------- | ---------------------------------------- | -------------------------------------------------- |
-| `POST` | `/api/evaluate`                        | 4레이어 평가 job 시작                              |
+| `POST` | `/api/evaluate`                        | 평가 job 시작. `eval_version`: `v1`(기본, 4레이어) \| `v2`(데이터 검증 → 통합 Judge) |
 | `GET`  | `/api/evaluate/{job_id}/status`        | 평가 job 상태 + 레이어별 결과                      |
 | `GET`  | `/api/evaluate/list`                   | 세션 내 평가 job 목록                              |
 | `GET`  | `/api/evaluate/history`                | Supabase 과거 평가 이력 (최대 50건)                |

@@ -1,11 +1,11 @@
 <!--
 파일: REF_EVAL.md
-설명: QA 평가 파이프라인 기준 정리. 최종 점수 계산식(구문·통계·RAG Triad·완전성), 등급 기준, Layer별 평가 지표(관련성·근거성·맥락성·완전성) 및 평가 모델 설정 포함.
-업데이트: 2026-11-09
+설명: QA 평가 파이프라인 기준 정리. v1(기본)과 v2(미리보기: 데이터 검증 → 통합 Judge, 언어 정책) 포함. 최종 점수 계산식(구문·통계·RAG Triad·완전성), 등급 기준, Layer별 평가 지표(관련성·근거성·맥락성·완전성) 및 평가 모델 설정 포함.
+업데이트: 2026-11-17
 -->
 # 평가 기준 (Evaluation Criteria)
 
-> 마지막 업데이트: 2026-11-09
+> 마지막 업데이트: 2026-11-17 (v2 미리보기 추가). 아래 "최종 점수 계산"부터 Layer 설명까지는 v1 기준이다.
 
 ## 최종 점수 계산
 
@@ -29,6 +29,43 @@ final_score = 0.05 × syntax_score
 | B  | ≥ 0.65 | 보통 — 혼재, 일부 우려 |
 | C  | ≥ 0.50 | 미흡 — 복수 약점 존재 |
 | F  | < 0.50 | 실패 — 치명적 결함 |
+
+> **v1 통계 항 주의:** `pipeline.py`는 `integrated_score`를 읽지만 `DatasetStats`는 이 키를 반환하지 않는다. 그래서 통계 항은 항상 5/10(0.025점)이다. v1 이력과 점수를 맞추기 위해 고치지 않았다. v2에서는 통계를 점수에서 뺐다.
+> **v1 평가 실패 표시:** Judge 호출·파싱이 실패해 대체값(0.65, 0.5)이 들어간 QA에는 `error`가 남는다. 이런 QA는 `evaluation_error` 실패 유형으로 분류되고, 요약에 `evaluation_error_count`가 들어간다.
+
+---
+
+## 평가 v2 (미리보기, 2026-11-17)
+
+기본 평가는 v1이다. 요청에 `eval_version: "v2"`를 보내거나 QA Pipeline에서 "v2 미리보기"를 고를 때만 v2로 평가한다.
+결과는 같은 테이블에 저장하고 `metadata.eval_version = "v2"`로 구분한다.
+기획: [PLAN_261117_EVAL_V2.md](../Plan/PLAN_261117_EVAL_V2.md), 화면: [PLAN_261117_EVAL_V2_UI.md](../Plan/PLAN_261117_EVAL_V2_UI.md)
+
+**구조:** Data Validation(결정론, 점수 아님) → Unified LLM Judge(QA당 1회 호출)
+
+| 단계 | 모듈 | 내용 |
+| --- | --- | --- |
+| 데이터 검증 | `data_validation.py` | 구문 탈락은 평가에서 제외한다. 중복 의심(질문 유사도 0.7 이상 쌍, `duplicate_qa_count`), intent 분포, 문서 분포(`source_doc`이 있을 때만), 경고를 낸다. |
+| 통합 Judge | `qa_judge.py` | groundedness, correctness, completeness, question_quality(0~10 → 0~1), 주장별 근거(`evidence`), 실패 유형, 이유, 언어 검사(`language_checks`) |
+| 파이프라인 | `pipeline_v2.py` | 원문 언어와 QA 언어를 따로 정한다. 결과를 v1 화면 키와 호환되는 행으로 만든다(`build_v2_report`). |
+
+**점수와 판정**
+
+```
+qa_score = groundedness×0.35 + correctness×0.30 + completeness×0.20 + question_quality×0.15
+Hard Fail : groundedness < 0.6 또는 correctness < 0.6 또는 원문과 모순되는 주장 → 불통과, 최종 점수에 0.5배
+통과      : Hard Fail 아님 + qa_score ≥ 0.70 + question_quality ≥ 0.5
+final     : 평가된 QA의 qa_score 평균 (Hard Fail은 0.5배). 등급 구간은 v1과 같다
+평가 실패 : 점수로 대체하지 않고 계산에서 뺀다. 20%를 넘으면 등급을 보류한다. DB 제약 때문에 final_grade는 F로 저장하고 metadata.grade_withheld에 사유를 남긴다. 화면은 "보류"로 표시한다
+```
+
+**언어 정책:** 점수 기준은 하나이고, 원문→QA 언어 조합에 따라 Judge 프롬프트에 검사 규칙만 붙는다. 조합은 한→한 `korean_native`, 영→영 `english_native`, 영→한 `cross_language_en_to_ko`, 한→영 `cross_language_ko_to_en`이다.
+- 세부 실패 유형: `meaning_shift`, `modality_mismatch`, `negation_error`, `unit_mismatch`, `terminology_error`, `condition_omitted`.
+- 이 유형들은 4개 지표의 판정 근거로만 쓰고, 따로 감점하지 않는다.
+- 원문 언어는 QA의 `source_language`를 쓰고, 없으면 컨텍스트로 판별한다(`source_language_from = "inferred"`).
+- QA 언어는 생성 설정 `lang`을 쓰고, 없으면 질문·답변으로 판별한다.
+
+**v2 주의:** v2의 중복 의심은 문자열 유사도 기준이다. 표에서 만든 질문(대상만 다른 같은 틀의 질문)은 오탐이 생길 수 있다.
 
 ---
 
