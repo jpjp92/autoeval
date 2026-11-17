@@ -149,7 +149,9 @@ async def _ingest_background(
     try:
         ingestion_job_manager.update_job(job_id, status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
         try:
-            pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename)
+            def _page_progress(done: int, total: int):
+                ingestion_job_manager.update_job(job_id, message=f"텍스트·표 추출 중 ({done}/{total}쪽)")
+            pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename, _page_progress)
         except ValueError as e:
             # 지원하지 않는 형식(.xls 등) — 사용자에게 보여 줄 메시지
             logger.warning(f"Background ingestion rejected [{job_id}]: {e}")
