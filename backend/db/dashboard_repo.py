@@ -80,13 +80,17 @@ async def get_dashboard_metrics() -> Dict[str, Any]:
                 "eval_id":     linked_eval.get("id")          if linked_eval else None,
                 "eval_job_id": linked_eval.get("job_id")      if linked_eval else None,
                 "eval_score":  linked_eval.get("final_score") if linked_eval else None,
-                "eval_grade":  linked_eval.get("final_grade") if linked_eval else None,
+                # v2 등급 보류는 DB 제약 때문에 F로 저장된다 — metadata.grade_withheld로 구분
+                "eval_grade":  ("보류" if (linked_eval.get("metadata") or {}).get("grade_withheld")
+                                else linked_eval.get("final_grade")) if linked_eval else None,
                 "created_at": g.get("created_at", ""),
             })
 
         # --- grade_distribution ---
         grade_dist: Dict[str, int] = {"A+": 0, "A": 0, "B+": 0, "B": 0, "C": 0, "F": 0}
         for e in eval_rows:
+            if (e.get("metadata") or {}).get("grade_withheld"):
+                continue   # 보류(F로 저장)는 등급 분포에 넣지 않는다
             grade = e.get("final_grade", "")
             if grade in grade_dist:
                 grade_dist[grade] += 1

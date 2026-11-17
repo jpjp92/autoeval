@@ -839,10 +839,13 @@ def _run_v2(job_id, result_filename, qa_list, evaluator_model, eval_manager, gen
                 job_id=job_id,
                 metadata={**{k: gen_meta[k] for k in gen_meta}, "evaluator_model": evaluator_model_id,
                           "generation_id": generation_id or "", "eval_version": "v2",
-                          "judge_version": out["metadata"]["judge_version"]},
+                          "judge_version": out["metadata"]["judge_version"],
+                          "grade_withheld": summary["grade_withheld"]},
                 total_qa=len(qa_list), valid_qa=v["valid"], scores=scores,
                 final_score=summary["final_score"] if summary["final_score"] is not None else 0.0,
-                final_grade=summary["grade"] or "보류",
+                # DB 제약 chk_grade는 A+~F만 허용한다(스키마 변경 없음). 보류는 F로 저장하고
+                # metadata.grade_withheld에 사유를 남긴다. 화면은 이 값이 있으면 "보류"로 표시한다
+                final_grade=summary["grade"] or "F",
                 pipeline_results=pipeline_results,
             ))
             if supabase_eval_id and generation_id and link_generation_to_evaluation:
