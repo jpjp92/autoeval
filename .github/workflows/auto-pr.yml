@@ -1,0 +1,57 @@
+# dev에 push하면 dev → main PR을 연다. 이미 열린 PR이 있으면 본문(커밋 목록)만 갱신한다.
+# 기획: docs/Plan/PLAN_261117_CI.md 5장
+# 필요 설정: Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
+# 제약: GITHUB_TOKEN으로 만든 PR에는 pull_request 트리거 워크플로(CI)가 돌지 않는다.
+#       CI는 dev push 때 같은 커밋으로 돈다. PR에도 검사 결과가 필요하면 PAT로 바꾼다.
+name: Auto PR (dev → main)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: auto-pr-dev
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: open-pr
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open or update PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ahead=$(git rev-list --count origin/main..origin/dev)
+          if [ "$ahead" -eq 0 ]; then
+            echo "dev has no commits ahead of main — nothing to do"
+            exit 0
+          fi
+
+          {
+            echo "dev → main 자동 PR (main보다 커밋 ${ahead}개 앞섬)"
+            echo
+            echo "## 커밋"
+            git log --reverse --format='- %h %s' origin/main..origin/dev | head -n 200
+            echo
+            echo "_dev에 push될 때마다 자동으로 갱신된다. 병합은 직접 한다._"
+          } > pr_body.md
+
+          number=$(gh pr list --base main --head dev --state open --json number -q '.[0].number')
+          if [ -z "$number" ]; then
+            gh pr create --base main --head dev --title "dev → main" --body-file pr_body.md
+          else
+            gh pr edit "$number" --body-file pr_body.md
+            echo "updated PR #$number"
+          fi
