@@ -71,6 +71,14 @@ class EvaluationManager:
                     if hasattr(self.jobs[job_id], key):
                         setattr(self.jobs[job_id], key, value)
 
+    def set_layers(self, job_id: str, layers):
+        """평가 방식에 맞게 레이어 목록을 바꾼다 (v2: validation, judge)."""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id].layers_status = {
+                    k: {"status": "pending", "progress": 0, "message": ""} for k in layers
+                }
+
     def update_layer_status(self, job_id: str, layer: str, status: str, progress: int = 0, message: str = ""):
         """특정 Layer 상태 업데이트 (스레드 안전)"""
         with self.lock:

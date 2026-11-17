@@ -485,8 +485,9 @@ def run_evaluation(
     evaluator_model: str = DEFAULT_EVALUATOR_MODEL,
     eval_manager: Optional[EvaluationManager] = None,
     generation_id: Optional[str] = None,
+    eval_version: str = "v1",
 ):
-    """Background task: 4단계 평가 파이프라인 실행"""
+    """Background task: 평가 파이프라인 실행 (v1: 4단계, v2: 데이터 검증 → 통합 Judge)"""
     if not eval_manager:
         return
 
@@ -542,6 +543,13 @@ def run_evaluation(
 
         logger.info(f"[{job_id}] Evaluation start: {len(qa_list)} QA items")
         eval_manager.update_job(job_id, message=f"평가 시작: {len(qa_list)} QA 분석 중...", progress=5)
+
+        if eval_version == "v2":
+            _run_v2(job_id, result_filename, qa_list, evaluator_model, eval_manager, generation_id, {
+                "generation_model": gen_model, "lang": gen_lang, "prompt_version": gen_prompt_ver,
+                "source_doc": gen_source_doc, "hierarchy_h1": gen_h1, "hierarchy_h2": gen_h2, "hierarchy_h3": gen_h3,
+            })
+            return
 
         pipeline_results = run_full_evaluation_pipeline(
             qa_list=qa_list,
@@ -771,6 +779,88 @@ def run_evaluation(
 
 # ── Export 공통 헬퍼 ─────────────────────────────────────────────────────────
 
+def _run_v2(job_id, result_filename, qa_list, evaluator_model, eval_manager, generation_id, gen_meta):
+    """eval v2 경로. 저장 형식은 v1과 같은 테이블·칸을 쓰고 metadata.eval_version으로 구분한다."""
+    from .pipeline_v2 import build_v2_report, run_v2_pipeline, V2_LAYER_KEYS
+    try:
+        from config.models import MODEL_CONFIG as _MC
+    except ImportError:
+        from backend.config.models import MODEL_CONFIG as _MC
+    evaluator_model_id = _MC.get(evaluator_model, {}).get("model_id", evaluator_model)
+
+    eval_manager.set_layers(job_id, V2_LAYER_KEYS)
+    eval_manager.update_layer_status(job_id, "validation", "running", 50, "구문·중복 검사 중...")
+
+    class _Progress:
+        """run_v2_pipeline의 진행 메시지를 레이어 상태로도 옮긴다."""
+        def update_job(self, jid, message="", progress=0):
+            eval_manager.update_job(jid, message=message, progress=progress)
+            if progress >= 15:
+                eval_manager.update_layer_status(jid, "validation", "completed", 100, "✓ 데이터 검증 완료")
+                pct = min(100, int((progress - 15) / 80 * 100))
+                eval_manager.update_layer_status(jid, "judge", "running" if pct < 100 else "completed", pct, message)
+
+    out = run_v2_pipeline(qa_list, evaluator_model, eval_manager=_Progress(), job_id=job_id,
+                          qa_language=gen_meta.get("lang"))
+    rep = build_v2_report(qa_list, out)
+    summary = rep["summary"]
+    v = rep["layers"]["validation"]
+    eval_manager.update_layer_status(job_id, "validation", "completed", 100,
+                                     f"✓ {v['valid']}/{v['total']} 정상 · 중복 의심 {len(v['duplicates'])}건")
+    eval_manager.update_layer_status(job_id, "judge", "completed", 100,
+                                     f"✓ 통과 {summary['pass_count']} · 통과율 {summary['pass_rate']}%")
+
+    metadata = {
+        "total_qa": len(qa_list), "valid_qa": v["valid"], "evaluator_model": evaluator_model_id,
+        "eval_version": "v2", "judge_version": out["metadata"]["judge_version"],
+        "generation_model": gen_meta["generation_model"], "source_doc": gen_meta["source_doc"],
+        "hierarchy_h1": gen_meta["hierarchy_h1"], "hierarchy_h2": gen_meta["hierarchy_h2"],
+        "hierarchy_h3": gen_meta["hierarchy_h3"],
+    }
+    eval_report = {
+        "job_id": job_id, "result_filename": result_filename, "timestamp": datetime.now().isoformat(),
+        "metadata": metadata,
+        "pipeline_results": rep["layers"],
+        "qa_preview": rep["qa_preview"],
+        "summary": summary,
+    }
+    pipeline_results = {"metadata": out["metadata"], "layers": rep["layers"]}
+
+    try:
+        if is_supabase_available() and save_evaluation_to_supabase:
+            scores = {
+                "eval_version": "v2",
+                "syntax": {"pass_rate": v["pass_rate"], "valid": v["valid"]},
+                "quality": {"pass_count": summary["pass_count"], "pass_rate": summary["pass_rate"]},
+                "judge": {k: summary[k] for k in ("averages", "hard_fail_count", "evaluation_error_count",
+                                                   "failure_counts", "grade_withheld", "duplicate_count")},
+            }
+            supabase_eval_id = asyncio.run(save_evaluation_to_supabase(
+                job_id=job_id,
+                metadata={**{k: gen_meta[k] for k in gen_meta}, "evaluator_model": evaluator_model_id,
+                          "generation_id": generation_id or "", "eval_version": "v2",
+                          "judge_version": out["metadata"]["judge_version"]},
+                total_qa=len(qa_list), valid_qa=v["valid"], scores=scores,
+                final_score=summary["final_score"] if summary["final_score"] is not None else 0.0,
+                final_grade=summary["grade"] or "보류",
+                pipeline_results=pipeline_results,
+            ))
+            if supabase_eval_id and generation_id and link_generation_to_evaluation:
+                asyncio.run(link_generation_to_evaluation(generation_id, supabase_eval_id))
+            logger.info(f"[{job_id}] v2 saved to Supabase: {supabase_eval_id}")
+        else:
+            logger.warning(f"[{job_id}] Supabase not available, skipping save")
+    except Exception as e:
+        logger.error(f"[{job_id}] Error saving v2 to Supabase: {e}")
+
+    grade_txt = summary["grade"] or "보류"
+    eval_manager.update_job(
+        job_id, status=EvalJobStatus.COMPLETED, progress=100,
+        message=f"평가 완료! (등급: {grade_txt}, 통과율: {summary['pass_rate']}%)",
+        eval_report=eval_report,
+    )
+
+
 def build_export_detail(qa_list_raw: list, pipeline_results: dict) -> list:
     """qa_gen_results.qa_list + pipeline_results 점수를 조인하여 export 행 목록 반환"""
     # qa_gen_results.qa_list 구조: [{docId, text, qa_list:[{q,a,intent,...}]}]
@@ -791,6 +881,15 @@ def build_export_detail(qa_list_raw: list, pipeline_results: dict) -> list:
     quality_raw = (layers.get("quality") or {}).get("qa_scores", [])
     rag_by_idx     = {s["qa_index"]: s for s in rag_raw}
     quality_by_idx = {s["qa_index"]: s for s in quality_raw}
+
+    if any(s.get("eval_version") == "v2" for s in quality_raw):
+        # v2 행은 원본 인덱스 기준이고 화면용 키를 이미 갖고 있다. 문맥 원문만 다시 붙인다.
+        out = []
+        for i, qa in enumerate(flat_qa):
+            row = dict(quality_by_idx.get(i) or {"qa_index": i, "eval_version": "v2", "v2_status": "missing", "pass": False})
+            row.update({"q": qa["q"], "a": qa["a"], "context": qa["context"], "intent": qa["intent"], "docId": qa["docId"]})
+            out.append(row)
+        return out
 
     detail = []
     for i, qa in enumerate(flat_qa):
