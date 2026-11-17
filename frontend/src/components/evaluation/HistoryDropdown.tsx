@@ -62,9 +62,14 @@ export function HistoryDropdown({
                 <Clock className="w-4 h-4 text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded border', GRADE_COLOR[item.final_grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
-                      {item.final_grade}
-                    </span>
+                    {/* v2 등급 보류는 DB 제약 때문에 F로 저장된다 — metadata.grade_withheld로 구분 */}
+                    {item.metadata?.grade_withheld ? (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded border text-slate-600 bg-slate-50 border-slate-200" title="평가 실패가 많아 등급 보류">보류</span>
+                    ) : (
+                      <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded border', GRADE_COLOR[item.final_grade] ?? 'text-slate-600 bg-slate-50 border-slate-200')}>
+                        {item.final_grade}
+                      </span>
+                    )}
                     <span className="text-xs font-mono text-slate-600 dark:text-slate-300">{item.final_score != null ? (item.final_score * 100).toFixed(1) + '점' : '-'}</span>
                     <span className="text-xs text-slate-400 dark:text-slate-500">{item.total_qa} QA</span>
                     {item.metadata?.eval_version === 'v2' && (

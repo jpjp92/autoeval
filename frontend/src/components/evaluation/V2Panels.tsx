@@ -362,14 +362,15 @@ export function V2QualityPanel({ judge, validation, rows }: { judge: V2JudgeSumm
   const judgedRows = rows.filter(r => r.eval_version === 'v2' && (r.v2_status === 'pass' || r.v2_status === 'fail' || r.v2_status === 'hard_fail'));
 
   return (
-    <div className="space-y-4">
+    // 카드가 왼쪽 데이터 검증 카드 높이로 늘어나면 지표 막대 간격이 고르게 넓어진다
+    <div className="flex-1 flex flex-col gap-4">
       {/* 판정 구성 */}
       <div>
         <div className="flex items-baseline justify-between mb-1.5">
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">판정 구성</p>
           <span className="text-[10px] text-slate-400 dark:text-slate-500">QA {total}개</span>
         </div>
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"
+        <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"
           role="img" aria-label={VERDICT_SEG.map(v => `${v.label} ${counts[v.key]}`).join(', ')}>
           {VERDICT_SEG.filter(v => counts[v.key] > 0).map(v => (
             <div key={v.key} className={cn('h-full first:rounded-l-full last:rounded-r-full', v.cls)}
@@ -387,14 +388,14 @@ export function V2QualityPanel({ judge, validation, rows }: { judge: V2JudgeSumm
       </div>
 
       {/* 지표 평균 + 기준선 + 기준 미달 건수 */}
-      <div className="pt-3 border-t border-slate-100 dark:border-white/5 space-y-3">
+      <div className="flex-1 flex flex-col justify-evenly gap-3 pt-3 border-t border-slate-100 dark:border-white/5">
         {V2_DIMENSIONS.map(d => {
           const v = judge.averages?.[d.key];
           const below = judgedRows.filter(r => (r[d.key] as number | undefined) != null && (r[d.key] as number) < d.threshold).length;
           const tone = v == null ? 'bg-slate-300' : v >= 0.85 ? 'bg-emerald-500 dark:bg-emerald-400' : v >= d.threshold ? 'bg-amber-400' : 'bg-rose-500';
           return (
             <div key={d.key}>
-              <div className="flex items-baseline justify-between text-xs">
+              <div className="flex items-baseline justify-between text-xs lg:text-sm">
                 <span className="font-medium text-slate-700 dark:text-slate-200">{d.label}</span>
                 <span className="flex items-baseline gap-2">
                   {judgedRows.length > 0 && (
@@ -405,17 +406,17 @@ export function V2QualityPanel({ judge, validation, rows }: { judge: V2JudgeSumm
                   <span className={cn('font-mono font-bold', v != null ? getScoreColor(v) : 'text-slate-400')}>{v != null ? v.toFixed(3) : '-'}</span>
                 </span>
               </div>
-              <div className="relative mt-1 h-2 rounded-full bg-slate-100 dark:bg-white/10"
+              <div className="relative mt-1.5 h-2.5 rounded-full bg-slate-100 dark:bg-white/10"
                 role="img" aria-label={`${d.label} 평균 ${v != null ? v.toFixed(2) : '-'}, 기준 ${d.threshold}`}>
                 <div className={cn('h-full rounded-full transition-all duration-700', tone)} style={{ width: `${(v ?? 0) * 100}%` }} />
-                <span className="absolute -top-0.5 -bottom-0.5 w-0.5 rounded bg-slate-500/60 dark:bg-white/50"
+                <span className="absolute -top-1 -bottom-1 w-0.5 rounded bg-slate-500/70 dark:bg-white/60"
                   style={{ left: `${d.threshold * 100}%` }} title={`기준 ${d.threshold}`} />
               </div>
             </div>
           );
         })}
-        <p className="text-[10px] text-slate-400 dark:text-slate-500">세로선은 지표별 기준값(근거성·정확성 0.6, 완전성 0.7, 질문 품질 0.5)입니다.</p>
       </div>
+      <p className="text-[10px] text-slate-400 dark:text-slate-500">세로선은 지표별 기준값(근거성·정확성 0.6, 완전성 0.7, 질문 품질 0.5)입니다.</p>
     </div>
   );
 }

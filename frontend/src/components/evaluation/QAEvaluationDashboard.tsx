@@ -436,7 +436,7 @@ export function QAEvaluationDashboard({
                 ]}
               />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 flex flex-col">
               <V2QualityPanel judge={v2.judge} validation={v2.validation} rows={qaPreviewAll} />
             </div>
             <LanguagePolicyRow judge={v2.judge} />

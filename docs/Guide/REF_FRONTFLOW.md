@@ -1,7 +1,7 @@
 <!--
 파일: REF_FRONTFLOW.md
 설명: React 프론트엔드 컴포넌트 구조 및 API 연동 흐름 정리. 탭 라우팅, 문서 업로드·계층 태깅·QA 생성·평가 대시보드 각 화면의 상태 흐름과 API 호출 구조 포함.
-업데이트: 2026-11-09
+업데이트: 2026-11-17
 -->
 # Frontend Flow
 
@@ -138,7 +138,7 @@ Step 2. QA 생성 실행
       → 샘플 3개 카드 표시 (컨텍스트 + Q/A + 의도 배지)
 
 Step 3. 자동 평가 (Auto-evaluate ON 시)
-  ├── POST /api/evaluate (API 래퍼 사용)
+  ├── POST /api/evaluate (API 래퍼 사용, eval_version = 평가 방식 선택값 v1|v2)
   │     body: { result_filename, evaluator_model, generation_id }
   ├── Polling: fetch `/api/evaluate/{job_id}/status`
   └── 완료 시: onEvalComplete(evalJobId) → App.tsx의 lastEvalJobId 갱신
@@ -172,13 +172,22 @@ factoid    → 사실형    definition → 정의형    boolean    → 확인형
       ├── 품질 점수 (QualityScoreChart — Layer 3)
       └── 상세 QA 테이블 (QADetailView — Layer별 점수, pass/fail)
 
+  평가 v2 결과 (metadata.eval_version === 'v2', components/evaluation/V2Panels.tsx)
+      ├── 머리글: v2 배지 + 결론 한 줄
+      ├── 요약 카드: 전체 QA · 품질 통과 · 등급(보류 사유) · 근거·수치 오류
+      ├── 데이터 검증 카드: 상태 게이지 2개(구문 정상, 중복 의심 없음) + 의도 분포 트리맵(160px 고정) + 상태 줄
+      ├── AI 품질 평가 카드: 판정 구성 누적 막대 + 지표 4개 막대(기준선·기준 미달 건수) + 언어 조합
+      ├── 실패 유형 칩 → 표 필터 / 중복 의심 [보기] → 표 필터
+      └── 상세 보기(V2DetailSection): 지표 4개 · 이유 · 언어 검사 · 주장별 근거
+      v1 결과는 위 v1 화면 그대로. 판정 상태: 통과→성공, 불통과·근거·수치 오류→실패, 평가 실패·구문 제외→보류
+
 히스토리
   ├── GET /api/evaluate/history (getEvalHistory) → HistoryDropdown 구성
   └── 선택 시: GET /api/evaluate/export-by-id/{id} (getEvalExportById)
 
 Export
-  ├── XLSX: exportToCSV(evaluationData)  — 2시트 (Stats + Detail)
-  └── HTML Report: exportToHTML(evaluationData)  — SVG 차트 포함 독립 HTML
+  ├── XLSX: exportToCSV(evaluationData)  — v1 2시트 (Stats + Detail) / v2 4시트 (Summary · Validation · Detail · Evidence)
+  └── HTML Report: exportToHTML(evaluationData)  — v1 SVG 차트 / v2 htmlBuilderV2 (결론 → 요약 → 품질 → 데이터 검증 → 불통과 QA 근거 → 전체 QA → 평가 기준)
 ```
 
 ---

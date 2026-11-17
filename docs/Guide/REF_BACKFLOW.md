@@ -1,11 +1,11 @@
 <!--
 파일: REF_BACKFLOW.md
 설명: FastAPI 백엔드 진입점(main.py)부터 Ingestion·Generation·Evaluation API 라우팅 흐름 정리. 각 엔드포인트 요청/응답 구조 및 주요 처리 단계 포함.
-업데이트: 2026-11-09
+업데이트: 2026-11-17
 -->
 # Backend Flow
 
-> 마지막 업데이트: 2026-11-09
+> 마지막 업데이트: 2026-11-17 (평가 v2, 작업 ID 형식)
 
 ## 진입점
 
@@ -111,7 +111,7 @@ backend/main.py
 ### POST `/api/generate/generate` — QA 생성
 
 ```
-1. job_id 생성: gen_YYYYMMDD_HHMMSS_μs
+1. job_id 생성: TX-YYMMDD-XXXXXX (2026-11-17부터. 이전 기록은 gen_YYYYMMDD_HHMMSS_μs, `backend/job_ids.py`)
 2. 즉시 job_id 반환 (비동기)
 3. Background: run_qa_generation() → run_qa_generation_real()
 
@@ -169,7 +169,8 @@ Gemini 2.5 Flash를 사용한다. 생성·Judge 기본값은 [MODEL_CONFIGURATIO
 ### POST `/api/evaluation/evaluate` — QA 평가
 
 ```
-1. job_id 생성: eval_YYYYMMDD_HHMMSS_μs
+1. job_id 생성: {생성 job_id}-E{번호} (재평가마다 +1). 생성이 옛 형식이거나 찾을 수 없으면 새 TX-… (이전 기록은 eval_YYYYMMDD_HHMMSS_μs)
+   eval_version: v1(기본) | v2 — v2는 아래 4레이어 대신 run_v2_pipeline() (데이터 검증 → 통합 Judge), 작업 상태 레이어는 validation·judge
 2. 즉시 job_id 반환 (비동기)
 3. Background: run_evaluation()
    ├── Supabase에서 QA 결과 로드

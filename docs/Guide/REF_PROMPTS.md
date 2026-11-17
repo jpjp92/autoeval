@@ -31,6 +31,7 @@
 | 13 | 평가 Layer 2 — Groundedness (단독, CoT, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 14 | 평가 Layer 2 — Context Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 15 | 평가 Layer 3 — QA Quality (Completeness 단일 지표) | `qa_quality.py` | 평가 모델 | — |
+| 16 | 평가 v2 — 통합 Judge (4개 지표 + 주장별 근거 + 언어 정책 4종) | `qa_judge.py` `build_judge_prompt` | 평가 모델 | v2 미리보기 |
 
 ---
 

@@ -1,7 +1,7 @@
 <!--
 파일: REF_DB.md
 설명: Supabase(PostgreSQL + pgvector) DB 스키마 정의. 테이블 구조(doc_metadata·doc_chunks·qa_gen_results·qa_eval_results), FK 관계, 인덱스, RPC 함수 목록 포함.
-업데이트: 2026-11-09
+업데이트: 2026-11-17
 -->
 # DB Schema
 
@@ -85,7 +85,7 @@
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | `id` | uuid PK | |
-| `job_id` | text UNIQUE | `gen_YYYYMMDD_HHMMSS_μs` |
+| `job_id` | text UNIQUE | `TX-YYMMDD-XXXXXX` (2026-11-17부터. 이전 `gen_YYYYMMDD_HHMMSS_μs`) |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 | `source_doc` | text | 파일명 |
@@ -138,15 +138,15 @@
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | `id` | uuid PK | |
-| `job_id` | text UNIQUE | `eval_YYYYMMDD_HHMMSS_μs` |
+| `job_id` | text UNIQUE | `{생성 job_id}-E{번호}` (2026-11-17부터. 이전 `eval_YYYYMMDD_HHMMSS_μs`) |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
-| `metadata` | jsonb | 평가 설정 |
+| `metadata` | jsonb | 평가 설정. `eval_version`(`v2`일 때만, 없으면 v1), `judge_version`, `grade_withheld`(v2 등급 보류 사유) |
 | `total_qa` | int | 전체 QA 수 |
 | `valid_qa` | int | 유효 QA 수 |
 | `scores` | jsonb | 레이어별 점수 요약 |
 | `final_score` | float | 0–1 최종 점수 |
-| `final_grade` | text | `A+` \| `A` \| `B+` \| `B` \| `C` \| `F` |
+| `final_grade` | text | `A+` \| `A` \| `B+` \| `B` \| `C` \| `F` (v2 등급 보류 시 `chk_grade` 때문에 `F`로 저장하고 `metadata.grade_withheld`에 사유를 남긴다) |
 | `pipeline_results` | jsonb | 레이어별 상세 결과 |
 | `interpretation` | jsonb | LLM 생성 개선 권고 |
 | `generation_id` | uuid FK | → `qa_gen_results.id` (ON DELETE SET NULL) |

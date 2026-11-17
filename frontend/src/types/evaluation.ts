@@ -154,7 +154,7 @@ export interface EvalReport {
 export interface HistoryItem {
   id: string;
   job_id: string;
-  metadata: { generation_model?: string; evaluator_model?: string; eval_version?: 'v1' | 'v2'; judge_version?: string; lang?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
+  metadata: { generation_model?: string; evaluator_model?: string; eval_version?: 'v1' | 'v2'; judge_version?: string; grade_withheld?: string | null; lang?: string; source_doc?: string; hierarchy_h1?: string; hierarchy_h2?: string; hierarchy_h3?: string };
   result_filename?: string;
   total_qa: number;
   final_score: number;
