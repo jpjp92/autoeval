@@ -3,10 +3,11 @@
 import { formatKST } from '@/src/lib/evalChartUtils';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import {
-  FAILURE_CONFIG, INTENT_KR, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS,
+  FAILURE_CONFIG, INTENT_KR, INTENT_COLORS, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS,
   VALIDATION_WARNING_LABEL, GRADE_WITHHELD_LABEL,
 } from '@/src/types/evaluation';
 import type { EvaluationData } from './types';
+import { svgTreemap } from './htmlBuilder';
 
 function esc(v: unknown): string {
   return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -67,6 +68,28 @@ function qaCard(qa: QAPreviewItem, n: number): string {
   </article>`;
 }
 
+// 앱 화면(lucide)과 같은 모양의 작은 아이콘
+const svgI = (d: string) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  doc: svgI('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>'),
+  check: svgI('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'),
+  pulse: svgI('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
+  shield: svgI('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/>'),
+  shieldCheck: svgI('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>'),
+  target: svgI('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+};
+
+/** 앱의 상태 게이지와 같은 링 (정상·주의·실패 색) */
+function ring(ratio: number, tone: 'good' | 'mid' | 'bad', label: string, detail: string): string {
+  const r = 42, c = 2 * Math.PI * r, v = Math.min(Math.max(ratio, 0), 1);
+  return `<div class="ring"><svg viewBox="0 0 100 100" role="img" aria-label="${esc(label)} ${(v * 100).toFixed(0)}%">
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--soft)" stroke-width="6"/>
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="var(--${tone})" stroke-width="8" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${(c * (1 - v)).toFixed(2)}" transform="rotate(-90 50 50)"/>
+    <text x="50" y="50" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="800" fill="var(--text)">${(v * 100).toFixed(0)}%</text>
+  </svg><p class="rl">${esc(label)}</p><p class="rd ${tone === 'good' ? 'muted' : tone}">${esc(detail)}</p></div>`;
+}
+
 export function buildV2HTMLContent(data: EvaluationData): string {
   const v2 = data.v2!;
   const { validation, judge } = v2;
@@ -78,9 +101,9 @@ export function buildV2HTMLContent(data: EvaluationData): string {
   const grade = judge.grade ?? '보류';
   const failureEntries = Object.entries(judge.failure_counts).sort((a, b) => b[1] - a[1]);
   const intentEntries = Object.entries(validation.intent_distribution ?? {}).sort((a, b) => b[1] - a[1]);
-  const intentMax = Math.max(1, ...intentEntries.map(e => e[1]));
   const policies = Object.entries(judge.by_language_policy ?? {});
   const qByIdx = new Map(rows.map(r => [r.qa_index, r]));
+  const judgedRows = rows.filter(r => r.v2_status === 'pass' || r.v2_status === 'fail' || r.v2_status === 'hard_fail');
   const verdicts = [
     { key: 'pass', label: '통과', n: judge.pass_count, cls: 'f-good' },
     { key: 'fail', label: '불통과', n: Math.max(0, judge.judged_count - judge.pass_count - judge.hard_fail_count), cls: 'f-mid' },
@@ -185,11 +208,42 @@ td.c,th.c{text-align:center}.mono{font-family:ui-monospace,monospace}
 summary{cursor:pointer;font-weight:500;overflow-wrap:anywhere}
 .detail{margin-top:6px}
 .appendix table{min-width:0}.appendix td,.appendix th{font-size:12.5px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+@media (max-width:860px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;min-width:0}
+.kpi .k{font-size:12.5px;color:var(--sub)}.kpi .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3}
+.kpi .s{font-size:11px;color:var(--muted)}
+.ico{flex:none;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.i-indigo{background:#e0e7ff;color:#4f46e5}.i-emerald{background:#d1fae5;color:#059669}.i-rose{background:#ffe4e6;color:#e11d48}.i-amber{background:#fef3c7;color:#d97706}
+@media (prefers-color-scheme:dark){.i-indigo{background:#1e1b4b;color:#a5b4fc}.i-emerald{background:#052e2b;color:#34d399}.i-rose{background:#3b0a17;color:#fb7185}.i-amber{background:#3a2a05;color:#fbbf24}}
+.panel{display:flex;flex-direction:column}
+.panel h2{margin-bottom:2px}.hico{display:inline-flex}.hico.good{color:var(--good)}.hico.acc{color:var(--accent)}.hico svg{width:18px;height:18px}
+.sub{font-size:12px;color:var(--sub);margin-bottom:12px}
+.label{font-size:12.5px;font-weight:700}
+.small{font-size:11px}
+.row-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+.divider{border-top:1px solid var(--line);margin:14px 0}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center}
+.ring svg{width:96px;height:96px}.ring .rl{font-size:12.5px;font-weight:700;margin-top:4px}.ring .rd{font-size:11px}
+.treemap svg{width:100%;height:auto;display:block;max-height:200px}
+.status{margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.chip.warnc{background:var(--mid-bg);color:var(--mid)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--sub)}
+.metrics{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:12px;margin-bottom:10px}
+.mname{font-size:13px;font-weight:600}
+.mtrack{position:relative;height:10px;border-radius:5px;background:var(--soft)}
+.mtrack .fill{position:absolute;inset:0 auto 0 0;border-radius:5px}
+.mtrack .th{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);opacity:.4}
+.ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dupbox{margin-top:10px;font-size:12px}.dupbox summary{cursor:pointer;color:var(--sub)}
+.failrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:12px 16px}
+.grid2 section{margin-bottom:18px}
+#tip{position:fixed;display:none;pointer-events:none;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:10}
 footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
 @media print{body{background:#fff}section,.top{break-inside:auto;border-color:#ddd}.filters{display:none}details{display:block}details>*{display:block}}
 </style>
 </head>
-<body><div class="wrap">
+<body><div id="tip"></div><div class="wrap">
 
 <div class="top">
   <h1>QA 평가 리포트 <span class="badge">평가 v2 · ${esc(data.metadata?.judge_version ?? judge.judge_version)}</span></h1>
@@ -202,54 +256,58 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
   <p class="conclusion">${esc(v2.conclusion)}</p>
 </div>
 
-<section>
-  <h2>요약</h2>
-  <div class="cards">
-    <div class="card"><p class="k">품질 통과</p><p class="v">${judge.pass_count} / ${judge.judged_count}</p><p class="s">통과율 ${judge.pass_rate.toFixed(1)}%</p></div>
-    <div class="card"><p class="k">종합 등급</p><p class="v">${esc(grade)}</p><p class="s">${judge.grade_withheld ? esc(GRADE_WITHHELD_LABEL[judge.grade_withheld] ?? judge.grade_withheld) : `최종 점수 ${num(judge.final_score)}`}</p></div>
-    <div class="card"><p class="k">근거·수치 오류</p><p class="v ${judge.hard_fail_count ? 'bad' : ''}">${judge.hard_fail_count}건</p><p class="s">점수와 관계없이 불통과</p></div>
-    <div class="card"><p class="k">평가 실패</p><p class="v ${judge.evaluation_error_count ? 'mid' : ''}">${judge.evaluation_error_count}건</p><p class="s">점수 계산에서 제외</p></div>
-    <div class="card"><p class="k">전체 QA</p><p class="v">${total}</p><p class="s">구문 정상 ${validation.valid}</p></div>
-  </div>
-</section>
+<div class="kpis">
+  <div class="kpi"><span class="ico i-indigo">${ICON.doc}</span><div><p class="k">전체 QA</p><p class="v">${total}</p><p class="s">구문 정상 ${validation.valid}</p></div></div>
+  <div class="kpi"><span class="ico i-emerald">${ICON.check}</span><div><p class="k">품질 통과</p><p class="v">${judge.pass_count} / ${judge.judged_count}</p><p class="s">통과율 ${judge.pass_rate.toFixed(1)}%</p></div></div>
+  <div class="kpi"><span class="ico i-rose">${ICON.pulse}</span><div><p class="k">종합 평가 등급</p><p class="v">${esc(grade)}</p><p class="s">${judge.grade_withheld ? esc(GRADE_WITHHELD_LABEL[judge.grade_withheld] ?? judge.grade_withheld) : `최종 점수 ${num(judge.final_score)}`}</p></div></div>
+  <div class="kpi"><span class="ico i-amber">${ICON.shield}</span><div><p class="k">근거·수치 오류</p><p class="v ${judge.hard_fail_count ? 'bad' : ''}">${judge.hard_fail_count}건</p><p class="s">평가 실패 ${judge.evaluation_error_count}건</p></div></div>
+</div>
 
 <div class="grid2">
-<section>
-  <h2>AI 품질 평가 <span class="n">지표 평균 · 세로선은 기준값</span></h2>
-  <p class="k" style="font-size:12px;color:var(--sub)">판정 구성</p>
-  <div class="stack" role="img" aria-label="${verdicts.map(v => `${v.label} ${v.n}`).join(', ')}">${verdicts.filter(v => v.n).map(v => `<span class="${v.cls}" style="width:${(v.n / vTotal * 100).toFixed(2)}%" title="${v.label} ${v.n}"></span>`).join('')}</div>
-  <div class="chips" style="margin-bottom:10px">${verdicts.filter(v => v.n || v.key === 'pass').map(v => `<span class="chip"><i class="dot ${v.cls}"></i>${v.label} ${v.n}</span>`).join('')}</div>
-  ${V2_DIMENSIONS.map(d => {
-    const v = judge.averages?.[d.key];
-    const cls = v == null ? 'f-acc' : v >= 0.85 ? 'f-good' : v >= d.threshold ? 'f-mid' : 'f-bad';
-    return `<div class="bar"><span>${d.label}</span><span class="track"><span class="fill ${cls}" style="width:${((v ?? 0) * 100).toFixed(1)}%"></span><span class="th" style="left:${d.threshold * 100}%"></span></span><span class="val">${num(v)}</span></div>`;
-  }).join('')}
-  ${policies.length && !(policies.length === 1 && policies[0][0] === 'korean_native') ? `
-  <p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">언어 조합 (원문→QA)</p>
-  <div class="chips">${policies.map(([k, p]) => `<span class="chip">${esc(LANGUAGE_POLICY_LABEL[k] ?? k)} ${p.judged}건 · 통과 ${p.pass_rate.toFixed(0)}% · 평균 ${num(p.avg_qa_score)}</span>`).join('')}</div>` : ''}
-  ${failureEntries.length ? `<p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">실패 유형</p>
-  <div class="chips">${failureEntries.map(([k, n]) => `<span class="chip ng">${esc(fl(k))} ${n}</span>`).join('')}</div>` : ''}
+<section class="panel">
+  <h2><span class="hico good">${ICON.shieldCheck}</span>데이터 검증</h2>
+  <p class="sub">형식 검사 · 중복 탐지 · 데이터 구성 진단 (품질 점수에 미반영)</p>
+  <div class="rings">
+    ${ring(validation.valid / Math.max(validation.total, 1), validation.invalid ? 'bad' : 'good', '구문 정상', validation.invalid ? `${validation.valid} / ${validation.total}개 · 탈락 ${validation.invalid}` : `${validation.valid} / ${validation.total}개`)}
+    ${ring(1 - dupQA / Math.max(validation.total, 1), dupQA ? 'mid' : 'good', '중복 의심 없음', validation.duplicates.length ? `중복 의심 ${validation.duplicates.length}쌍 · QA ${dupQA}개` : '중복 의심 0쌍')}
+  </div>
+  ${intentEntries.length ? `<div class="divider"></div>
+  <div class="row-head"><p class="label">질문 의도 분포</p><span class="muted small">QA ${intentTotal}개</span></div>
+  <div class="treemap">${svgTreemap(intentEntries.map(([k, n]) => ({ name: k, krLabel: INTENT_KR[k] ?? k, value: n })), INTENT_COLORS)}</div>
+  ${validation.total < 20 ? '<p class="muted small">QA 수가 적어 분포는 참고용입니다.</p>' : ''}` : ''}
+  ${docs.length >= 2 ? `<div class="divider"></div><p class="label">문서별 QA</p>
+  ${docs.map(([k, n]) => `<div class="bar"><span title="${esc(k)}" class="ellipsis">${esc(k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / docMax * 100).toFixed(1)}%"></span></span><span class="val">${n}</span></div>`).join('')}` : ''}
+  ${validation.duplicates.length ? `<details class="dupbox"><summary>중복 의심 쌍 ${validation.duplicates.length}개 보기</summary><ul class="dup">${validation.duplicates.slice(0, 20).map(d => `<li>#${d.a + 1} ↔ #${d.b + 1} <span class="muted">(유사도 ${d.similarity.toFixed(2)})</span><br>${esc(qByIdx.get(d.a)?.q ?? '')}<br><span class="muted">${esc(qByIdx.get(d.b)?.q ?? '')}</span></li>`).join('')}</ul></details>` : ''}
+  <div class="status">${allClear ? '<p class="okline">✓ 구문 오류 및 중복 의심 없음</p>' : `<div class="chips">${[
+    validation.invalid ? `<span class="chip ng">⚠ 구문 탈락 ${validation.invalid}건</span>` : '',
+    validation.duplicates.length ? `<span class="chip warnc">⚠ 중복 의심 ${validation.duplicates.length}쌍</span>` : '',
+    ...skew.map(w => `<span class="chip warnc">⚠ ${esc(VALIDATION_WARNING_LABEL[w.code] ?? w.code)} ${((w.ratio ?? 0) * 100).toFixed(0)}%</span>`),
+  ].join('')}</div>`}</div>
 </section>
 
-<section>
-  <h2>데이터 검증 <span class="n">형식 검사 · 중복 탐지 · 데이터 구성 진단 (품질 점수에 미반영)</span></h2>
-  <div class="cards">
-    <div class="card"><p class="k">구문 정상</p><p class="v ${validation.invalid ? 'bad' : 'good'}">${validation.valid} / ${validation.total}</p><p class="s">${validation.invalid ? `탈락 ${validation.invalid}건 · 평가에서 제외` : '탈락 없음'}</p></div>
-    <div class="card"><p class="k">중복 의심</p><p class="v ${validation.duplicates.length ? 'mid' : 'good'}">${validation.duplicates.length}쌍</p><p class="s">관련 QA ${dupQA}개 · 유사도 0.7 이상</p></div>
+<section class="panel">
+  <h2><span class="hico acc">${ICON.target}</span>AI 품질 평가</h2>
+  <p class="sub">근거성 · 정확성 · 완전성 · 질문 품질 (평균, 0–1)</p>
+  <div class="row-head"><p class="label">판정 구성</p><span class="muted small">QA ${vTotal}개</span></div>
+  <div class="stack" role="img" aria-label="${verdicts.map(v => `${v.label} ${v.n}`).join(', ')}">${verdicts.filter(v => v.n).map(v => `<span class="${v.cls}" style="width:${(v.n / vTotal * 100).toFixed(2)}%" title="${v.label} ${v.n}"></span>`).join('')}</div>
+  <div class="legend">${verdicts.filter(v => v.n || v.key === 'pass').map(v => `<span><i class="dot ${v.cls}"></i>${v.label} <b>${v.n}</b></span>`).join('')}</div>
+  <div class="divider"></div>
+  <div class="metrics">
+  ${V2_DIMENSIONS.map(d => {
+    const v = judge.averages?.[d.key];
+    const below = judgedRows.filter(r => (r[d.key] as number | undefined) != null && (r[d.key] as number) < d.threshold).length;
+    const cls = v == null ? 'f-acc' : v >= 0.85 ? 'f-good' : v >= d.threshold ? 'f-mid' : 'f-bad';
+    return `<div class="metric"><div class="row-head"><span class="mname">${d.label}</span><span><span class="small ${below ? 'bad' : 'muted'}">기준 미달 ${below}건</span> <b class="mono ${scoreClass(v, d.threshold)}">${num(v)}</b></span></div>
+      <div class="mtrack"><span class="fill ${cls}" style="width:${((v ?? 0) * 100).toFixed(1)}%"></span><span class="th" style="left:${d.threshold * 100}%"></span></div></div>`;
+  }).join('')}
   </div>
-  <p class="${allClear ? 'okline' : 'warn'}">${allClear ? '✓ 구문 오류 및 중복 의심 없음' : [
-    validation.invalid ? `⚠ 구문 탈락 ${validation.invalid}건` : '',
-    validation.duplicates.length ? `⚠ 중복 의심 ${validation.duplicates.length}쌍` : '',
-    ...skew.map(w => `⚠ ${esc(VALIDATION_WARNING_LABEL[w.code] ?? w.code)} — ${esc(w.doc)} ${((w.ratio ?? 0) * 100).toFixed(0)}%`),
-  ].filter(Boolean).join(' · ')}</p>
-  ${validation.duplicates.length ? `<ul class="dup">${validation.duplicates.slice(0, 20).map(d => `<li>#${d.a + 1} ↔ #${d.b + 1} <span class="muted">(유사도 ${d.similarity.toFixed(2)})</span><br>${esc(qByIdx.get(d.a)?.q ?? '')}<br><span class="muted">${esc(qByIdx.get(d.b)?.q ?? '')}</span></li>`).join('')}</ul>` : ''}
-  ${intentEntries.length ? `<p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">질문 의도 분포</p>
-  ${intentEntries.map(([k, n]) => `<div class="bar"><span>${esc(INTENT_KR[k] ?? k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / intentMax * 100).toFixed(1)}%"></span></span><span class="val">${n} · ${(n / intentTotal * 100).toFixed(0)}%</span></div>`).join('')}
-  <p class="s muted" style="font-size:11px">분포는 데이터 구성 정보이며 품질 판정이 아닙니다.${validation.total < 20 ? ` QA ${validation.total}개로 표본이 적어 참고용입니다.` : ''}</p>` : ''}
-  ${docs.length >= 2 ? `<p class="k" style="margin-top:12px;font-size:12px;color:var(--sub)">문서별 QA</p>
-  ${docs.map(([k, n]) => `<div class="bar"><span title="${esc(k)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><span class="track"><span class="fill f-acc" style="width:${(n / docMax * 100).toFixed(1)}%"></span></span><span class="val">${n}</span></div>`).join('')}` : ''}
+  <p class="muted small">세로선은 지표별 기준값(근거성·정확성 0.6, 완전성 0.7, 질문 품질 0.5)입니다.</p>
+  ${policies.length && !(policies.length === 1 && policies[0][0] === 'korean_native') ? `<div class="divider"></div><p class="label">언어 조합 (원문→QA)</p>
+  <div class="chips">${policies.map(([k, p]) => `<span class="chip">${esc(LANGUAGE_POLICY_LABEL[k] ?? k)} ${p.judged}건 · 통과 ${p.pass_rate.toFixed(0)}%</span>`).join('')}</div>` : ''}
 </section>
 </div>
+
+${failureEntries.length ? `<section class="failrow"><span class="label">실패 유형</span>${failureEntries.map(([k, n]) => `<span class="chip ng">${esc(fl(k))} ${n}</span>`).join('')}</section>` : ''}
 
 <section>
   <h2>불통과 QA <span class="n">${failed.length}건 · 근거·수치 오류 먼저, 점수 낮은 순</span></h2>
@@ -283,6 +341,8 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
 <footer>AutoEval · 평가 v2 리포트</footer>
 </div>
 <script>
+function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.style.display='block';el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}
+function hideTip(){document.getElementById('tip').style.display='none';}
 (function(){var bs=document.querySelectorAll('.filters button'),rs=document.querySelectorAll('#rows tr[data-status]');
 bs.forEach(function(b){b.addEventListener('click',function(){var f=b.getAttribute('data-f');
 bs.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});
