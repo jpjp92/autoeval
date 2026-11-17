@@ -1,10 +1,10 @@
 // 평가 v2 HTML 리포트 — 기획: docs/Plan/PLAN_261117_EVAL_V2_UI.md 3장
-// 화면을 보지 않은 사람이 읽는다: 결론 → 요약 → 데이터 검증 → 불통과 QA(근거) → 전체 QA → 평가 기준
+// 구성은 Evaluation 화면과 같다: 결론 → 요약 → 데이터 검증·품질 → 실패 유형(필터) → 상세 평가 결과(행 클릭 → 상세) → 평가 기준
 import { formatKST } from '@/src/lib/evalChartUtils';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import {
   FAILURE_CONFIG, INTENT_KR, INTENT_COLORS, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS,
-  VALIDATION_WARNING_LABEL, GRADE_WITHHELD_LABEL,
+  VALIDATION_WARNING_LABEL, GRADE_WITHHELD_LABEL, QA_PAGE_SIZE,
 } from '@/src/types/evaluation';
 import type { EvaluationData } from './types';
 import { svgTreemap } from './htmlBuilder';
@@ -49,21 +49,28 @@ function langHTML(qa: QAPreviewItem): string {
 }
 
 function failureChips(qa: QAPreviewItem): string {
+  return failureKeys(qa).map(k => `<span class="chip ng">${esc(fl(k))}</span>`).join('');
+}
+
+function failureKeys(qa: QAPreviewItem): string[] {
   const keys = Array.from(new Set([...(qa.hard_fail_reasons ?? []), ...(qa.v2_failure_types ?? []), ...(qa.fail_reasons ?? [])]));
   if (qa.v2_status === 'error') keys.unshift('evaluation_error');
   if (qa.v2_status === 'skipped') keys.unshift('syntax_error');
-  return keys.map(k => `<span class="chip ng">${esc(fl(k))}</span>`).join('');
+  return keys;
 }
 
-function qaCard(qa: QAPreviewItem, n: number): string {
-  return `<article class="qa-card">
-    <header><span class="id">#${n}</span><span class="status s-${esc(qa.v2_status)}">${STATUS_LABEL[qa.v2_status ?? ''] ?? '-'}</span>
+// Evaluation 화면 QADetailView와 같은 구성: 목록으로·이전/다음 → 번호·판정·점수 → Q/A → 사유 → 지표 → 근거 → 언어
+function qaDetail(qa: QAPreviewItem, pos: number): string {
+  return `<article class="qa-detail" id="qd-${pos}" hidden>
+    <div class="detail-nav"><button type="button" class="detail-back" data-back>← 목록으로</button>
+      <span class="pg-nav"><button type="button" class="pg-btn" data-step="-1" aria-label="이전 QA">&#8592;</button><button type="button" class="pg-btn" data-step="1" aria-label="다음 QA">&#8594;</button></span></div>
+    <header><span class="id">#${qa.qa_index + 1}</span><span class="status s-${esc(qa.v2_status)}">${STATUS_LABEL[qa.v2_status ?? ''] ?? '-'}</span>
       <span class="score ${scoreClass(qa.qa_score)}">QA 점수 ${num(qa.qa_score)}</span>${failureChips(qa)}</header>
     <p class="q"><b>Q.</b> ${esc(qa.q)}</p>
     <p class="a"><b>A.</b> ${esc(qa.a)}</p>
     ${qa.reason || qa.failure_reason ? `<p class="reason">${esc(qa.reason || qa.failure_reason)}</p>` : ''}
     ${qa.v2_status === 'pass' || qa.v2_status === 'fail' || qa.v2_status === 'hard_fail' ? dimsHTML(qa) : ''}
-    ${evidenceHTML(qa, true)}
+    ${evidenceHTML(qa, false)}
     ${langHTML(qa)}
   </article>`;
 }
@@ -96,8 +103,6 @@ export function buildV2HTMLContent(data: EvaluationData): string {
   const rows: QAPreviewItem[] = data.detailedQA.map(d => d.v2).filter(Boolean) as QAPreviewItem[];
   const total = validation.total;
   const timestamp = formatKST(data.metadata?.timestamp ?? new Date().toISOString());
-  const failed = rows.filter(r => r.v2_status === 'hard_fail' || r.v2_status === 'fail');
-  failed.sort((a, b) => Number(b.v2_status === 'hard_fail') - Number(a.v2_status === 'hard_fail') || (a.qa_score ?? 0) - (b.qa_score ?? 0));
   const grade = judge.grade ?? '보류';
   const failureEntries = Object.entries(judge.failure_counts).sort((a, b) => b[1] - a[1]);
   const intentEntries = Object.entries(validation.intent_distribution ?? {}).sort((a, b) => b[1] - a[1]);
@@ -122,13 +127,10 @@ export function buildV2HTMLContent(data: EvaluationData): string {
   const allClear = !validation.invalid && !validation.duplicates.length && !skew.length;
 
   const tableRows = rows.map((r, i) => `
-    <tr data-status="${esc(r.v2_status)}">
+    <tr class="qa-row" data-i="${i}" data-status="${esc(r.v2_status)}" data-fails="${esc(failureKeys(r).join(' '))}" tabindex="0">
       <td class="c">${r.qa_index + 1}</td>
       <td class="c">${esc(INTENT_KR[r.intent] ?? r.intent ?? '-')}</td>
-      <td><details><summary>${esc(r.q)}</summary>
-        <div class="detail"><p class="a"><b>A.</b> ${esc(r.a)}</p>
-        ${r.reason || r.failure_reason ? `<p class="reason">${esc(r.reason || r.failure_reason)}</p>` : ''}
-        ${dimsHTML(r)}${evidenceHTML(r, false)}${langHTML(r)}</div></details></td>
+      <td class="qcell">${esc(r.q)}</td>
       <td class="c mono ${scoreClass(r.qa_score)}">${num(r.qa_score)}</td>
       <td class="c"><span class="status s-${esc(r.v2_status)}">${STATUS_LABEL[r.v2_status ?? ''] ?? '-'}</span></td>
       <td>${failureChips(r) || '<span class="muted">-</span>'}</td>
@@ -181,8 +183,6 @@ h2 .n{font-size:12px;color:var(--muted);font-weight:500}
 .bar .val{white-space:nowrap}
 .dup{font-size:12px;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
 .dup li{list-style:none;margin:4px 0;overflow-wrap:anywhere}
-.qa-card{border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:10px;padding:12px 14px;margin-bottom:10px;break-inside:avoid;page-break-inside:avoid}
-.qa-card header{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
 .id{font-family:ui-monospace,monospace;color:var(--muted);font-size:12px}
 .status{font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid var(--line)}
 .s-pass{background:var(--good-bg);color:var(--good)}.s-fail{background:var(--mid-bg);color:var(--mid)}
@@ -206,6 +206,14 @@ th{font-size:12px;color:var(--sub);text-align:left;padding:8px;border-bottom:1px
 td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
 td.c,th.c{text-align:center}.mono{font-family:ui-monospace,monospace}
 summary{cursor:pointer;font-weight:500;overflow-wrap:anywhere}
+.qa-row{cursor:pointer}.qa-row:hover td,.qa-row:focus td{background:var(--accent-bg)}.qcell{overflow-wrap:anywhere}
+.qa-detail{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.qa-detail header{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
+.detail-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.detail-back{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--sub);padding:5px 12px;cursor:pointer}
+.failrow button.chip{font:inherit;font-size:12px;cursor:pointer}.failrow button.chip[aria-pressed=true]{outline:2px solid var(--bad);outline-offset:1px}
+.pg-wrap{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--sub)}
+.pg-nav{display:flex;align-items:center;gap:8px}.pg-btn{min-width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:inherit;cursor:pointer}.pg-btn:disabled{opacity:.4;cursor:default}
 .detail{margin-top:6px}
 .appendix table{min-width:0}.appendix td,.appendix th{font-size:12.5px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
@@ -240,7 +248,7 @@ summary{cursor:pointer;font-weight:500;overflow-wrap:anywhere}
 .grid2 section{margin-bottom:18px}
 #tip{position:fixed;display:none;pointer-events:none;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:10}
 footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
-@media print{body{background:#fff}section,.top{break-inside:auto;border-color:#ddd}.filters{display:none}details{display:block}details>*{display:block}}
+@media print{body{background:#fff}section,.top{break-inside:auto;border-color:#ddd}.filters,.pg-wrap,.detail-nav{display:none}#qa-list-view{display:block!important}.qa-detail{display:block!important;margin-top:12px;break-inside:avoid}details{display:block}details>*{display:block}}
 </style>
 </head>
 <body><div id="tip"></div><div class="wrap">
@@ -307,15 +315,11 @@ footer{color:var(--muted);font-size:12px;text-align:center;margin-top:24px}
 </section>
 </div>
 
-${failureEntries.length ? `<section class="failrow"><span class="label">실패 유형</span>${failureEntries.map(([k, n]) => `<span class="chip ng">${esc(fl(k))} ${n}</span>`).join('')}</section>` : ''}
+${failureEntries.length ? `<section class="failrow" role="group" aria-label="실패 유형 필터"><span class="label">실패 유형</span>${failureEntries.map(([k, n]) => `<button type="button" class="chip ng" data-ff="${esc(k)}" aria-pressed="false">${esc(fl(k))} ${n}</button>`).join('')}</section>` : ''}
 
 <section>
-  <h2>불통과 QA <span class="n">${failed.length}건 · 근거·수치 오류 먼저, 점수 낮은 순</span></h2>
-  ${failed.length ? failed.map(r => qaCard(r, r.qa_index + 1)).join('') : '<p class="muted">불통과 QA가 없습니다.</p>'}
-</section>
-
-<section>
-  <h2>전체 QA <span class="n">${rows.length}건 · 질문을 누르면 근거와 지표가 열립니다</span></h2>
+  <h2>상세 평가 결과 <span class="n" id="qa-count">총 ${rows.length}개 · 페이지당 ${QA_PAGE_SIZE}개 · 행 클릭 시 상세 보기</span></h2>
+  <div id="qa-list-view">
   <div class="filters" role="group" aria-label="판정 필터">
     ${['all', 'pass', 'fail', 'hard_fail', 'error', 'skipped'].map(k => `<button type="button" data-f="${k}" aria-pressed="${k === 'all'}">${k === 'all' ? '전체' : STATUS_LABEL[k]} ${k === 'all' ? rows.length : rows.filter(r => r.v2_status === k).length}</button>`).join('')}
   </div>
@@ -323,6 +327,10 @@ ${failureEntries.length ? `<section class="failrow"><span class="label">실패 �
     <thead><tr><th class="c">ID</th><th class="c">의도</th><th>질문</th><th class="c">QA 점수</th><th class="c">판정</th><th>사유</th><th class="c">언어</th></tr></thead>
     <tbody id="rows">${tableRows}</tbody>
   </table></div>
+  <div class="pg-wrap"><span class="pg-range" id="pg-range"></span>
+    <div class="pg-nav"><button type="button" class="pg-btn" id="pg-prev" aria-label="이전 쪽">&#8249;</button><span class="pg-info" id="pg-info"></span><button type="button" class="pg-btn" id="pg-next" aria-label="다음 쪽">&#8250;</button></div></div>
+  </div>
+  <div id="qa-detail-view">${rows.map((r, i) => qaDetail(r, i)).join('')}</div>
 </section>
 
 <section class="appendix">
@@ -343,10 +351,38 @@ ${failureEntries.length ? `<section class="failrow"><span class="label">실패 �
 <script>
 function showTip(e,t){var el=document.getElementById('tip');el.textContent=t;el.style.display='block';el.style.left=(e.clientX+14)+'px';el.style.top=(e.clientY-10)+'px';}
 function hideTip(){document.getElementById('tip').style.display='none';}
-(function(){var bs=document.querySelectorAll('.filters button'),rs=document.querySelectorAll('#rows tr[data-status]');
-bs.forEach(function(b){b.addEventListener('click',function(){var f=b.getAttribute('data-f');
-bs.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});
-rs.forEach(function(r){r.style.display=(f==='all'||r.getAttribute('data-status')===f)?'':'none'})})})})();
+(function(){var PER=${QA_PAGE_SIZE},f='all',ff=null,pg=0,cur=-1,printing=false,
+bs=document.querySelectorAll('.filters button'),cs=document.querySelectorAll('.failrow [data-ff]'),
+rs=Array.prototype.slice.call(document.querySelectorAll('#rows tr[data-status]')),
+lv=document.getElementById('qa-list-view');
+function match(){return rs.filter(function(r){return (f==='all'||r.getAttribute('data-status')===f)&&(!ff||(' '+r.getAttribute('data-fails')+' ').indexOf(' '+ff+' ')>=0)})}
+function order(){return match().map(function(r){return +r.getAttribute('data-i')})}
+function render(){var m=match(),n=m.length,pages=Math.max(1,Math.ceil(n/PER));
+if(pg>=pages)pg=pages-1;rs.forEach(function(r){r.style.display='none'});
+m.forEach(function(r,i){if(printing||(i>=pg*PER&&i<(pg+1)*PER))r.style.display=''});
+document.getElementById('qa-count').textContent=((f!=='all'||ff)?n+'개 표시 중 / ':'총 ')+rs.length+'개 · 페이지당 '+PER+'개 · 행 클릭 시 상세 보기';
+document.getElementById('pg-range').textContent=n?(pg*PER+1)+'–'+Math.min(n,(pg+1)*PER)+' / '+n+'개':'0개';
+document.getElementById('pg-info').textContent=(pg+1)+' / '+pages;
+document.getElementById('pg-prev').disabled=pg===0;document.getElementById('pg-next').disabled=pg>=pages-1;}
+function show(i){if(cur>=0)document.getElementById('qd-'+cur).hidden=true;cur=i;
+if(i<0){lv.hidden=false;render();return}
+lv.hidden=true;var d=document.getElementById('qd-'+i),m=order(),k=m.indexOf(i);d.hidden=false;
+d.querySelector('[data-step="-1"]').disabled=k<=0;d.querySelector('[data-step="1"]').disabled=k<0||k>=m.length-1;
+d.scrollIntoView({block:'start'})}
+rs.forEach(function(r){var i=+r.getAttribute('data-i');r.addEventListener('click',function(){show(i)});
+r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();show(i)}})});
+document.querySelectorAll('[data-back]').forEach(function(b){b.addEventListener('click',function(){show(-1)})});
+document.querySelectorAll('[data-step]').forEach(function(b){b.addEventListener('click',function(){
+var m=order(),k=m.indexOf(cur)+(+b.getAttribute('data-step'));if(k>=0&&k<m.length)show(m[k])})});
+bs.forEach(function(b){b.addEventListener('click',function(){f=b.getAttribute('data-f');pg=0;
+bs.forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});show(-1)})});
+cs.forEach(function(c){c.addEventListener('click',function(){var k=c.getAttribute('data-ff');ff=ff===k?null:k;pg=0;
+cs.forEach(function(x){x.setAttribute('aria-pressed',String(x.getAttribute('data-ff')===ff))});show(-1)})});
+document.getElementById('pg-prev').addEventListener('click',function(){pg--;render()});
+document.getElementById('pg-next').addEventListener('click',function(){pg++;render()});
+window.addEventListener('beforeprint',function(){printing=true;render()});
+window.addEventListener('afterprint',function(){printing=false;render()});
+render()})();
 </script>
 </body></html>`;
 }
