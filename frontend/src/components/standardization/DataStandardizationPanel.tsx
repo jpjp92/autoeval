@@ -198,7 +198,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
       <StepCard
         step={1}
         title="문서 등록"
-        subtitle="PDF 또는 DOCX 문서를 등록하면 내용을 정리해 다음 단계에서 활용할 수 있도록 준비합니다."
+        subtitle="PDF, DOCX, 엑셀(XLSX·CSV) 문서를 등록하면 내용을 정리해 다음 단계에서 활용할 수 있도록 준비합니다."
         icon={<Database className="w-4 h-4" />}
         status={uploadDone ? "done" : "active"}
         isLast={false}
@@ -238,7 +238,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
             >
               <input
                 type="file" id="file-upload" className="hidden"
-                accept=".pdf,.docx,.doc,.txt,.md"
+                accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xlsm,.csv"
                 onChange={handleFileChange}
               />
               {file ? (
@@ -259,7 +259,7 @@ export function DataStandardizationPanel({ setActiveTab, onUploadComplete, onTag
                     <Upload className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                   </div>
                   <p className="text-center text-sm font-medium text-slate-600 dark:text-slate-300">클릭하여 파일 선택 또는 드래그 앤 드롭</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">PDF, DOCX · 최대 100MB</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">PDF, DOCX, XLSX, CSV · 최대 100MB</p>
                 </>
               )}
             </div>

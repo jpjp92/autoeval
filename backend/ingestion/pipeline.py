@@ -20,7 +20,8 @@ from google import genai as google_genai
 from config.supabase_client import save_doc_chunks_batch
 from db.doc_metadata_repo import upsert_doc_metadata
 from exceptions import APIQuotaExceededError
-from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking
+from ingestion.chunker import ingest_with_llm_chunking, ingest_with_rule_chunking, ingest_with_table_chunking
+from ingestion.spreadsheet import SPREADSHEET_EXTS
 from ingestion.language import detect_language, normalize_english_blocks
 from ingestion.job_manager import IngestionStatus, ingestion_job_manager
 from ingestion.parsers import detect_repeated_headers
@@ -144,6 +145,7 @@ async def _embed_and_save(
             "ingested_at": ingested_at,
             "embedding_model": _EMBED_MODEL,
             "source_language": c.get("source_language", "ko"),
+            **({"sheet": c["sheet"]} if c.get("sheet") else {}),
             "chunk_policy": f"{c.get('source_language', 'ko')}-v1",
         }
         if c.get("fallback_reason"):
@@ -214,7 +216,12 @@ async def process_and_ingest(
             logger.info(f"[{filename}] English normalization (ligature/hyphen): {changed} blocks")
 
         _update(status=IngestionStatus.CHUNKING, message="청킹 중")
-        if chunking_method == "llm":
+        file_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if file_ext in SPREADSHEET_EXTS:
+            # 엑셀·CSV는 전부 표 — 선택한 방식과 관계없이 원문 표 청크로 만든다.
+            chunking_method = "table"
+            all_chunks_to_embed = ingest_with_table_chunking(filename, all_blocks, language=language)
+        elif chunking_method == "llm":
             all_chunks_to_embed = await ingest_with_llm_chunking(
                 filename, pages, all_blocks, repeated_headers,
                 gemini_client=gemini_client, model_id=model_id,

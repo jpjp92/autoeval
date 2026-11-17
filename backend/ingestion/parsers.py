@@ -1119,6 +1119,13 @@ def extract_text_by_page(file_content: bytes, filename: str) -> List[Dict[str, A
             full_text = "\n\n".join(b["text"] for b in blocks)
             results = [{"text": full_text, "page": 1, "blocks": blocks}]
 
+        elif ext in ['xlsx', 'xlsm', 'csv']:
+            from ingestion.spreadsheet import extract_spreadsheet
+            results = extract_spreadsheet(file_content, filename)
+
+        elif ext == 'xls':
+            raise ValueError("구형 엑셀(.xls)은 지원하지 않습니다. 엑셀에서 .xlsx로 저장한 뒤 올려 주세요.")
+
         elif ext in ['txt', 'md']:
             full_text = normalize_text(file_content.decode('utf-8'))
             results = [{"text": full_text, "page": 1, "blocks": []}]

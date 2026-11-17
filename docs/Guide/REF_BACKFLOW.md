@@ -22,12 +22,16 @@ backend/main.py
 
 ## Ingestion API (`/api/ingestion`)
 
-### POST `/upload` — PDF/DOCX 수집
+### POST `/upload` — PDF/DOCX/XLSX/CSV 수집
 
 ```
-1. PDF/DOCX 파일 수신
-2. PyMuPDF (PDF) 또는 python-docx (DOCX) 텍스트 추출
-3. 최소 길이 검증 (PDF: 300자, DOCX: 100자)
+1. 파일 수신 (pdf, docx, doc, txt, md, xlsx, xlsm, csv)
+2. 텍스트 추출 (Background)
+   - PDF: PyMuPDF / DOCX: python-docx / XLSX·XLSM·CSV: openpyxl·csv (ingestion/spreadsheet.py)
+   - .xls 등 지원하지 않는 형식은 ValueError 메시지를 job error로 그대로 반환
+3. 최소 길이 검증 (PDF: 300자, 그 외: 100자)
+3-1. 문서 언어 판별 (detect_language → ko | en), en이면 합자·줄바꿈 하이픈 정규화
+3-2. 청킹 경로 선택: XLSX·CSV → table (LLM 없음) / 그 외 → chunking_method(llm|rule)
 4. doc_metadata row 선점 upsert (FK 충족 — document_id + filename)
 5. Background: process_and_ingest()
    ├── 블록 파싱 → 반복 헤더 제거
@@ -53,6 +57,9 @@ backend/main.py
 
 ```
 1. doc_chunks에서 anchor 청크 30개 균등 샘플링 (sample_doc_chunks RPC)
+1-1. 샘플 언어 판별 → _is_admin_anchor(content, language)로 행정 메타 청크 제외
+     (en은 한글 비율 대신 영문 완성 문장 기준, 10개 미만 남으면 필터 미적용)
+1-2. 요청 taxonomy_language: ko(기본) | en | source(샘플 언어) → build_hierarchy_prompt(…, taxonomy_language)
 2. content[:600] 연결 (최대 18,000자)
 3. Gemini 3.1 Flash 단일 호출:
    {

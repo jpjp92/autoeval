@@ -72,7 +72,7 @@ App.tsx (탭 라우팅 + 전역 상태 관리)
 ### Documents 탭 — 표준화 (`DataStandardizationPanel.tsx`)
 
 ```
-Step 1. 문서 업로드
+Step 1. 문서 업로드 (accept: .pdf .docx .doc .txt .md .xlsx .xlsm .csv)
   └── POST /api/ingestion/upload
       → 업로드 완료 후 청크 수 표시
       → onUploadComplete(filename) → App.tsx의 currentFilename 갱신
