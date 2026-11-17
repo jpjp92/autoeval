@@ -78,6 +78,7 @@ def validate_dataset(qa_list: List[Dict]) -> Dict:
         "errors": errors,
         "errors_sample": dict(list(errors.items())[:ERRORS_SAMPLE_SIZE]),
         "duplicates": duplicates,
+        "duplicate_qa_count": len({i for d in duplicates for i in (d["a"], d["b"])}),
         "intent_distribution": dict(intent_dist),
         "doc_distribution": dict(doc_dist),
         "warnings": warnings,

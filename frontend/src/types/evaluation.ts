@@ -58,6 +58,8 @@ export interface V2Validation {
   total: number; valid: number; invalid: number; pass_rate: number;
   errors_sample?: Record<string, string[]>;
   duplicates: { a: number; b: number; similarity: number; exact: boolean }[];
+  /** 중복 의심 쌍에 걸린 QA 수 (쌍 수와 다르다). 이전 결과에는 없을 수 있다 */
+  duplicate_qa_count?: number;
   intent_distribution: Record<string, number>;
   doc_distribution: Record<string, number>;
   warnings: { code: string; count?: number; doc?: string; ratio?: number }[];
