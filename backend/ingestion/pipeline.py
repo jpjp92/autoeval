@@ -8,6 +8,7 @@ ingestion/pipeline.py
 from __future__ import annotations
 
 import asyncio
+import time
 import logging
 import os
 from datetime import datetime
@@ -170,6 +171,7 @@ async def process_and_ingest(
     model_id: str,
     chunking_method: str = "llm",
     job_id: Optional[str] = None,
+    extract_seconds: Optional[float] = None,
 ) -> None:
     """청킹 → Gemini Embedding 2 → Supabase 저장.
 
@@ -184,6 +186,7 @@ async def process_and_ingest(
         if job_id:
             ingestion_job_manager.update_job(job_id, status=status, **kwargs)
 
+    t_start = time.perf_counter()
     try:
         doc_id = str(uuid4())
         ingested_at = datetime.utcnow().isoformat()
@@ -215,7 +218,9 @@ async def process_and_ingest(
             changed = normalize_english_blocks(all_blocks)
             logger.info(f"[{filename}] English normalization (ligature/hyphen): {changed} blocks")
 
+        t_prep = time.perf_counter() - t_start   # 메타데이터 저장·머리글·언어 판별
         _update(status=IngestionStatus.CHUNKING, message="청킹 중")
+        t_chunk = time.perf_counter()
         file_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if file_ext in SPREADSHEET_EXTS:
             # 엑셀·CSV는 전부 표 — 선택한 방식과 관계없이 원문 표 청크로 만든다.
@@ -238,7 +243,9 @@ async def process_and_ingest(
             _update(status=IngestionStatus.FAILED, error="청크 생성 결과 없음")
             return
 
+        chunk_seconds = time.perf_counter() - t_chunk
         total_chunks = len(all_chunks_to_embed)
+        logger.info(f"[timing] {filename}: chunk {chunk_seconds:.1f}s ({total_chunks} chunks, method={chunking_method})")
         total_batches = (total_chunks + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE
         source_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
 
@@ -270,7 +277,10 @@ async def process_and_ingest(
             )
             for i in range(0, total_chunks, _EMBED_BATCH_SIZE)
         ]
+        t_embed = time.perf_counter()
         await asyncio.gather(*embed_tasks)
+        embed_seconds = time.perf_counter() - t_embed
+        logger.info(f"[timing] {filename}: embed+save {embed_seconds:.1f}s ({total_batches} batches)")
 
         _update(
             status=IngestionStatus.COMPLETED,
@@ -280,6 +290,12 @@ async def process_and_ingest(
         logger.info(
             f"Ingestion complete: {filename} "
             f"({total_chunks} chunks, method={chunking_method})"
+        )
+        extract_txt = f"{extract_seconds:.1f}s" if extract_seconds is not None else "-"
+        logger.info(
+            f"[timing] {filename}: TOTAL extract={extract_txt} prep={t_prep:.1f}s "
+            f"chunk={chunk_seconds:.1f}s embed+save={embed_seconds:.1f}s "
+            f"(pipeline {time.perf_counter() - t_start:.1f}s, {total_chunks} chunks, method={chunking_method})"
         )
 
     except Exception as e:

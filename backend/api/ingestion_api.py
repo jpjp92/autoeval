@@ -32,6 +32,7 @@ from google import genai as google_genai
 from pydantic import BaseModel
 
 import asyncio
+import time
 
 from config.models import MODEL_CONFIG, DOCUMENT_MODEL
 from config.supabase_client import (
@@ -151,7 +152,10 @@ async def _ingest_background(
         try:
             def _page_progress(done: int, total: int):
                 ingestion_job_manager.update_job(job_id, message=f"텍스트·표 추출 중 ({done}/{total}쪽)")
+            t_extract = time.perf_counter()
             pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename, _page_progress)
+            extract_seconds = time.perf_counter() - t_extract
+            logger.info(f"[timing] {filename}: extract {extract_seconds:.1f}s ({len(pages)} pages, {len(content_bytes) / 1024:.0f}KB)")
         except ValueError as e:
             # 지원하지 않는 형식(.xls 등) — 사용자에게 보여 줄 메시지
             logger.warning(f"Background ingestion rejected [{job_id}]: {e}")
@@ -183,6 +187,7 @@ async def _ingest_background(
             MODEL_CONFIG["gemini-flash"]["model_id"],
             chunking_method,
             job_id,
+            extract_seconds=extract_seconds,
         )
     except Exception as e:
         logger.error(f"Background ingestion error [{job_id}]: {e}")
