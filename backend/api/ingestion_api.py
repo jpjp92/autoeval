@@ -148,7 +148,13 @@ async def _ingest_background(
     """텍스트 추출 → 검증 → 청킹/임베딩 전체를 백그라운드에서 실행."""
     try:
         ingestion_job_manager.update_job(job_id, status=IngestionStatus.EXTRACTING, message="텍스트 추출 중")
-        pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename)
+        try:
+            pages = await asyncio.to_thread(extract_text_by_page, content_bytes, filename)
+        except ValueError as e:
+            # 지원하지 않는 형식(.xls 등) — 사용자에게 보여 줄 메시지
+            logger.warning(f"Background ingestion rejected [{job_id}]: {e}")
+            ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error=str(e))
+            return
         if not pages:
             ingestion_job_manager.update_job(job_id, status=IngestionStatus.FAILED, error="텍스트를 추출할 수 없거나 비어 있는 문서입니다.")
             return

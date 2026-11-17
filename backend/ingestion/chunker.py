@@ -100,6 +100,54 @@ def _merge_by_source_order(llm_chunks: List[Dict[str, Any]], table_chunks: List[
     return merged
 
 
+def ingest_with_table_chunking(
+    filename: str,
+    all_blocks: List[Dict[str, Any]],
+    language: str = "ko",
+) -> List[Dict[str, Any]]:
+    """표 전용 청킹 (xlsx·xlsm·csv). LLM을 쓰지 않고 표를 머리글 반복 조각으로 나눈다.
+
+    블록 첫 줄 "[표] 시트 · 제목" 을 각 조각의 제목으로 유지한다: "[표] 시트 · 제목 (2/5)".
+    """
+    chunks: List[Dict[str, Any]] = []
+    seen: set = set()
+    for b in all_blocks:
+        text = (b.get("text") or "").strip()
+        if not text:
+            continue
+        if not text.startswith("[표]"):
+            parts, label = [text], ""
+        else:
+            first, _, rest = text.partition("\n")
+            label = first[len("[표]"):].strip()
+            parts = split_large_table_text("[표]\n" + rest)
+            n = len(parts)
+            parts = [
+                p.replace(f"[표] ({k}/{n})", f"[표] {label} ({k}/{n})".replace("  ", " "), 1) if n > 1
+                else p.replace("[표]", f"[표] {label}".rstrip(), 1)
+                for k, p in enumerate(parts, 1)
+            ]
+        for k, part in enumerate(parts, 1):
+            content_hash = hashlib.sha1(normalize_for_hash(part).encode("utf-8")).hexdigest()
+            if content_hash in seen:
+                continue
+            seen.add(content_hash)
+            title = (f"{label} ({k}/{len(parts)})" if len(parts) > 1 else label) or part.split("\n")[0][:30]
+            chunks.append({
+                "text": part,
+                "raw_text": part,
+                "page": b.get("page", 1),
+                "hash": content_hash,
+                "section_title": title,
+                "chunk_type": "table" if part.startswith("[표]") else "body",
+                "source_language": language,
+                "fallback_reason": None,
+                "sheet": b.get("sheet"),
+            })
+    logger.info(f"[{filename}] Table chunking ({language}): {len(chunks)} chunks from {len(all_blocks)} blocks")
+    return chunks
+
+
 async def ingest_with_llm_chunking(
     filename: str,
     pages: List[Dict[str, Any]],
