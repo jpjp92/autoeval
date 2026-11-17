@@ -3,6 +3,7 @@ Data Validation (eval v2, Stage 1)
 결정론적 검사. 점수를 만들지 않는다.
 - 구문 탈락(Hard Fail): 평가 대상에서 제외
 - 중복 의심, 분포, 경고: 정보성 진단
+- 문서 분포·쏠림은 QA에 source_doc이 있을 때만 (docId는 청크 ID)
 기획: docs/Plan/PLAN_261117_EVAL_V2.md 2-1
 """
 from collections import Counter
@@ -54,7 +55,8 @@ def validate_dataset(qa_list: List[Dict]) -> Dict:
 
     duplicates = find_duplicate_questions(qa_list)
     intent_dist = Counter(qa.get("intent") or "unknown" for qa in qa_list if isinstance(qa, dict))
-    doc_dist = Counter(qa.get("docId") or "unknown" for qa in qa_list if isinstance(qa, dict))
+    # 문서 분포는 문서명(source_doc)이 있을 때만 센다. docId는 청크 ID라 문서 쏠림 판단에 쓰면 안 된다.
+    doc_dist = Counter(qa["source_doc"] for qa in qa_list if isinstance(qa, dict) and qa.get("source_doc"))
 
     warnings: List[Dict] = []
     if errors:
