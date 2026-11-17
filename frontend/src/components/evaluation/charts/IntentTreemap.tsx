@@ -28,7 +28,7 @@ const IntentTreemapTooltip = ({ active, payload }: any) => {
 };
 
 // ─── Intent Treemap 차트 ────────────────────────────────────────────────────
-export function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: string; value: number }> }) {
+export function IntentTreemap({ data, height }: { data: Array<{ name: string; krLabel: string; value: number }>; height?: number }) {
   const [hoveredName, setHoveredName] = useState<string | null>(null);
   const total = data.reduce((s, d) => s + d.value, 0);
 
@@ -136,8 +136,9 @@ export function IntentTreemap({ data }: { data: Array<{ name: string; krLabel: s
 
   return (
     <div
-      className="flex-1 min-h-[240px] mt-1 animate-in fade-in zoom-in-95 duration-500"
-      style={{ animationFillMode: 'both' }}
+      className={height ? "mt-1 animate-in fade-in zoom-in-95 duration-500" : "flex-1 min-h-[240px] mt-1 animate-in fade-in zoom-in-95 duration-500"}
+      // height: 고정 높이(px). 높이가 정해지지 않은 부모에서는 100%가 0이 되므로 v2 카드에서 쓴다
+      style={{ animationFillMode: 'both', ...(height ? { height } : {}) }}
     >
       <ResponsiveContainer width="100%" height="100%">
         <Treemap

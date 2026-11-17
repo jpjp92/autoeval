@@ -19,7 +19,7 @@ import { MetricRadialGauge } from '@/src/components/evaluation/charts/MetricRadi
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
 import { QualityScoreChart } from '@/src/components/evaluation/charts/QualityScoreChart';
 import { QADetailView } from '@/src/components/evaluation/QADetailView';
-import { ValidationCard, FailureChips, LanguagePolicyRow, V2Badge, failureLabel, qaFailureKeys } from '@/src/components/evaluation/V2Panels';
+import { ValidationCard, V2QualityPanel, FailureChips, LanguagePolicyRow, V2Badge, failureLabel, qaFailureKeys } from '@/src/components/evaluation/V2Panels';
 import { HistoryDropdown } from '@/src/components/evaluation/HistoryDropdown';
 import { useEvaluationData } from './hooks/useEvaluationData';
 import { useEvalHistory } from './hooks/useEvalHistory';
@@ -412,13 +412,13 @@ export function QAEvaluationDashboard({
 
       {v2 ? (
       <div className="space-y-4 animate-in fade-in duration-700" style={{ animationDelay: '200ms', animationFillMode: 'both' }}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ValidationCard
             validation={v2.validation}
             intentDistribution={intentDistribution}
             onShowDuplicates={() => { setFailureFilter('__duplicates'); setStatusFilter(null); setQaPage(0); setSelectedQA(null); }}
           />
-          <div className="lg:col-span-2 bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
+          <div className="bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
             <div className="mb-3 flex items-start justify-between">
               <div>
                 <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -437,7 +437,7 @@ export function QAEvaluationDashboard({
               />
             </div>
             <div className="flex-1">
-              <QualityScoreChart data={llmQualityScores} />
+              <V2QualityPanel judge={v2.judge} validation={v2.validation} rows={qaPreviewAll} />
             </div>
             <LanguagePolicyRow judge={v2.judge} />
           </div>

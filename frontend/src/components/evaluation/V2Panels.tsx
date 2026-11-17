@@ -7,8 +7,8 @@ import {
   FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS, VALIDATION_WARNING_LABEL,
 } from '@/src/types/evaluation';
 import { getScoreColor } from '@/src/lib/evalScoreUtils';
-import { ChartInfoTooltip } from '@/src/components/evaluation/shared';
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
+import { ChartInfoTooltip } from '@/src/components/evaluation/shared';
 
 export function failureLabel(k: string): string {
   return FAILURE_CONFIG[k]?.label ?? k;
@@ -63,16 +63,19 @@ function StatusGauge({ ratio, label, detail, tone }: { ratio: number; label: str
 }
 
 const SMALL_SAMPLE = 20;
+// 수정 전(2026-11-17) 저장된 v2 결과는 문서 분포가 청크 ID(UUID) 기준이다. 문서로 보이지 않게 거른다
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isDocName = (k?: string | null) => !!k && !UUID_RE.test(k);
 
-/** 데이터 검증 카드 — 진단 정보(점수에 반영하지 않음): 상태 게이지 2개 + 의도 분포 + 상태 줄 */
+/** 데이터 검증 카드 — 진단 정보(점수에 반영하지 않음): 상태 게이지 2개 + 상태 줄 (+ 문서가 2개 이상이면 문서별 QA) */
 export function ValidationCard({
   validation, intentDistribution, onShowDuplicates,
 }: {
   validation: V2Validation;
-  intentDistribution: any[];
+  intentDistribution: { name: string; krLabel?: string; value: number }[];
   onShowDuplicates?: () => void;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const intentTotal = intentDistribution.reduce((n, d) => n + d.value, 0);
   const total = Math.max(validation.total, 1);
   const pairs = validation.duplicates?.length ?? 0;
   // 쌍 수와 QA 수는 다르다. 이전 결과에 duplicate_qa_count가 없으면 쌍에서 계산한다
@@ -80,19 +83,10 @@ export function ValidationCard({
     ?? new Set((validation.duplicates ?? []).flatMap(d => [d.a, d.b])).size;
   const syntaxTone: GaugeTone = validation.invalid > 0 ? 'fail' : 'ok';
   const dupTone: GaugeTone = dupQA > 0 ? 'warn' : 'ok';
-  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew');
-  const docs = Object.entries(validation.doc_distribution ?? {}).sort((a, b) => b[1] - a[1]);
+  const skew = (validation.warnings ?? []).filter(w => w.code === 'doc_skew' && isDocName(w.doc));
+  const docs = Object.entries(validation.doc_distribution ?? {}).filter(([k]) => isDocName(k)).sort((a, b) => b[1] - a[1]);
   const docMax = Math.max(1, ...docs.map(d => d[1]));
   const allClear = validation.invalid === 0 && pairs === 0 && skew.length === 0;
-
-  const treemap = intentDistribution.length > 0 && (
-    <>
-      <IntentTreemap data={intentDistribution} />
-      {validation.total < SMALL_SAMPLE && (
-        <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">QA {validation.total}개 — 표본이 적어 분포는 참고용입니다.</p>
-      )}
-    </>
-  );
 
   return (
     <div className="bg-white dark:bg-white/5 p-4 lg:p-6 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm flex flex-col">
@@ -114,40 +108,38 @@ export function ValidationCard({
       </div>
 
       {/* 상태 게이지 2개 */}
-      <div className="grid grid-cols-2 gap-3 py-2">
-        <StatusGauge
-          ratio={validation.valid / total}
-          label="구문 정상"
-          detail={validation.invalid ? `${validation.valid} / ${validation.total}개 · 탈락 ${validation.invalid}` : `${validation.valid} / ${validation.total}개`}
-          tone={syntaxTone}
-        />
-        <StatusGauge
-          ratio={1 - dupQA / total}
-          label="중복 의심 없음"
-          detail={pairs ? `중복 의심 ${pairs}쌍 · QA ${dupQA}개` : '중복 의심 0쌍'}
-          tone={dupTone}
-        />
+      <div>
+        <div className="grid grid-cols-2 gap-3 w-full py-2">
+          <StatusGauge
+            ratio={validation.valid / total}
+            label="구문 정상"
+            detail={validation.invalid ? `${validation.valid} / ${validation.total}개 · 탈락 ${validation.invalid}` : `${validation.valid} / ${validation.total}개`}
+            tone={syntaxTone}
+          />
+          <StatusGauge
+            ratio={1 - dupQA / total}
+            label="중복 의심 없음"
+            detail={pairs ? `중복 의심 ${pairs}쌍 · QA ${dupQA}개` : '중복 의심 0쌍'}
+            tone={dupTone}
+          />
+        </div>
       </div>
 
-      {/* 질문 의도 분포 — 데스크톱은 항상, 모바일은 접힘 */}
+      {/* 질문 의도 분포 — 트리맵(고정 높이, 의도 색은 v1과 같다) */}
       {intentDistribution.length > 0 && (
         <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-baseline justify-between mb-1">
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">질문 의도 분포</p>
-            <button
-              onClick={() => setMobileOpen(o => !o)}
-              aria-expanded={mobileOpen}
-              className="md:hidden flex items-center gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400"
-            >
-              {mobileOpen ? '접기' : '펼치기'} <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', mobileOpen && 'rotate-180')} />
-            </button>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">QA {intentTotal}개</span>
           </div>
-          <div className="hidden md:flex md:flex-col">{treemap}</div>
-          {mobileOpen && <div className="md:hidden flex flex-col">{treemap}</div>}
+          <IntentTreemap data={intentDistribution as any} height={160} />
+          {validation.total < SMALL_SAMPLE && (
+            <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">QA 수가 적어 분포는 참고용입니다.</p>
+          )}
         </div>
       )}
 
-      {/* 문서별 QA 수 — 문서가 2개 이상일 때만 */}
+      {/* 문서별 QA — 문서가 2개 이상일 때만 */}
       {docs.length >= 2 && (
         <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">문서별 QA</p>
@@ -165,8 +157,8 @@ export function ValidationCard({
         </div>
       )}
 
-      {/* 상태 줄 */}
-      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+      {/* 상태 줄 — 카드가 옆 카드 높이로 늘어나면 맨 아래에 붙는다 */}
+      <div className="mt-auto pt-3"><div className="pt-3 border-t border-slate-100 dark:border-white/5">
         {allClear ? (
           <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="w-4 h-4" /> 구문 오류 및 중복 의심 없음
@@ -193,7 +185,7 @@ export function ValidationCard({
             ))}
           </div>
         )}
-      </div>
+      </div></div>
     </div>
   );
 }
@@ -344,6 +336,85 @@ export function V2DetailSection({ qa }: { qa: QAPreviewItem }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── AI 품질 평가 카드 본문: 판정 누적 막대 + 지표 막대(기준선·기준 미달 건수) ───────────
+const VERDICT_SEG: { key: string; label: string; cls: string }[] = [
+  { key: 'pass',      label: '통과',          cls: 'bg-emerald-500 dark:bg-emerald-400' },
+  { key: 'fail',      label: '불통과',        cls: 'bg-amber-400 dark:bg-amber-400' },
+  { key: 'hard_fail', label: '근거·수치 오류', cls: 'bg-rose-500 dark:bg-rose-400' },
+  { key: 'error',     label: '평가 실패',     cls: 'bg-slate-400 dark:bg-slate-500' },
+  { key: 'skipped',   label: '구문 제외',     cls: 'bg-slate-200 dark:bg-white/20' },
+];
+
+export function V2QualityPanel({ judge, validation, rows }: { judge: V2JudgeSummary; validation: V2Validation; rows: QAPreviewItem[] }) {
+  const counts: Record<string, number> = {
+    pass: judge.pass_count,
+    hard_fail: judge.hard_fail_count,
+    fail: Math.max(0, judge.judged_count - judge.pass_count - judge.hard_fail_count),
+    error: judge.evaluation_error_count,
+    skipped: validation.invalid,
+  };
+  const total = Math.max(1, Object.values(counts).reduce((a, b) => a + b, 0));
+  const judgedRows = rows.filter(r => r.eval_version === 'v2' && (r.v2_status === 'pass' || r.v2_status === 'fail' || r.v2_status === 'hard_fail'));
+
+  return (
+    <div className="space-y-4">
+      {/* 판정 구성 */}
+      <div>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">판정 구성</p>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">QA {total}개</span>
+        </div>
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"
+          role="img" aria-label={VERDICT_SEG.map(v => `${v.label} ${counts[v.key]}`).join(', ')}>
+          {VERDICT_SEG.filter(v => counts[v.key] > 0).map(v => (
+            <div key={v.key} className={cn('h-full first:rounded-l-full last:rounded-r-full', v.cls)}
+              style={{ width: `${(counts[v.key] / total) * 100}%` }} title={`${v.label} ${counts[v.key]}`} />
+          ))}
+        </div>
+        <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+          {VERDICT_SEG.filter(v => counts[v.key] > 0 || v.key === 'pass').map(v => (
+            <li key={v.key} className="flex items-center gap-1.5">
+              <span className={cn('w-2 h-2 rounded-full', v.cls)} />
+              {v.label} <span className="font-mono font-semibold">{counts[v.key]}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* 지표 평균 + 기준선 + 기준 미달 건수 */}
+      <div className="pt-3 border-t border-slate-100 dark:border-white/5 space-y-3">
+        {V2_DIMENSIONS.map(d => {
+          const v = judge.averages?.[d.key];
+          const below = judgedRows.filter(r => (r[d.key] as number | undefined) != null && (r[d.key] as number) < d.threshold).length;
+          const tone = v == null ? 'bg-slate-300' : v >= 0.85 ? 'bg-emerald-500 dark:bg-emerald-400' : v >= d.threshold ? 'bg-amber-400' : 'bg-rose-500';
+          return (
+            <div key={d.key}>
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="font-medium text-slate-700 dark:text-slate-200">{d.label}</span>
+                <span className="flex items-baseline gap-2">
+                  {judgedRows.length > 0 && (
+                    <span className={cn('text-[10px]', below ? 'text-rose-600 dark:text-rose-400 font-semibold' : 'text-slate-400 dark:text-slate-500')}>
+                      기준 미달 {below}건
+                    </span>
+                  )}
+                  <span className={cn('font-mono font-bold', v != null ? getScoreColor(v) : 'text-slate-400')}>{v != null ? v.toFixed(3) : '-'}</span>
+                </span>
+              </div>
+              <div className="relative mt-1 h-2 rounded-full bg-slate-100 dark:bg-white/10"
+                role="img" aria-label={`${d.label} 평균 ${v != null ? v.toFixed(2) : '-'}, 기준 ${d.threshold}`}>
+                <div className={cn('h-full rounded-full transition-all duration-700', tone)} style={{ width: `${(v ?? 0) * 100}%` }} />
+                <span className="absolute -top-0.5 -bottom-0.5 w-0.5 rounded bg-slate-500/60 dark:bg-white/50"
+                  style={{ left: `${d.threshold * 100}%` }} title={`기준 ${d.threshold}`} />
+              </div>
+            </div>
+          );
+        })}
+        <p className="text-[10px] text-slate-400 dark:text-slate-500">세로선은 지표별 기준값(근거성·정확성 0.6, 완전성 0.7, 질문 품질 0.5)입니다.</p>
       </div>
     </div>
   );
