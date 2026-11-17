@@ -737,7 +737,7 @@ async def _process_batch(
                     src_new = [s for s in item.get("source_blocks", []) if s in new_indices]
                     if src_new:
                         item["source_blocks"] = src_new
-                        item["page"] = idx_to_page.get(src_new[0], 0)
+                        item["page"] = idx_to_page.get(min(src_new), 0)
                         if not item.get("section_title"):
                             first_line = item.get("text", "").split("\n")[0].strip()
                             item["section_title"] = first_line[:30] if first_line else ""
