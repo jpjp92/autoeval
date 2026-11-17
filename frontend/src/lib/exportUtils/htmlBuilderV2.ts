@@ -134,8 +134,7 @@ export function buildV2HTMLContent(data: EvaluationData): string {
       <td class="c mono ${scoreClass(r.qa_score)}">${num(r.qa_score)}</td>
       <td class="c"><span class="status s-${esc(r.v2_status)}">${STATUS_LABEL[r.v2_status ?? ''] ?? '-'}</span></td>
       <td>${failureChips(r) || '<span class="muted">-</span>'}</td>
-      <td class="c">${esc(r.language_policy ? LANGUAGE_POLICY_LABEL[r.language_policy] ?? r.language_policy : '-')}</td>
-    </tr>`).join('') || `<tr><td colspan="7" class="c muted">QA 상세 데이터가 없습니다.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="6" class="c muted">QA 상세 데이터가 없습니다.</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -324,7 +323,7 @@ ${failureEntries.length ? `<section class="failrow" role="group" aria-label="실
     ${['all', 'pass', 'fail', 'hard_fail', 'error', 'skipped'].map(k => `<button type="button" data-f="${k}" aria-pressed="${k === 'all'}">${k === 'all' ? '전체' : STATUS_LABEL[k]} ${k === 'all' ? rows.length : rows.filter(r => r.v2_status === k).length}</button>`).join('')}
   </div>
   <div class="tablewrap"><table>
-    <thead><tr><th class="c">ID</th><th class="c">의도</th><th>질문</th><th class="c">QA 점수</th><th class="c">판정</th><th>사유</th><th class="c">언어</th></tr></thead>
+    <thead><tr><th class="c">ID</th><th class="c">의도</th><th>질문</th><th class="c">QA 점수</th><th class="c">판정</th><th>사유</th></tr></thead>
     <tbody id="rows">${tableRows}</tbody>
   </table></div>
   <div class="pg-wrap"><span class="pg-range" id="pg-range"></span>

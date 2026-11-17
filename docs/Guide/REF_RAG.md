@@ -108,6 +108,8 @@
 - `fitz.open()` → 페이지별 블록 순회 (rawdict 모드 — chars 단위 추출)
 - 각 블록: `{"text", "font_size", "bbox", "page"}`
 - 반복 헤더·푸터 탐지 후 후속 단계에서 제거
+- 표 감지: `find_tables(paths=_table_paths(page))` — 가로·세로 0.5pt 미만 그림 요소를 빼고 넘긴다(결과 같음, 선이 많은 쪽에서 빨라짐)
+- 쪽 처리는 `_extract_pdf_page`. `PDF_EXTRACT_WORKERS`가 2 이상이고 4쪽 이상이면 spawn 프로세스 풀로 쪽을 나눠 처리한다(기본 1 = 순차)
 
 **파서 보정 규칙 (2026-04-09 적용)**
 

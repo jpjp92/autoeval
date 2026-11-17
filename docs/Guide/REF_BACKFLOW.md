@@ -29,6 +29,8 @@ backend/main.py
 2. 텍스트 추출 (Background)
    - PDF: PyMuPDF / DOCX: python-docx / XLSX·XLSM·CSV: openpyxl·csv (ingestion/spreadsheet.py)
    - .xls 등 지원하지 않는 형식은 ValueError 메시지를 job error로 그대로 반환
+   - PDF 표 감지는 크기 0 선을 뺀 그림 요소로 실행, 쪽별 진행 메시지("텍스트·표 추출 중 (n/전체쪽)")
+   - 단계별 시간 로그: [timing] extract / chunk / embed+save / TOTAL
 3. 최소 길이 검증 (PDF: 300자, 그 외: 100자)
 3-1. 문서 언어 판별 (detect_language → ko | en), en이면 합자·줄바꿈 하이픈 정규화
 3-2. 청킹 경로 선택: XLSX·CSV → table (LLM 없음) / 그 외 → chunking_method(llm|rule)
