@@ -105,11 +105,18 @@ def _call_llm(model: str, user_prompt: str) -> str:
 
     if "gemini" in m:
         from google import genai as google_genai
+        try:
+            from backend.config.models import no_thinking_config
+        except ImportError:
+            from config.models import no_thinking_config
         client = google_genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
         response = client.models.generate_content(
             model=model_id,
             contents=_SYSTEM_PROMPT + "\n\n" + user_prompt,
-            config=google_genai.types.GenerateContentConfig(temperature=0.2),
+            config=google_genai.types.GenerateContentConfig(
+                temperature=0.2,
+                thinking_config=no_thinking_config(model_id),
+            ),
         )
         return response.text.strip()
 

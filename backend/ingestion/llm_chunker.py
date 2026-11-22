@@ -1,7 +1,7 @@
 """
 backend/ingestion/llm_chunker.py
 
-LLM 기반 청킹 모듈 — Gemini 2.5 Flash를 사용해 원시 블록을 의미 단위 청크로 변환.
+LLM 기반 청킹 모듈 — 문서 처리 모델(DOCUMENT_MODEL, 기본 Gemini 3.5 Flash-Lite)을 사용해 원시 블록을 의미 단위 청크로 변환.
 
 test/chunk_with_llm.py의 핵심 로직을 API에서 재사용 가능한 형태로 추출.
 Rich progress / argparse / CLI 코드는 제거하고, gemini_client를 외부 주입 방식으로 변경.
@@ -382,10 +382,11 @@ Respond with a pure JSON array only:"""
 
 
 try:
-    from config.models import MODEL_CONFIG
-    DEFAULT_MODEL = MODEL_CONFIG["gemini-flash"]["model_id"]
+    from config.models import MODEL_CONFIG, DOCUMENT_MODEL, no_thinking_config as _no_thinking
+    DEFAULT_MODEL = MODEL_CONFIG[DOCUMENT_MODEL]["model_id"]
 except Exception:
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    from backend.config.models import MODEL_CONFIG, DOCUMENT_MODEL, no_thinking_config as _no_thinking
+    DEFAULT_MODEL = MODEL_CONFIG[DOCUMENT_MODEL]["model_id"]
 
 try:
     from exceptions import APIQuotaExceededError
@@ -674,9 +675,13 @@ def _build_block_list(ctx_blocks: list[dict], new_blocks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _gen_config(batch_size: int):
+CHUNK_SEED = 7
+
+
+def _gen_config(batch_size: int, model: str = DEFAULT_MODEL):
     """- temperature=0.1  : JSON 구조적 변환 — 일관성 우선
-    - thinking_budget=0: 청킹은 Easy Task, thinking 불필요 (속도·비용 개선)
+    - thinking 최소화: 청킹은 Easy Task (2.x는 budget=0, 3.x는 level=minimal)
+    - seed 고정: 같은 문서의 청크 수가 실행마다 흔들리지 않게 (3.5 Flash-Lite 90쪽 실측 36~46개 → 36개)
     - max_output_tokens: 배치 크기 기반 동적 설정 (8192 / 12288 / 16384)
     """
     from google.genai import types as genai_types
@@ -691,7 +696,8 @@ def _gen_config(batch_size: int):
         temperature=0.1,
         top_p=0.95,
         max_output_tokens=max_out,
-        thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+        thinking_config=_no_thinking(model),
+        seed=CHUNK_SEED,
     )
 
 
@@ -709,7 +715,7 @@ async def _call_gemini(prompt: str, client, model: str, batch_size: int) -> str:
     for attempt in range(len(RATE_LIMIT_RETRY_WAITS) + 1):
         try:
             response = await client.aio.models.generate_content(
-                model=model, contents=prompt, config=_gen_config(batch_size),
+                model=model, contents=prompt, config=_gen_config(batch_size, model),
             )
             return response.text.strip()
         except Exception as e:

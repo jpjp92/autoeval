@@ -176,7 +176,7 @@ async def process_and_ingest(
     """청킹 → Gemini Embedding 2 → Supabase 저장.
 
     chunking_method:
-      "llm"  — Gemini 2.5 Flash LLM 청킹 (기본, 품질 우선)
+      "llm"  — LLM 청킹 (DOCUMENT_MODEL) (기본, 품질 우선)
       "rule" — rule-based 청킹 (parsers.chunk_blocks_aware, 하위 호환)
 
     job_id: IngestionJobManager job ID. 전달 시 단계별 상태 업데이트.

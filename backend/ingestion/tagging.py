@@ -101,6 +101,7 @@ async def run_tagging(
         샘플 태깅 결과 최대 5개.
     """
     from google import genai as google_genai  # 런타임 import (순환 방지)
+    from config.models import no_thinking_config
 
     batches = [all_chunks[i: i + batch_size] for i in range(0, len(all_chunks), batch_size)]
     semaphore = asyncio.Semaphore(concurrency)
@@ -124,7 +125,7 @@ async def run_tagging(
                         response_mime_type="application/json",
                         temperature=0.0,
                         top_p=0.95,
-                        thinking_config=google_genai.types.ThinkingConfig(thinking_budget=0),
+                        thinking_config=no_thinking_config(model_id),
                     ),
                 )
                 tagging_results = json.loads(res.text)
