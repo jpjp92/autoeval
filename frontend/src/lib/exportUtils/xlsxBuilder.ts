@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { INTENT_KR, FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, V2_DIMENSIONS, GRADE_WITHHELD_LABEL } from '@/src/types/evaluation';
+import { INTENT_KR, FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, V2_DIMENSIONS, GRADE_WITHHELD_LABEL, VERDICT_LABEL } from '@/src/types/evaluation';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import { formatKST } from '@/src/lib/evalChartUtils';
 import type { EvaluationData } from './types';
@@ -96,7 +96,7 @@ function buildV2Workbook(data: EvaluationData): XLSX.WorkBook {
     ...V2_DIMENSIONS.map(() => ({ wch: 9 })), { wch: 30 }, { wch: 8 }, { wch: 60 }, { wch: 55 }];
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail');
 
-  const VERDICT_KR: Record<string, string> = { supported: '지지', unsupported: '근거 없음', contradicted: '모순' };
+  const VERDICT_KR = VERDICT_LABEL;
   const ev = rows.flatMap(r => (r.evidence ?? []).map(e => [r.qa_index + 1, VERDICT_KR[e.verdict] ?? e.verdict, e.claim, e.source]));
   const wsEv = XLSX.utils.aoa_to_sheet([['QA ID', '판정', '주장', '원문 인용'], ...ev]);
   wsEv['!cols'] = [{ wch: 7 }, { wch: 10 }, { wch: 60 }, { wch: 70 }];

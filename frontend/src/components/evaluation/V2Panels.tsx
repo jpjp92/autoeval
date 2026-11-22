@@ -5,6 +5,7 @@ import { cn } from '@/src/lib/utils';
 import type { QAPreviewItem, V2Validation, V2JudgeSummary } from '@/src/types/evaluation';
 import {
   FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS, VALIDATION_WARNING_LABEL,
+  VERDICT_LABEL,
 } from '@/src/types/evaluation';
 import { getScoreColor } from '@/src/lib/evalScoreUtils';
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
@@ -251,9 +252,9 @@ export function qaFailureKeys(qa: QAPreviewItem): string[] {
 }
 
 const VERDICT_STYLE: Record<string, { label: string; className: string }> = {
-  supported:    { label: '지지',     className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-500/20' },
-  unsupported:  { label: '근거 없음', className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-500/20' },
-  contradicted: { label: '모순',     className: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/30 dark:border-rose-500/20' },
+  supported:    { label: VERDICT_LABEL.supported,    className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-500/20' },
+  unsupported:  { label: VERDICT_LABEL.unsupported,  className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-500/20' },
+  contradicted: { label: VERDICT_LABEL.contradicted, className: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/30 dark:border-rose-500/20' },
 };
 
 /** QA 상세 보기의 v2 평가 결과 */

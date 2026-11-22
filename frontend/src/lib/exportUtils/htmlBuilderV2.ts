@@ -4,7 +4,7 @@ import { formatKST } from '@/src/lib/evalChartUtils';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import {
   FAILURE_CONFIG, INTENT_KR, INTENT_COLORS, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS,
-  VALIDATION_WARNING_LABEL, GRADE_WITHHELD_LABEL, QA_PAGE_SIZE,
+  VALIDATION_WARNING_LABEL, GRADE_WITHHELD_LABEL, QA_PAGE_SIZE, VERDICT_LABEL,
 } from '@/src/types/evaluation';
 import type { EvaluationData } from './types';
 import { svgTreemap } from './htmlBuilder';
@@ -18,7 +18,6 @@ const num = (v: number | null | undefined, d = 3) => (v == null ? '-' : v.toFixe
 const STATUS_LABEL: Record<string, string> = {
   pass: '통과', fail: '불통과', hard_fail: '근거·수치 오류', error: '평가 실패', skipped: '제외(구문)', missing: '결과 없음',
 };
-const VERDICT_LABEL: Record<string, string> = { supported: '지지', unsupported: '근거 없음', contradicted: '모순' };
 
 function scoreClass(v: number | null | undefined, threshold = 0.7): string {
   if (v == null) return 'muted';

@@ -236,3 +236,10 @@ export const GRADE_COLOR: Record<string, string> = {
 };
 
 export const QA_PAGE_SIZE = 5;
+
+// 주장별 근거 판정 표시(화면·HTML·xlsx 공통). RAG 평가 도구의 supported / unsupported / contradicted 3단계를 따른다.
+export const VERDICT_LABEL: Record<string, string> = {
+  supported: '근거 일치',
+  unsupported: '근거 없음',
+  contradicted: '원문과 상충',
+};
