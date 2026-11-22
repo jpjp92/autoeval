@@ -42,6 +42,7 @@ jobs:
           backend.tests.test_job_ids
           backend.tests.test_pdf_extract
           backend.tests.test_chunk_parallel
+          backend.tests.test_document_model
 
   frontend:
     name: frontend
