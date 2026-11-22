@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 
@@ -396,31 +397,41 @@ except ImportError:
 # 파라미터 추천
 # ──────────────────────────────────────────────────────────────
 
+def _parallel_override() -> int | None:
+    """LLM_CHUNK_PARALLEL이 있으면 모든 티어의 동시 호출 수를 그 값으로 쓴다."""
+    raw = os.getenv("LLM_CHUNK_PARALLEL")
+    try:
+        return max(1, int(raw)) if raw else None
+    except ValueError:
+        return None
+
+
 def recommend_params(page_count: int) -> dict:
     """페이지 수 기반 티어 판정 및 파라미터 추천.
 
     티어 정책:
-      S  (≤20p)    batch=30 parallel=3 overlap=3  max_output=8192
-      M  (21-50p)  batch=30 parallel=3 overlap=3  max_output=8192
-      L  (51-100p) batch=40 parallel=5 overlap=3  max_output=12288
-      XL (101-200p) batch=50 parallel=5 overlap=5 max_output=16384
-      XXL(200p+)   batch=50 parallel=5 overlap=5  max_output=16384
+      S  (≤20p)    batch=30 parallel=8  overlap=3  max_output=8192
+      M  (21-50p)  batch=30 parallel=8  overlap=3  max_output=8192
+      L  (51-100p) batch=40 parallel=10 overlap=3  max_output=12288
+      XL (101-200p) batch=50 parallel=10 overlap=5 max_output=16384
+      XXL(200p+)   batch=50 parallel=10 overlap=5  max_output=16384
+    parallel은 LLM_CHUNK_PARALLEL로 덮어쓸 수 있다. 호출은 네트워크 대기라 서버 코어 수와 무관하다.
     """
     if page_count <= 20:
-        tier, batch, parallel, overlap, max_out = "S", 30, 3, 3, 8192
+        tier, batch, parallel, overlap, max_out = "S", 30, 8, 3, 8192
     elif page_count <= 50:
-        tier, batch, parallel, overlap, max_out = "M", 30, 3, 3, 8192
+        tier, batch, parallel, overlap, max_out = "M", 30, 8, 3, 8192
     elif page_count <= 100:
-        tier, batch, parallel, overlap, max_out = "L", 40, 5, 3, 12288
+        tier, batch, parallel, overlap, max_out = "L", 40, 10, 3, 12288
     elif page_count <= 200:
-        tier, batch, parallel, overlap, max_out = "XL", 50, 5, 5, 16384
+        tier, batch, parallel, overlap, max_out = "XL", 50, 10, 5, 16384
     else:
-        tier, batch, parallel, overlap, max_out = "XXL", 50, 5, 5, 16384
+        tier, batch, parallel, overlap, max_out = "XXL", 50, 10, 5, 16384
 
     return {
         "tier": tier,
         "batch_size": batch,
-        "parallel": parallel,
+        "parallel": _parallel_override() or parallel,
         "overlap": overlap,
         "max_output_tokens": max_out,
     }
@@ -430,21 +441,21 @@ def recommend_params_docx(block_count: int) -> dict:
     """블록 수 기반 티어 판정 (DOCX 전용 — page=1 고정이므로 블록 수 사용).
 
     티어 정책:
-      S  (≤60블록)    batch=30 parallel=3 overlap=3
-      M  (61-150블록) batch=30 parallel=3 overlap=3
-      L  (151-300블록) batch=40 parallel=5 overlap=3
-      XL (300블록+)   batch=50 parallel=5 overlap=5
+      S  (≤60블록)    batch=30 parallel=8  overlap=3
+      M  (61-150블록) batch=30 parallel=8  overlap=3
+      L  (151-300블록) batch=40 parallel=10 overlap=3
+      XL (300블록+)   batch=50 parallel=10 overlap=5
     """
     if block_count <= 60:
-        tier, batch, parallel, overlap = "S", 30, 3, 3
+        tier, batch, parallel, overlap = "S", 30, 8, 3
     elif block_count <= 150:
-        tier, batch, parallel, overlap = "M", 30, 3, 3
+        tier, batch, parallel, overlap = "M", 30, 8, 3
     elif block_count <= 300:
-        tier, batch, parallel, overlap = "L", 40, 5, 3
+        tier, batch, parallel, overlap = "L", 40, 10, 3
     else:
-        tier, batch, parallel, overlap = "XL", 50, 5, 5
+        tier, batch, parallel, overlap = "XL", 50, 10, 5
 
-    return {"tier": tier, "batch_size": batch, "parallel": parallel, "overlap": overlap}
+    return {"tier": tier, "batch_size": batch, "parallel": _parallel_override() or parallel, "overlap": overlap}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -663,10 +674,8 @@ def _build_block_list(ctx_blocks: list[dict], new_blocks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _call_gemini_sync(prompt: str, client, model: str, batch_size: int) -> str:
-    """동기 Gemini 호출 (asyncio.to_thread에서 실행).
-
-    - temperature=0.1  : JSON 구조적 변환 — 일관성 우선
+def _gen_config(batch_size: int):
+    """- temperature=0.1  : JSON 구조적 변환 — 일관성 우선
     - thinking_budget=0: 청킹은 Easy Task, thinking 불필요 (속도·비용 개선)
     - max_output_tokens: 배치 크기 기반 동적 설정 (8192 / 12288 / 16384)
     """
@@ -678,18 +687,38 @@ def _call_gemini_sync(prompt: str, client, model: str, batch_size: int) -> str:
         max_out = 12288
     else:
         max_out = 16384
-
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=genai_types.GenerateContentConfig(
-            temperature=0.1,
-            top_p=0.95,
-            max_output_tokens=max_out,
-            thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
-        ),
+    return genai_types.GenerateContentConfig(
+        temperature=0.1,
+        top_p=0.95,
+        max_output_tokens=max_out,
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
     )
-    return response.text.strip()
+
+
+def _is_rate_limited(e: Exception) -> bool:
+    s = str(e).lower()
+    return "429" in s or "quota" in s or "resource_exhausted" in s
+
+
+RATE_LIMIT_RETRY_WAITS = (2, 4, 8)   # 429일 때 기다렸다 다시 시도(초). 모두 실패하면 위로 올린다.
+
+
+async def _call_gemini(prompt: str, client, model: str, batch_size: int) -> str:
+    """비동기 Gemini 호출. 스레드를 쓰지 않아 기본 스레드 풀 크기(코어 수 + 4)에 묶이지 않는다.
+    기획: docs/Plan/PLAN_261122_CHUNK_PARALLEL.md"""
+    for attempt in range(len(RATE_LIMIT_RETRY_WAITS) + 1):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model, contents=prompt, config=_gen_config(batch_size),
+            )
+            return response.text.strip()
+        except Exception as e:
+            if not _is_rate_limited(e) or attempt == len(RATE_LIMIT_RETRY_WAITS):
+                raise
+            wait = RATE_LIMIT_RETRY_WAITS[attempt]
+            logger.warning(f"LLM chunking 429, retry {attempt + 1}/{len(RATE_LIMIT_RETRY_WAITS)} in {wait}s")
+            await asyncio.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 async def _process_batch(
@@ -727,7 +756,7 @@ async def _process_batch(
         t0 = time.time()
         try:
             for attempt in range(max_translation_retries + 1):
-                raw = await asyncio.to_thread(_call_gemini_sync, prompt, client, model, batch_size)
+                raw = await _call_gemini(prompt, client, model, batch_size)
                 if raw.startswith("```"):
                     raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
@@ -772,7 +801,7 @@ async def _process_batch(
 
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+            if _is_rate_limited(e):
                 logger.error(f"Batch {batch_num}: LLM 청킹 API 비용 소진 (429) — 즉시 중단: {e}")
                 raise APIQuotaExceededError(f"Gemini LLM Chunking API 한도 초과: {e}") from e
             elapsed = time.time() - t0
