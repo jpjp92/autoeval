@@ -45,6 +45,7 @@ export interface QAPreviewItem {
   qa_language?:       string | null;
   source_language_from?: 'metadata' | 'inferred' | null;
   reason?:            string;
+  dimension_reasons?: Partial<Record<'groundedness' | 'correctness' | 'completeness' | 'question_quality', string>>;  // judge v2.2부터
   evaluation_error?:  string | null;
 }
 

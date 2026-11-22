@@ -24,16 +24,27 @@ function scoreClass(v: number | null | undefined, threshold = 0.7): string {
   return v >= 0.85 ? 'good' : v >= threshold ? 'mid' : 'bad';
 }
 
+// 지표 4개: 점수 + 지표별 이유(judge v2.2부터). 이유가 없는 예전 결과는 점수만 보인다.
 function dimsHTML(qa: QAPreviewItem): string {
-  return `<div class="dims">${V2_DIMENSIONS.map(d => {
+  const reasons = qa.dimension_reasons ?? {};
+  const has = Object.keys(reasons).length > 0;
+  return `<div class="dims${has ? ' with-reasons' : ''}">${V2_DIMENSIONS.map(d => {
     const v = qa[d.key] as number | undefined;
-    return `<span class="dim ${v != null && v < d.threshold ? 'low' : ''}">${d.label} <b class="${scoreClass(v, d.threshold)}">${num(v, 2)}</b></span>`;
+    const why = reasons[d.key];
+    return `<div class="dim ${v != null && v < d.threshold ? 'low' : ''}"><div class="dim-h"><span>${d.label}</span><b class="${scoreClass(v, d.threshold)}">${num(v, 2)}</b></div>${why ? `<p class="dim-r">${esc(why)}</p>` : ''}</div>`;
   }).join('')}</div>`;
 }
 
-function evidenceHTML(qa: QAPreviewItem, onlyProblems: boolean): string {
-  const ev = (qa.evidence ?? []).filter(e => !onlyProblems || e.verdict !== 'supported');
-  if (!ev.length) return '';
+// 확인이 필요한 주장은 펼쳐 두고, 원문과 일치한 주장은 접어 둔다
+function evidenceHTML(qa: QAPreviewItem): string {
+  const all = qa.evidence ?? [];
+  const problems = all.filter(e => e.verdict !== 'supported');
+  const ok = all.filter(e => e.verdict === 'supported');
+  return (problems.length ? `<p class="ev-h bad">확인이 필요한 주장 (${problems.length})</p>${evidenceList(problems)}` : '')
+    + (ok.length ? `<details class="ev-ok"><summary>${problems.length ? `원문과 일치한 주장 ${ok.length}개` : `주장 ${ok.length}개 모두 원문과 일치`}</summary>${evidenceList(ok)}</details>` : '');
+}
+
+function evidenceList(ev: NonNullable<QAPreviewItem['evidence']>): string {
   return `<ul class="evidence">${ev.map(e => `
     <li><span class="verdict v-${esc(e.verdict)}">${VERDICT_LABEL[e.verdict] ?? esc(e.verdict)}</span>
       <div><p class="claim">${esc(e.claim)}</p>${e.source ? `<p class="source">“${esc(e.source)}”</p>` : ''}</div></li>`).join('')}</ul>`;
@@ -67,9 +78,9 @@ function qaDetail(qa: QAPreviewItem, pos: number): string {
       <span class="score ${scoreClass(qa.qa_score)}">QA 점수 ${num(qa.qa_score)}</span>${failureChips(qa)}</header>
     <p class="q"><b>Q.</b> ${esc(qa.q)}</p>
     <p class="a"><b>A.</b> ${esc(qa.a)}</p>
-    ${qa.reason || qa.failure_reason ? `<p class="reason">${esc(qa.reason || qa.failure_reason)}</p>` : ''}
     ${qa.v2_status === 'pass' || qa.v2_status === 'fail' || qa.v2_status === 'hard_fail' ? dimsHTML(qa) : ''}
-    ${evidenceHTML(qa, false)}
+    ${qa.reason || qa.failure_reason ? `<p class="reason"><b>종합 · </b>${esc(qa.reason || qa.failure_reason)}</p>` : ''}
+    ${evidenceHTML(qa)}
     ${langHTML(qa)}
   </article>`;
 }
@@ -188,8 +199,12 @@ h2 .n{font-size:12px;color:var(--muted);font-weight:500}
 .score{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .q{font-weight:600;overflow-wrap:anywhere}.a{color:var(--sub);overflow-wrap:anywhere}
 .reason{margin-top:6px;font-size:13px;padding:6px 10px;border-radius:8px;background:var(--soft)}
-.dims{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.dim{font-size:12px;padding:2px 8px;border:1px solid var(--line);border-radius:8px}.dim.low{border-color:var(--bad)}
+.dims{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}.dims.with-reasons{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dim{font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:8px}.dim.low{border-color:var(--bad)}
+.dim-h{display:flex;justify-content:space-between;gap:8px;font-weight:600}.dim-r{margin-top:4px;font-size:12.5px;color:var(--sub);overflow-wrap:anywhere}
+.ev-h{margin-top:10px;font-size:12px;font-weight:700}.ev-h.bad{color:var(--bad)}
+.ev-ok{margin-top:8px;font-size:12px}.ev-ok summary{cursor:pointer;color:var(--sub);font-weight:600}
+@media (max-width:640px){.dims,.dims.with-reasons{grid-template-columns:1fr}}
 .evidence{list-style:none;margin-top:8px;display:grid;gap:6px}
 .evidence li{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
 .verdict{flex:none;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px}
