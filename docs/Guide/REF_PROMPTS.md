@@ -15,11 +15,11 @@
 
 | # | 단계 | 파일 | 모델 | 경로 |
 |---|------|------|------|------|
-| 0 | Ingestion — LLM 청킹 (PDF/DOCX × KO/EN) | `llm_chunker.py` | Gemini 2.5 Flash | — |
-| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile, KO/EN) | `ingestion_api.py` | Gemini 2.5 Flash | — |
-| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 2.5 Flash | — |
-| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 2.5 Flash | fallback |
-| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | Gemini 2.5 Flash | fallback |
+| 0 | Ingestion — LLM 청킹 (PDF/DOCX × KO/EN) | `llm_chunker.py` | Gemini 3.5 Flash-Lite | — |
+| 1 | Ingestion — Pass1+2 통합 (H1/H2/H3 master + domain_profile, KO/EN) | `ingestion_api.py` | Gemini 3.5 Flash-Lite | — |
+| 2 | Ingestion — Pass3 태깅 (master 있음) | `ingestion_api.py` | Gemini 3.5 Flash-Lite | — |
+| 3 | Ingestion — Pass3 태깅 (master 없음, fallback) | `ingestion_api.py` | Gemini 3.5 Flash-Lite | fallback |
+| 4 | 도메인 분석 (폴백 전용) | `domain_profiler.py` | Gemini 3.5 Flash-Lite | fallback |
 | 5 | QA 생성 — System Prompt (Static KO v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 6 | QA 생성 — System Prompt (Static EN v1) | `prompts.py` | 생성 모델 | **fallback** |
 | 7 | QA 생성 — System Prompt (Adaptive, Domain-Aware) | `prompts.py` | 생성 모델 | **주 경로** |
@@ -31,7 +31,7 @@
 | 13 | 평가 Layer 2 — Groundedness (단독, CoT, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 14 | 평가 Layer 2 — Context Relevance (단독, fallback) | `rag_triad.py` | 평가 모델 | fallback |
 | 15 | 평가 Layer 3 — QA Quality (Completeness 단일 지표) | `qa_quality.py` | 평가 모델 | — |
-| 16 | 평가 v2 — 통합 Judge (4개 지표 + 주장별 근거 + 언어 정책 4종) | `qa_judge.py` `build_judge_prompt` | 평가 모델 | v2 미리보기 |
+| 16 | 평가 v2 — 통합 Judge (4개 지표 + 지표별 이유 + 주장별 근거 + 언어 정책 4종, qa-judge-v2.2) | `qa_judge.py` `build_judge_prompt` | 평가 모델 | v2 미리보기 |
 
 ---
 
@@ -55,7 +55,7 @@
 ## 1. Pass1+2 통합 — H1/H2/H3 Master + domain_profile 생성
 
 **파일**: `backend/api/ingestion_api.py` (엔드포인트: `POST /analyze-hierarchy`)
-**모델**: `gemini-2.5-flash`
+**모델**: `gemini-3.5-flash-lite`
 **입력**: anchor 청크 30개 (content[:600]씩, 최대 18,000자)
 **출력**: `domain_profile`, `h2_h3_master` (→ `h1_candidates`는 서버에서 `list(h2_h3_master.keys())`로 도출)
 **임베딩**: Gemini Embedding 2, `output_dimensionality=1536` (L2 정규화)
@@ -108,7 +108,7 @@ Return a JSON object:
 ## 2. Pass3 — 청크 태깅 (h2_h3_master 있음)
 
 **파일**: `backend/api/ingestion_api.py` (엔드포인트: `POST /apply-granular-tagging`)
-**모델**: `gemini-2.5-flash`
+**모델**: `gemini-3.5-flash-lite`
 **입력**: 배치 청크 (content[:800] + section_path/section_title 조건부) + master_hierarchy
 **출력**: `[{ "idx": 0, "hierarchy": { "h1": "...", "h2": "...", "h3": "..." } }]`
 
@@ -142,7 +142,7 @@ Return ONLY a JSON array — no explanation:
 ## 3. Pass3 — 청크 태깅 (h2_h3_master 없음, fallback)
 
 **파일**: `backend/api/ingestion_api.py`
-**모델**: `gemini-2.5-flash`
+**모델**: `gemini-3.5-flash-lite`
 **입력**: 배치 청크 + H1 목록만
 
 ```
@@ -168,7 +168,7 @@ Return ONLY a JSON array — no explanation:
 ## 4. 도메인 분석 (Domain Profiler — 폴백 전용)
 
 **파일**: `backend/generators/domain_profiler.py`
-**모델**: 문서 처리 모델 (`gemini-2.5-flash`)
+**모델**: 문서 처리 모델 (`gemini-3.5-flash-lite`)
 **호출 조건**: `/analyze-hierarchy` 미실행으로 `doc_metadata`에 `domain_profile` 없을 때만 호출
 **입력**: anchor 청크 최대 10개 (content[:400] + H1/H2/chunk_type 메타)
 **출력**: domain_profile JSON

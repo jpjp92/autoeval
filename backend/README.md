@@ -345,10 +345,10 @@ Claude는 보류하여 UI에서 제외했다. 기존 모델 설정은 과거 결
 
 | 용도                            | model_id                   | 비고                                       |
 | ------------------------------- | -------------------------- | ------------------------------------------ |
-| LLM 청킹 (PDF/DOCX)             | gemini-2.5-flash           | thinking_budget=0, temperature=0.1         |
+| LLM 청킹 (PDF/DOCX)             | gemini-3.5-flash-lite          | thinking_level=minimal, temperature=0.1         |
 | 임베딩                          | gemini-embedding-2         | 1536차원, 입력 prefix로 문서/쿼리 구분     |
-| Hierarchy + domain_profile 생성 | gemini-2.5-flash     | H1/H2/H3 master + domain_profile 동시 생성 |
-| Hierarchy 태깅                  | gemini-2.5-flash           | batch=5, parallel=5, temperature=0         |
+| Hierarchy + domain_profile 생성 | gemini-3.5-flash-lite    | H1/H2/H3 master + domain_profile 동시 생성 |
+| Hierarchy 태깅                  | gemini-3.5-flash-lite          | batch=5, parallel=5, temperature=0         |
 
 ### domain_profile
 
