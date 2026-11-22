@@ -26,6 +26,7 @@
 | `SUPABASE_URL` | DB 주소 |
 | `SUPABASE_API_KEY` | 백엔드 DB 인증 |
 | `CORS_ORIGINS` | 브라우저가 직접 백엔드를 호출할 프론트 주소 |
+| `LLM_CHUNK_PARALLEL` | LLM 청킹 동시 호출 수. 없으면 50쪽 이하 8, 그 이상 10. 429가 잦으면 줄인다 |
 | `PDF_EXTRACT_WORKERS` | PDF 추출 프로세스 수. 없으면 1(순차). 무료 티어(CPU 1개 미만)에서는 설정하지 않는다 |
 
 수집이 느릴 때는 Render 로그에서 `[timing]`으로 검색한다. 추출(extract), 청킹(chunk), 임베딩·저장(embed+save) 시간이 업로드마다 남는다.
