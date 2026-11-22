@@ -125,12 +125,12 @@ class ProcessBatchRetryTests(unittest.TestCase):
     def run_batch(self, responses, language="en"):
         calls = []
 
-        def fake_call(prompt, client, model, batch_size):
+        async def fake_call(prompt, client, model, batch_size):
             calls.append(prompt)
             return responses[min(len(calls) - 1, len(responses) - 1)]
 
-        original = llm_chunker._call_gemini_sync
-        llm_chunker._call_gemini_sync = fake_call
+        original = llm_chunker._call_gemini
+        llm_chunker._call_gemini = fake_call
         try:
             blocks = [{"index": 0, "page": 1, "text": EN_BODY}]
             system, user = select_prompts(language, docx=False)
@@ -139,7 +139,7 @@ class ProcessBatchRetryTests(unittest.TestCase):
                 system_prompt=system, user_template=user, language=language,
             ))
         finally:
-            llm_chunker._call_gemini_sync = original
+            llm_chunker._call_gemini = original
         return calls, chunks
 
     translated = json.dumps([{"text": "트랜스포머는 어텐션에만 의존한다.", "section_title": "모델", "source_blocks": [0]}])
