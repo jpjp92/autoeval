@@ -150,7 +150,7 @@ backend/main.py
 
 할당량·인증 오류는 작업을 중단하며 다른 provider로 자동 전환하지 않는다.
 사용자가 모델을 변경하고 새 작업을 실행해야 한다. 청킹·태깅·계층·도메인 분석은
-Gemini 2.5 Flash를 사용한다. 생성·Judge 기본값은 [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md)를 참고한다.
+Gemini 3.5 Flash-Lite를 사용한다. 생성·Judge 기본값은 [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md)를 참고한다.
 
 ### GET `/api/generate/{job_id}/status`
 ```

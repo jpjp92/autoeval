@@ -46,7 +46,7 @@ final_score = 0.05 × syntax_score
 | 단계 | 모듈 | 내용 |
 | --- | --- | --- |
 | 데이터 검증 | `data_validation.py` | 구문 탈락은 평가에서 제외한다. 중복 의심(질문 유사도 0.7 이상 쌍, `duplicate_qa_count`), intent 분포, 문서 분포(`source_doc`이 있을 때만), 경고를 낸다. |
-| 통합 Judge | `qa_judge.py` | groundedness, correctness, completeness, question_quality(0~10 → 0~1), 주장별 근거(`evidence`), 실패 유형, 이유, 언어 검사(`language_checks`) |
+| 통합 Judge | `qa_judge.py` | groundedness, correctness, completeness, question_quality(0~10 → 0~1), 지표별 이유(`reasons` → `dimension_reasons`, qa-judge-v2.2부터), 주장별 근거(`evidence`), 실패 유형, 종합 이유, 언어 검사(`language_checks`) |
 | 파이프라인 | `pipeline_v2.py` | 원문 언어와 QA 언어를 따로 정한다. 결과를 v1 화면 키와 호환되는 행으로 만든다(`build_v2_report`). |
 
 **점수와 판정**

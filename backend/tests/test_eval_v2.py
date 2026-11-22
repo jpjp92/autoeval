@@ -108,6 +108,18 @@ class JudgeParseTests(unittest.TestCase):
         self.assertEqual(p["evidence"], [{"claim": "x", "source": "", "verdict": "unsupported"}])
         self.assertEqual(p["failure_types"], ["numeric_error"])
 
+    def test_dimension_reasons(self):
+        raw = json.dumps({"groundedness": 9, "correctness": 9, "completeness": 6, "question_quality": 8,
+                          "reasons": {"groundedness": " 주장 3개 모두 원문에 있다. ", "completeness": "두 번째 항목을 빠뜨렸다.",
+                                      "correctness": 5, "made_up": "x"}})
+        p = parse_judge_response(raw)
+        self.assertEqual(p["dimension_reasons"], {"groundedness": "주장 3개 모두 원문에 있다.",
+                                                  "completeness": "두 번째 항목을 빠뜨렸다."})
+        self.assertEqual(parse_judge_response(judge_json())["dimension_reasons"], {})   # v2.1 응답
+
+    def test_prompt_asks_dimension_reasons(self):
+        self.assertIn('"reasons"', build_judge_prompt("q", "a", "ctx", "korean_native"))
+
     def test_missing_or_bad_score_raises(self):
         for raw in ("not json", "[]", json.dumps({"groundedness": 9}),
                     json.dumps({"groundedness": 9, "correctness": None, "completeness": 9, "question_quality": 9}),

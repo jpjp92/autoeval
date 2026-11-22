@@ -6,8 +6,10 @@
 | --- | --- | --- |
 | QA 생성 | `gemini-3.8-flash` (기본) | `gpt-6-luna` |
 | RAG Triad / QA Quality Judge | `gemini-3.7-flash` | `gpt-5.6-luna` (기본) |
-| 청킹·태깅·계층·도메인 분석 | `gemini-2.5-flash` | 사용 안 함 |
+| 청킹·태깅·계층·도메인 분석 | `gemini-3.5-flash-lite` | 사용 안 함 |
 | 임베딩 | `gemini-embedding-2`, 1536차원 유지 | 사용 안 함 |
+
+2.x는 `thinking_budget=0`, 3.x는 `thinking_level="minimal"`로 thinking을 끈다(`config/models.py`의 `no_thinking_config`). 3.x에 `thinking_budget=0`을 보내면 400으로 실패한다.
 
 Claude는 보류하여 생성·평가 선택지에서 제외한다. 기존 모델 registry는 과거 결과 및
 명시적인 기존 API 요청의 호환을 위해 유지한다.
@@ -29,7 +31,7 @@ Claude는 보류하여 생성·평가 선택지에서 제외한다. 기존 모�
   per-request generation_config에서 해당 필드를 None으로 덮어써 전송을 생략한다.
 - Judge 응답은 LangChain AIMessage.text를 통해 추출한다. 문자열과 텍스트 블록 목록을
   모두 처리하고 reasoning 블록을 JSON 결과에 섞지 않는다.
-- 문서 도메인 분석의 폴백도 QA 생성 모델 대신 2.5 Flash를 사용한다.
+- 문서 도메인 분석의 폴백도 QA 생성 모델 대신 문서 처리 모델(3.5 Flash-Lite)를 사용한다.
 - 임베딩 모델과 벡터 차원은 변경하지 않는다. 기존 문서 재임베딩은 필요하지 않다.
 
 ## 비용 추정

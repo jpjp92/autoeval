@@ -48,7 +48,7 @@
   │  rule 청킹           │     │  LLM 청킹 (기본, 품질 우선)       │
   │  chunk_blocks_aware()│     │  run_llm_chunking()        (PDF) │
   │  RecursiveCharacter- │     │  run_llm_chunking_docx()  (DOCX) │
-  │  TextSplitter        │     │  Gemini 2.5 Flash                │
+  │  TextSplitter        │     │  Gemini 3.5 Flash-Lite                │
   │  (LangChain)         │     │  페이지/블록 수 기반 티어 조정    │
   └──────────────────────┘     └──────────────────────────────────┘
       │
@@ -175,7 +175,7 @@
 | 항목          | PDF                                       | DOCX                                           |
 | ------------- | ----------------------------------------- | ---------------------------------------------- |
 | 함수          | `run_llm_chunking()`                    | `run_llm_chunking_docx()`                    |
-| LLM           | Gemini 2.5 Flash                          | Gemini 2.5 Flash                               |
+| LLM           | Gemini 3.5 Flash-Lite                          | Gemini 3.5 Flash-Lite                               |
 | 프롬프트      | `SYSTEM_PROMPT` (noise_correction 포함) | `DOCX_SYSTEM_PROMPT` (noise_correction 제거) |
 | 파라미터 기준 | 페이지 수 (`recommend_params`)          | 블록 수 (`recommend_params_docx`)            |
 
@@ -420,7 +420,7 @@ POST /api/ingestion/analyze-hierarchy
   └─ sample_doc_chunks RPC → 전체 청크 풀에서 랜덤 40개 추출
   └─ __admin__ 청크 필터 제거 → 최대 30개 (filtered[:30])
   └─ 청크당 최대 글자 수 동적 조정: max(400, 20000 // len(anchor_chunks))
-  └─ LLM 1회 호출 (gemini-2.5-flash)
+  └─ LLM 1회 호출 (gemini-3.5-flash-lite)
   └─ H1(3~5개) + H2/H3 전체 master + domain_profile 동시 생성
   └─ doc_metadata upsert (h2_h3_master + domain_profile)
 
@@ -541,7 +541,7 @@ if total_qa == 0:
 일반 RAG는 **사용자 질의에 답변**하기 위해 청크를 검색한다. AutoEval은 **QA 쌍 생성을 위한 시드 컨텍스트 수집**이 목적이다. 검색된 청크가 "답"이 아니라 "QA를 만들 재료"로 사용된다.
 
 #### 2. 청킹에 LLM 사용
-일반 RAG는 보통 `RecursiveCharacterTextSplitter` 같은 rule 기반 청킹을 사용하지만, AutoEval은 **Gemini 2.5 Flash가 직접 의미 단위로 청킹**한다. 표·제목·법조문 구조 인식이 포함된다.
+일반 RAG는 보통 `RecursiveCharacterTextSplitter` 같은 rule 기반 청킹을 사용하지만, AutoEval은 **Gemini 3.5 Flash-Lite가 직접 의미 단위로 청킹**한다. 표·제목·법조문 구조 인식이 포함된다.
 
 #### 3. 벡터 저장 후 수동 계층 태깅 단계 존재
 일반 RAG에 없는 단계. 벡터 저장 후 **H1/H2/H3 계층 분류를 별도 LLM 호출**로 수행하고 metadata에 패치한다. 이를 기반으로 검색 필터를 사전에 좁힌다.
@@ -592,7 +592,7 @@ Response                     → qa_gen_results → 평가 파이프라인
 | ---------------------------- | ---------------------------------- | ----------------------------- |
 | `PyMuPDF (fitz)`           | PDF 텍스트·블록 추출              |                               |
 | `python-docx`              | DOCX XML 파싱 (단락/표/제목)       | `docx2txt` 미사용           |
-| `google-genai`             | Gemini 임베딩·청킹 LLM            | Gemini 2.5 Flash, Embedding 2 |
+| `google-genai`             | Gemini 임베딩·청킹 LLM            | Gemini 3.5 Flash-Lite, Embedding 2 |
 | `langchain-text-splitters` | `RecursiveCharacterTextSplitter` | rule 청킹 경로에서만 사용     |
 | `supabase-py`              | pgvector DB 연동                   |                               |
 | `anthropic`                | Claude 기존 호출 호환 (UI 보류)          |                               |

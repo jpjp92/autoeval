@@ -194,6 +194,7 @@ def v2_qa_row(r: Dict, qa: Dict) -> Dict:
         "qa_language":       r.get("qa_language"),
         "source_language_from": r.get("source_language_from"),
         "reason":            r.get("reason", ""),
+        "dimension_reasons": r.get("dimension_reasons", {}),   # v2.2부터. 이전 결과는 빈 값
         "evaluation_error":  r.get("error"),
     }
 

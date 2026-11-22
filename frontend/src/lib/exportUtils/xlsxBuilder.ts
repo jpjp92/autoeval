@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { INTENT_KR, FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, V2_DIMENSIONS, GRADE_WITHHELD_LABEL } from '@/src/types/evaluation';
+import { INTENT_KR, FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, V2_DIMENSIONS, GRADE_WITHHELD_LABEL, VERDICT_LABEL } from '@/src/types/evaluation';
 import type { QAPreviewItem } from '@/src/types/evaluation';
 import { formatKST } from '@/src/lib/evalChartUtils';
 import type { EvaluationData } from './types';
@@ -83,21 +83,25 @@ function buildV2Workbook(data: EvaluationData): XLSX.WorkBook {
   wsVal['!cols'] = [{ wch: 50 }, { wch: 40 }, { wch: 50 }, { wch: 50 }];
   XLSX.utils.book_append_sheet(wb, wsVal, 'Validation');
 
-  const header = ['ID', '의도', '질문', '답변', '판정', 'QA 점수', ...V2_DIMENSIONS.map(d => d.label), '실패 사유', '언어', '판정 이유', 'Context'];
+  const header = ['ID', '의도', '질문', '답변', '판정', 'QA 점수', ...V2_DIMENSIONS.map(d => d.label), '실패 사유', '언어', '종합 이유', ...V2_DIMENSIONS.map(d => `${d.label} 이유`), 'Context'];
   const detail = rows.map(r => [
     r.qa_index + 1, INTENT_KR[r.intent] ?? r.intent, r.q, r.a ?? '', V2_STATUS_KR[r.v2_status ?? ''] ?? '',
     n(r.qa_score), ...V2_DIMENSIONS.map(d => n(r[d.key] as number | undefined)),
     Array.from(new Set([...(r.hard_fail_reasons ?? []), ...(r.v2_failure_types ?? []), ...(r.fail_reasons ?? [])])).map(fl).join(', '),
     r.language_policy ? LANGUAGE_POLICY_LABEL[r.language_policy] ?? r.language_policy : '',
-    r.reason || r.failure_reason || '', r.context ?? '',
+    r.reason || r.failure_reason || '', ...V2_DIMENSIONS.map(d => r.dimension_reasons?.[d.key] ?? ''), r.context ?? '',
   ]);
   const wsDetail = XLSX.utils.aoa_to_sheet([header, ...detail]);
   wsDetail['!cols'] = [{ wch: 6 }, { wch: 10 }, { wch: 50 }, { wch: 50 }, { wch: 14 }, { wch: 9 },
-    ...V2_DIMENSIONS.map(() => ({ wch: 9 })), { wch: 30 }, { wch: 8 }, { wch: 60 }, { wch: 55 }];
+    ...V2_DIMENSIONS.map(() => ({ wch: 9 })), { wch: 30 }, { wch: 8 }, { wch: 60 }, ...V2_DIMENSIONS.map(() => ({ wch: 45 })), { wch: 55 }];
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail');
 
-  const VERDICT_KR: Record<string, string> = { supported: '지지', unsupported: '근거 없음', contradicted: '모순' };
-  const ev = rows.flatMap(r => (r.evidence ?? []).map(e => [r.qa_index + 1, VERDICT_KR[e.verdict] ?? e.verdict, e.claim, e.source]));
+  const VERDICT_KR = VERDICT_LABEL;
+  // 확인이 필요한 주장(근거 없음·원문과 상충)을 먼저, 같은 판정 안에서는 QA 순서
+  const vOrder: Record<string, number> = { contradicted: 0, unsupported: 1, supported: 2 };
+  const ev = rows.flatMap(r => (r.evidence ?? []).map(e => ({ id: r.qa_index + 1, e })))
+    .sort((a, b) => (vOrder[a.e.verdict] ?? 1) - (vOrder[b.e.verdict] ?? 1) || a.id - b.id)
+    .map(({ id, e }) => [id, VERDICT_KR[e.verdict] ?? e.verdict, e.claim, e.source]);
   const wsEv = XLSX.utils.aoa_to_sheet([['QA ID', '판정', '주장', '원문 인용'], ...ev]);
   wsEv['!cols'] = [{ wch: 7 }, { wch: 10 }, { wch: 60 }, { wch: 70 }];
   XLSX.utils.book_append_sheet(wb, wsEv, 'Evidence');

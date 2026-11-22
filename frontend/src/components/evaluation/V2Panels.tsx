@@ -5,6 +5,7 @@ import { cn } from '@/src/lib/utils';
 import type { QAPreviewItem, V2Validation, V2JudgeSummary } from '@/src/types/evaluation';
 import {
   FAILURE_CONFIG, LANGUAGE_POLICY_LABEL, LANGUAGE_CHECK_LABEL, V2_DIMENSIONS, VALIDATION_WARNING_LABEL,
+  VERDICT_LABEL,
 } from '@/src/types/evaluation';
 import { getScoreColor } from '@/src/lib/evalScoreUtils';
 import { IntentTreemap } from '@/src/components/evaluation/charts/IntentTreemap';
@@ -251,14 +252,38 @@ export function qaFailureKeys(qa: QAPreviewItem): string[] {
 }
 
 const VERDICT_STYLE: Record<string, { label: string; className: string }> = {
-  supported:    { label: '지지',     className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-500/20' },
-  unsupported:  { label: '근거 없음', className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-500/20' },
-  contradicted: { label: '모순',     className: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/30 dark:border-rose-500/20' },
+  supported:    { label: VERDICT_LABEL.supported,    className: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-500/20' },
+  unsupported:  { label: VERDICT_LABEL.unsupported,  className: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-500/20' },
+  contradicted: { label: VERDICT_LABEL.contradicted, className: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/30 dark:border-rose-500/20' },
 };
 
 /** QA 상세 보기의 v2 평가 결과 */
+function EvidenceList({ items }: { items: NonNullable<QAPreviewItem['evidence']> }) {
+  return (
+    <ul className="mt-2 space-y-2">
+      {items.map((e, i) => {
+        const st = VERDICT_STYLE[e.verdict] ?? VERDICT_STYLE.unsupported;
+        return (
+          <li key={i} className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-2.5 text-[11px] lg:text-xs">
+            <div className="flex items-start gap-2">
+              <span className={cn('shrink-0 px-1.5 py-px rounded border text-[10px] font-bold', st.className)}>{st.label}</span>
+              <p className="text-slate-800 dark:text-slate-100 font-medium [overflow-wrap:anywhere]">{e.claim}</p>
+            </div>
+            {e.source && (
+              <p className="mt-1.5 flex items-start gap-1.5 text-slate-500 dark:text-slate-400 [overflow-wrap:anywhere]">
+                <Quote className="w-3 h-3 mt-0.5 shrink-0" /> {e.source}
+              </p>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// QA 상세: 지표 4개(점수 + 이유) → 종합 판정 → 언어 검사 → 확인이 필요한 주장 → 원문과 일치한 주장(접힘)
 export function V2DetailSection({ qa }: { qa: QAPreviewItem }) {
-  const [showEvidence, setShowEvidence] = useState(true);
+  const [showSupported, setShowSupported] = useState(false);
   if (qa.v2_status === 'skipped' || qa.v2_status === 'error' || qa.v2_status === 'missing') {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/15 p-4 text-xs text-slate-600 dark:text-slate-300">
@@ -269,6 +294,11 @@ export function V2DetailSection({ qa }: { qa: QAPreviewItem }) {
   }
   const checks = Object.entries(qa.language_checks ?? {});
   const policy = qa.language_policy ? LANGUAGE_POLICY_LABEL[qa.language_policy] : null;
+  const reasons = qa.dimension_reasons ?? {};
+  const hasReasons = Object.keys(reasons).length > 0;
+  const evidence = qa.evidence ?? [];
+  const problems = evidence.filter(e => e.verdict !== 'supported');
+  const supported = evidence.filter(e => e.verdict === 'supported');
   return (
     <div className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden relative">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500/50" />
@@ -277,20 +307,29 @@ export function V2DetailSection({ qa }: { qa: QAPreviewItem }) {
         <span className={cn('font-black font-mono text-lg', getScoreColor(qa.qa_score ?? 0))}>{qa.qa_score != null ? qa.qa_score.toFixed(3) : '-'}</span>
       </div>
       <div className="p-4 space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className={cn('grid gap-2', hasReasons ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-4')}>
           {V2_DIMENSIONS.map(d => {
             const v = qa[d.key] as number | undefined;
             const low = v != null && v < d.threshold;
             return (
-              <div key={d.key} className={cn('rounded-lg border px-2.5 py-1.5',
+              <div key={d.key} className={cn('rounded-lg border px-3 py-2',
                 low ? 'border-rose-200 bg-rose-50/60 dark:border-rose-500/20 dark:bg-rose-950/20' : 'border-slate-200 bg-white dark:border-white/10 dark:bg-white/5')}>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">{d.label}</p>
-                <p className={cn('font-mono font-bold text-sm', v != null ? getScoreColor(v) : 'text-slate-400')}>{v != null ? v.toFixed(2) : '-'}</p>
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{d.label}</p>
+                  <p className={cn('font-mono font-bold text-sm', v != null ? getScoreColor(v) : 'text-slate-400')}>{v != null ? v.toFixed(2) : '-'}</p>
+                </div>
+                {reasons[d.key] && (
+                  <p className="mt-1 text-[11px] lg:text-xs leading-relaxed text-slate-600 dark:text-slate-300 [overflow-wrap:anywhere]">{reasons[d.key]}</p>
+                )}
               </div>
             );
           })}
         </div>
-        {qa.reason && <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{qa.reason}</p>}
+        {qa.reason && (
+          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+            <span className="font-semibold text-slate-500 dark:text-slate-400">종합 · </span>{qa.reason}
+          </p>
+        )}
         {(policy || checks.length > 0) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {policy && (
@@ -307,33 +346,20 @@ export function V2DetailSection({ qa }: { qa: QAPreviewItem }) {
             ))}
           </div>
         )}
-        {(qa.evidence?.length ?? 0) > 0 && (
+        {problems.length > 0 && (
           <div>
-            <button onClick={() => setShowEvidence(s => !s)} aria-expanded={showEvidence}
-              className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showEvidence && 'rotate-180')} />
-              주장별 근거 ({qa.evidence!.length})
+            <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300">확인이 필요한 주장 ({problems.length})</p>
+            <EvidenceList items={problems} />
+          </div>
+        )}
+        {supported.length > 0 && (
+          <div>
+            <button onClick={() => setShowSupported(s => !s)} aria-expanded={showSupported}
+              className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showSupported && 'rotate-180')} />
+              {problems.length ? `원문과 일치한 주장 ${supported.length}개` : `주장 ${supported.length}개 모두 원문과 일치`}
             </button>
-            {showEvidence && (
-              <ul className="mt-2 space-y-2">
-                {qa.evidence!.map((e, i) => {
-                  const st = VERDICT_STYLE[e.verdict] ?? VERDICT_STYLE.unsupported;
-                  return (
-                    <li key={i} className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-2.5 text-[11px] lg:text-xs">
-                      <div className="flex items-start gap-2">
-                        <span className={cn('shrink-0 px-1.5 py-px rounded border text-[10px] font-bold', st.className)}>{st.label}</span>
-                        <p className="text-slate-800 dark:text-slate-100 font-medium [overflow-wrap:anywhere]">{e.claim}</p>
-                      </div>
-                      {e.source && (
-                        <p className="mt-1.5 flex items-start gap-1.5 text-slate-500 dark:text-slate-400 [overflow-wrap:anywhere]">
-                          <Quote className="w-3 h-3 mt-0.5 shrink-0" /> {e.source}
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            {showSupported && <EvidenceList items={supported} />}
           </div>
         )}
       </div>

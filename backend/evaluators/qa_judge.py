@@ -18,7 +18,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-JUDGE_VERSION = "qa-judge-v2.1"   # v2.1: 언어 정책 추가
+JUDGE_VERSION = "qa-judge-v2.2"   # v2.1: 언어 정책 추가
 DIMENSIONS = ("groundedness", "correctness", "completeness", "question_quality")
 WEIGHTS = {"groundedness": 0.35, "correctness": 0.30, "completeness": 0.20, "question_quality": 0.15}
 HARD_FAIL_MIN = 0.6          # groundedness, correctness 하한
@@ -139,7 +139,10 @@ Return ONLY valid JSON, no markdown:
  "evidence": [{{"claim": "<answer claim>", "source": "<short quote from the source, original language>", "verdict": "supported|unsupported|contradicted"}}],
  "language_checks": {{"semantic_equivalence": true|false, "terminology_consistency": true|false, "numeric_consistency": true|false, "modality_preserved": true|false}},
  "failure_types": [<zero or more of "unsupported_claim", "numeric_error", "incomplete", "unanswerable_question", "ambiguous_question", "meaning_shift", "modality_mismatch", "negation_error", "unit_mismatch", "terminology_error", "condition_omitted">],
+ "reasons": {{"groundedness": "<1 sentence in Korean>", "correctness": "<1 sentence in Korean>", "completeness": "<1 sentence in Korean>", "question_quality": "<1 sentence in Korean>"}},
  "reason": "<1 concise sentence in Korean explaining the main issue, or why it is fine>"}}
+Each "reasons" sentence explains why that dimension got its score; name the specific claim, number,
+missing part or wording when points were deducted.
 List at most 6 claims in evidence, most important first.
 </output>"""
 
@@ -195,7 +198,15 @@ def parse_judge_response(raw: str) -> Dict:
         "evidence": evidence,
         "failure_types": list(dict.fromkeys(failure_types)),
         "reason": str(data.get("reason", ""))[:500],
+        "dimension_reasons": _dimension_reasons(data.get("reasons")),
     }
+
+
+def _dimension_reasons(raw) -> Dict[str, str]:
+    """지표별 이유(v2.2). 없거나 형식이 다르면 빈 값 — 점수 계산에는 쓰지 않는다."""
+    if not isinstance(raw, dict):
+        return {}
+    return {d: str(raw[d]).strip()[:300] for d in DIMENSIONS if isinstance(raw.get(d), str) and raw[d].strip()}
 
 
 def score_qa(parsed: Dict) -> Dict:

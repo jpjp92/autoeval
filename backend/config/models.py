@@ -6,7 +6,21 @@ Model Configuration
 
 DEFAULT_GENERATION_MODEL = "gemini-3.8-flash"
 DEFAULT_EVALUATOR_MODEL = "gpt-5.6-luna"
-DOCUMENT_MODEL = "gemini-flash"  # Gemini 2.5 Flash
+import os
+
+# 문서 처리(청킹·계층 분류·태깅·도메인 프로파일) 모델 키.
+# gemini-2.5-flash 종료(2026-12-01 예정)로 3.5 Flash-Lite로 교체.
+DOCUMENT_MODEL = "gemini-3.5-flash-lite"
+
+
+def no_thinking_config(model_id: str):
+    """thinking을 최소로 끄는 ThinkingConfig.
+    Gemini 2.x는 thinking_budget=0, 3.x는 thinking_budget을 받지 않아(400 INVALID_ARGUMENT)
+    thinking_level="minimal"을 쓴다. (2026-11-22 3.5 Flash-Lite 실측)"""
+    from google.genai import types as genai_types
+    if model_id.startswith("gemini-2"):
+        return genai_types.ThinkingConfig(thinking_budget=0)
+    return genai_types.ThinkingConfig(thinking_level="minimal")
 
 MODEL_CONFIG = {
     # Official model IDs verified 2026-11-08. Gemini introductory pricing
@@ -24,6 +38,14 @@ MODEL_CONFIG = {
         "cost_input": 0.75 / 1_000_000,
         "cost_output": 3.75 / 1_000_000,
         "name": "Gemini 3.7 Flash",
+    },
+    "gemini-3.5-flash-lite": {
+        "provider": "google",
+        # DOCUMENT_MODEL_ID로 재배포 없이 교체 가능
+        "model_id": os.getenv("DOCUMENT_MODEL_ID", "").strip() or "gemini-3.5-flash-lite",
+        "cost_input": 0.30 / 1_000_000,
+        "cost_output": 2.50 / 1_000_000,
+        "name": "Gemini 3.5 Flash-Lite",
     },
     "gpt-6-luna": {
         "provider": "openai",
@@ -51,9 +73,9 @@ MODEL_CONFIG = {
     },
     "gemini-flash": {
         "provider": "google",
-        "model_id": "gemini-2.5-flash",
-        "cost_input": 0.075 / 1_000_000,    # $0.075 per MTok
-        "cost_output": 0.3 / 1_000_000,     # $0.3 per MTok
+        "model_id": "gemini-2.5-flash",     # 2026-12-01 종료 예정, 지난 결과 표시용
+        "cost_input": 0.30 / 1_000_000,     # $0.30 per MTok
+        "cost_output": 2.50 / 1_000_000,    # $2.50 per MTok
         "name": "Gemini 2.5 Flash",
     },
     "gpt-5.1": {

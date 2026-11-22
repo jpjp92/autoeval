@@ -658,10 +658,10 @@ export function QAEvaluationDashboard({
                       { col: 'q',       label: '질문',      cls: ''      },
                       { col: 'a',       label: '답변',      cls: ''      },
                       { col: 'quality', label: v2 ? 'QA 점수' : '품질 점수',  cls: 'w-24'  },
-                      { col: 'triad',   label: v2 ? '언어' : 'Triad 점수', cls: 'w-24' },
+                      { col: 'triad',   label: 'Triad 점수', cls: 'w-24' },
                       { col: 'status',  label: '상태',      cls: 'w-16'  },
                       { col: 'failure', label: '실패유형',   cls: 'w-24'  },
-                    ] as { col: string; label: string; cls: string }[]).map(({ col, label, cls }) => (
+                    ] as { col: string; label: string; cls: string }[]).filter(c => !(v2 && c.col === 'triad')).map(({ col, label, cls }) => (
                       <th
                         key={col}
                         onClick={() => {
@@ -730,13 +730,13 @@ export function QAEvaluationDashboard({
                             ? <span className={(row.eval_version === 'v2' ? row.pass : row.quality_avg >= SCORE_THRESHOLDS.mid) ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.quality_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
+                        {row.eval_version !== 'v2' && (
                         <td className="px-3 py-2 text-center font-mono text-[11px] align-middle">
-                          {row.eval_version === 'v2'
-                            ? <span className="text-slate-500 dark:text-slate-400">{row.language_policy ? (LANGUAGE_POLICY_LABEL[row.language_policy] ?? row.language_policy) : '-'}</span>
-                            : row.rag_avg != null
+                          {row.rag_avg != null
                             ? <span className={row.rag_avg >= SCORE_THRESHOLDS.mid ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-bold'}>{row.rag_avg.toFixed(3)}</span>
                             : <span className="text-slate-300 dark:text-slate-600">-</span>}
                         </td>
+                        )}
                         <td className="px-3 py-2 text-center align-middle">
                           <span className={cn('inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border', cfg.className)}>
                             {cfg.label}

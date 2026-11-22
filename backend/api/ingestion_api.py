@@ -34,7 +34,7 @@ from pydantic import BaseModel
 import asyncio
 import time
 
-from config.models import MODEL_CONFIG, DOCUMENT_MODEL
+from config.models import MODEL_CONFIG, DOCUMENT_MODEL, no_thinking_config
 from config.supabase_client import (
     get_document_chunks,
     get_doc_chunks_sampled,
@@ -184,7 +184,7 @@ async def _ingest_background(
             pages,
             metadata,
             gemini_client,
-            MODEL_CONFIG["gemini-flash"]["model_id"],
+            MODEL_CONFIG[DOCUMENT_MODEL]["model_id"],
             chunking_method,
             job_id,
             extract_seconds=extract_seconds,
@@ -280,7 +280,7 @@ async def analyze_hierarchy(request: HierarchyAnalysisRequest):
                 response_mime_type="application/json",
                 temperature=0.2,
                 top_p=0.95,
-                thinking_config=google_genai.types.ThinkingConfig(thinking_budget=0),
+                thinking_config=no_thinking_config(MODEL_CONFIG[DOCUMENT_MODEL]["model_id"]),
             ),
         )
         result = json.loads(response.text)
@@ -395,7 +395,7 @@ async def apply_granular_tagging(request: GranularTaggingRequest):
         filename=request.filename,
         all_chunks=all_chunks,
         gemini_client=gemini_client,
-        model_id=MODEL_CONFIG["gemini-flash"]["model_id"],
+        model_id=MODEL_CONFIG[DOCUMENT_MODEL]["model_id"],
         h2_h3_master=request.h2_h3_master,
         selected_h1_list=request.selected_h1_list,
         patch_fn=patch_chunk_hierarchy,
